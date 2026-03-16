@@ -14,3 +14,11 @@
 - **Suggested Severity**: must
 - **Confidence**: High
 - **Status**: pending
+
+### 2026-03-15 - Pin third-party module versions and verify provider compatibility
+- **Source**: Implementation discovery — fck-nat v1.4.0 required AWS provider >= 6.0, breaking our ~> 5.0 constraint
+- **Context**: `terraform init` failed until we upgraded the provider constraint
+- **Proposed Standard**: "Always check third-party module provider requirements before pinning versions. Run `terraform init` early to catch version conflicts."
+- **Suggested Severity**: should
+- **Confidence**: High
+- **Status**: pending

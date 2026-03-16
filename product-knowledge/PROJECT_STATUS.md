@@ -26,7 +26,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] **Roadmap defined**: `product-knowledge/ROADMAP.md`
 - [x] **Tech stack defined**: `product-knowledge/TECH_STACK.md`
 - [x] **Epic 0**: Terraform foundation (S3 state + DynamoDB locks) — complete
-- [ ] **Epic 1**: VPC + networking
+- [x] **Epic 1**: VPC + networking — complete (31 resources)
 - [ ] **Epic 2**: IAM + secrets
 - [ ] **Epic 3**: EC2 + bootstrap
 - [ ] **Epic 4**: Config integrity + monitoring
@@ -43,5 +43,6 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements
 
 ## Recent Changes
+- 2026-03-15: Epic 1 complete — VPC + networking (31 resources: VPC, subnets, fck-nat ASG, zero-ingress SG, NACLs, flow logs)
 - 2026-03-15: Epic 0 complete — Terraform foundation (S3 state backend + DynamoDB locks) verified and working
 - 2026-03-15: GLaDOS initialized, mission defined, security standards + roadmap + tech stack created
