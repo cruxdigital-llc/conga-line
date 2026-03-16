@@ -1,6 +1,18 @@
 # AWS Configuration
 aws_region  = "us-east-2"
 aws_profile = "167595588574_AdministratorAccess"
-
-# Project
 project_name = "openclaw"
+
+# Monitoring
+config_check_interval_minutes = 5
+alert_email = ""  # Set to receive alert emails
+
+# Users — add entries to onboard new users
+users = {
+  UA13HEGTS = {
+    slack_channel = "C0ALL272SV8"
+  }
+  # UXXXXXXXXXX = {
+  #   slack_channel = "CXXXXXXXXXX"
+  # }
+}

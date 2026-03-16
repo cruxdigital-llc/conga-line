@@ -6,8 +6,6 @@ echo "=== OpenClaw Bootstrap Start: $(date -u) ==="
 
 AWS_REGION="${aws_region}"
 PROJECT_NAME="${project_name}"
-USER_ID="${user_id}"
-SLACK_CHANNEL="${slack_channel}"
 
 # ============================================================
 # 1. OS HARDENING
@@ -37,22 +35,15 @@ sysctl --system
 # 2. INSTALL DOCKER
 # ============================================================
 
-# Install Docker from AL2023 repos
 dnf install -y docker
-
-# Create openclaw user
 useradd -m -s /bin/bash openclaw || true
-
-# Add openclaw to docker group
 usermod -aG docker openclaw
-
-# Start Docker
 systemctl enable --now docker
 
 echo "Docker installed and running"
 
 # ============================================================
-# 3. FETCH SECRETS
+# 3. SHARED SECRETS
 # ============================================================
 
 get_secret() {
@@ -65,130 +56,11 @@ get_secret() {
 
 SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
 SLACK_APP_TOKEN=$(get_secret "openclaw/shared/slack-app-token")
-ANTHROPIC_API_KEY=$(get_secret "openclaw/$USER_ID/anthropic-api-key")
-TRELLO_API_KEY=$(get_secret "openclaw/$USER_ID/trello-api-key")
-TRELLO_TOKEN=$(get_secret "openclaw/$USER_ID/trello-token")
 
-echo "All secrets fetched from Secrets Manager"
+echo "Shared secrets fetched"
 
 # ============================================================
-# 4. GENERATE CONFIG (NO SECRETS)
-# ============================================================
-
-mkdir -p /opt/openclaw/config
-
-cat > /opt/openclaw/config/openclaw.json << OCCONFIG
-{
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "anthropic/claude-opus-4-6"
-      },
-      "models": {
-        "anthropic/claude-opus-4-6": {}
-      },
-      "workspace": "/home/node/.openclaw/data/workspace"
-    }
-  },
-  "tools": {
-    "profile": "coding"
-  },
-  "commands": {
-    "native": "auto",
-    "nativeSkills": "auto",
-    "restart": true,
-    "ownerDisplay": "raw"
-  },
-  "session": {
-    "dmScope": "per-channel-peer"
-  },
-  "hooks": {
-    "internal": {
-      "enabled": true,
-      "entries": {
-        "command-logger": {
-          "enabled": true
-        },
-        "session-memory": {
-          "enabled": true
-        }
-      }
-    }
-  },
-  "channels": {
-    "slack": {
-      "mode": "socket",
-      "enabled": true,
-      "userTokenReadOnly": true,
-      "groupPolicy": "allowlist",
-      "streaming": "partial",
-      "nativeStreaming": true,
-      "channels": {
-        "$SLACK_CHANNEL": {
-          "allow": true,
-          "requireMention": false
-        }
-      }
-    }
-  },
-  "gateway": {
-    "port": 18789,
-    "mode": "local",
-    "bind": "loopback"
-  },
-  "skills": {
-    "install": {
-      "nodeManager": "pnpm"
-    },
-    "entries": {
-      "trello": {
-        "env": {}
-      }
-    }
-  },
-  "plugins": {
-    "entries": {
-      "slack": {
-        "enabled": true
-      }
-    }
-  }
-}
-OCCONFIG
-
-chown root:root /opt/openclaw/config/openclaw.json
-chmod 0444 /opt/openclaw/config/openclaw.json
-
-echo "Config written (root-owned, read-only, no secrets)"
-
-# ============================================================
-# 5. CREATE PERSISTENT STORAGE
-# ============================================================
-
-# Container runs as node:node (uid 1000:gid 1000 inside the container).
-# Standard Docker maps container uids directly to host uids.
-mkdir -p /opt/openclaw/data/$USER_ID/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
-chown -R 1000:1000 /opt/openclaw/data/$USER_ID
-
-# Copy config into user data dir
-# OpenClaw's hot-reload writes .tmp files next to openclaw.json, so the dir
-# and file must be writable by the container user. Config integrity is
-# enforced via the hash-check monitor (Epic 4) rather than filesystem perms.
-cp /opt/openclaw/config/openclaw.json /opt/openclaw/data/$USER_ID/openclaw.json
-chown 1000:1000 /opt/openclaw/data/$USER_ID/openclaw.json
-
-echo "Persistent storage created at /opt/openclaw/data/$USER_ID"
-
-# ============================================================
-# 6. CREATE DOCKER NETWORK
-# ============================================================
-
-docker network create --driver bridge "openclaw-$USER_ID" || true
-
-echo "Docker network openclaw-$USER_ID created"
-
-# ============================================================
-# 7. PULL IMAGE
+# 4. PULL IMAGE (once, shared by all containers)
 # ============================================================
 
 docker pull ghcr.io/openclaw/openclaw:latest
@@ -196,19 +68,96 @@ docker pull ghcr.io/openclaw/openclaw:latest
 echo "OpenClaw image pulled"
 
 # ============================================================
-# 8. CREATE SYSTEMD SERVICE
+# 5. SETUP EACH USER
 # ============================================================
 
-# Create env file with secrets (root-owned, mode 0400, on encrypted EBS)
+mkdir -p /opt/openclaw/{config,scripts}
+
+%{ for user_id, user_config in users ~}
+echo "=== Setting up user: ${user_id} ==="
+
+USER_ID="${user_id}"
+SLACK_CHANNEL="${user_config.slack_channel}"
+
+# --- Discover and fetch this user's secrets ---
+USER_SECRET_NAMES=$(aws secretsmanager list-secrets \
+  --filter Key=name,Values="openclaw/$USER_ID/" \
+  --query 'SecretList[].Name' --output text \
+  --region "$AWS_REGION" 2>/dev/null || echo "")
+
+# Build env file: shared secrets + user secrets
 cat > /opt/openclaw/config/$USER_ID.env << ENVFILE
-ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
 SLACK_APP_TOKEN=$SLACK_APP_TOKEN
-TRELLO_API_KEY=$TRELLO_API_KEY
-TRELLO_TOKEN=$TRELLO_TOKEN
 ENVFILE
+
+if [ -n "$USER_SECRET_NAMES" ]; then
+  for SECRET_PATH in $USER_SECRET_NAMES; do
+    SECRET_VALUE=$(get_secret "$SECRET_PATH")
+    # Convert: openclaw/user_id/anthropic-api-key → ANTHROPIC_API_KEY
+    SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|openclaw/$USER_ID/||" | tr '[:lower:]-' '[:upper:]_')
+    echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/openclaw/config/$USER_ID.env
+  done
+fi
 chmod 0400 /opt/openclaw/config/$USER_ID.env
 
+echo "  Secrets loaded for $USER_ID"
+
+# --- Generate generic config with user's channel ---
+cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
+{
+  "agents": {
+    "defaults": {
+      "model": { "primary": "anthropic/claude-opus-4-6" },
+      "models": { "anthropic/claude-opus-4-6": {} },
+      "workspace": "/home/node/.openclaw/data/workspace"
+    }
+  },
+  "tools": { "profile": "coding" },
+  "commands": { "native": "auto", "nativeSkills": "auto", "restart": true, "ownerDisplay": "raw" },
+  "session": { "dmScope": "per-channel-peer" },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "command-logger": { "enabled": true },
+        "session-memory": { "enabled": true }
+      }
+    }
+  },
+  "channels": {
+    "slack": {
+      "mode": "socket", "enabled": true, "userTokenReadOnly": true,
+      "groupPolicy": "allowlist", "streaming": "partial", "nativeStreaming": true,
+      "channels": { "$SLACK_CHANNEL": { "allow": true, "requireMention": false } }
+    }
+  },
+  "gateway": { "port": 18789, "mode": "local", "bind": "loopback" },
+  "skills": { "install": { "nodeManager": "pnpm" } },
+  "plugins": { "entries": { "slack": { "enabled": true } } }
+}
+OCCONFIG
+
+# --- Create persistent storage ---
+mkdir -p /opt/openclaw/data/$USER_ID/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
+chown -R 1000:1000 /opt/openclaw/data/$USER_ID
+cp /opt/openclaw/config/$USER_ID-openclaw.json /opt/openclaw/data/$USER_ID/openclaw.json
+chown 1000:1000 /opt/openclaw/data/$USER_ID/openclaw.json
+
+# --- Store config hash baseline ---
+sha256sum /opt/openclaw/config/$USER_ID-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$USER_ID-openclaw.json.sha256
+chmod 0444 /opt/openclaw/config/$USER_ID-openclaw.json.sha256
+
+# --- Docker network ---
+docker network create --driver bridge "openclaw-$USER_ID" || true
+
+# --- Build -e flags from env file keys ---
+ENV_FLAGS=""
+while IFS="=" read -r key value; do
+  [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
+done < /opt/openclaw/config/$USER_ID.env
+
+# --- Systemd unit ---
 cat > /etc/systemd/system/openclaw-$USER_ID.service << UNIT
 [Unit]
 Description=OpenClaw Gateway ($USER_ID)
@@ -219,22 +168,7 @@ Requires=docker.service
 Type=simple
 EnvironmentFile=/opt/openclaw/config/$USER_ID.env
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$USER_ID
-ExecStart=/usr/bin/docker run \
-  --name openclaw-$USER_ID \
-  --network openclaw-$USER_ID \
-  --cap-drop ALL \
-  --security-opt no-new-privileges \
-  --memory 2g \
-  --cpus 1.5 \
-  -e NODE_OPTIONS="--max-old-space-size=1536" \
-  --pids-limit 256 \
-  -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw \
-  -e ANTHROPIC_API_KEY \
-  -e SLACK_BOT_TOKEN \
-  -e SLACK_APP_TOKEN \
-  -e TRELLO_API_KEY \
-  -e TRELLO_TOKEN \
-  ghcr.io/openclaw/openclaw:latest
+ExecStart=/usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest
 ExecStop=/usr/bin/docker stop openclaw-$USER_ID
 StandardOutput=append:/var/log/openclaw-$USER_ID.log
 StandardError=append:/var/log/openclaw-$USER_ID.log
@@ -247,34 +181,34 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 UNIT
 
+echo "  User $USER_ID configured"
+%{ endfor ~}
+
 # ============================================================
-# 9. CONFIG INTEGRITY MONITORING
+# 6. CONFIG INTEGRITY MONITORING
 # ============================================================
 
-# Store known-good config hash (root-owned, read-only)
-sha256sum /opt/openclaw/config/openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/openclaw.json.sha256
-chmod 0444 /opt/openclaw/config/openclaw.json.sha256
-
-# Create integrity check script
-mkdir -p /opt/openclaw/scripts
 cat > /opt/openclaw/scripts/check-config-integrity.sh << 'CHECKSCRIPT'
 #!/bin/bash
 LOGFILE="/var/log/openclaw-integrity.log"
-EXPECTED_HASH=$(cat /opt/openclaw/config/openclaw.json.sha256)
-CURRENT_HASH=$(sha256sum /opt/openclaw/data/aaron/openclaw.json | cut -d' ' -f1)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-if [ "$EXPECTED_HASH" != "$CURRENT_HASH" ]; then
-  MSG="$TIMESTAMP CONFIG_INTEGRITY_VIOLATION user=aaron expected=$EXPECTED_HASH actual=$CURRENT_HASH"
-  echo "$MSG" >> "$LOGFILE"
-  echo "$MSG" | systemd-cat -t openclaw-integrity -p warning
-else
-  MSG="$TIMESTAMP Config integrity OK user=aaron hash=$CURRENT_HASH"
-  echo "$MSG" >> "$LOGFILE"
-fi
+for HASHFILE in /opt/openclaw/config/*-openclaw.json.sha256; do
+  [ -f "$HASHFILE" ] || continue
+  USER_ID=$(basename "$HASHFILE" | sed 's/-openclaw.json.sha256//')
+  EXPECTED_HASH=$(cat "$HASHFILE")
+  CURRENT_HASH=$(sha256sum "/opt/openclaw/data/$USER_ID/openclaw.json" | cut -d' ' -f1)
+  if [ "$EXPECTED_HASH" != "$CURRENT_HASH" ]; then
+    MSG="$TIMESTAMP CONFIG_INTEGRITY_VIOLATION user=$USER_ID expected=$EXPECTED_HASH actual=$CURRENT_HASH"
+    echo "$MSG" >> "$LOGFILE"
+    echo "$MSG" | systemd-cat -t openclaw-integrity -p warning
+  else
+    MSG="$TIMESTAMP Config integrity OK user=$USER_ID hash=$CURRENT_HASH"
+    echo "$MSG" >> "$LOGFILE"
+  fi
+done
 CHECKSCRIPT
 chmod 0755 /opt/openclaw/scripts/check-config-integrity.sh
 
-# Create systemd service for the check
 cat > /etc/systemd/system/openclaw-config-check.service << 'CHECKSVC'
 [Unit]
 Description=OpenClaw Config Integrity Check
@@ -284,7 +218,6 @@ Type=oneshot
 ExecStart=/opt/openclaw/scripts/check-config-integrity.sh
 CHECKSVC
 
-# Create systemd timer
 cat > /etc/systemd/system/openclaw-config-check.timer << CHECKTIMER
 [Unit]
 Description=OpenClaw Config Integrity Check Timer
@@ -298,17 +231,12 @@ Persistent=true
 WantedBy=timers.target
 CHECKTIMER
 
-echo "Config integrity monitoring configured (every ${config_check_interval_minutes} minutes)"
-
 # ============================================================
-# 10. CLOUDWATCH AGENT
+# 7. CLOUDWATCH AGENT
 # ============================================================
 
-# Install CloudWatch agent
 dnf install -y amazon-cloudwatch-agent
 
-# Configure agent to ship Docker container logs + integrity check logs
-# Use file-based log collection (more reliable than journald config)
 cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCONFIG'
 {
   "agent": {
@@ -337,26 +265,26 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCO
 }
 CWCONFIG
 
-echo "CloudWatch agent configured"
-
 # ============================================================
-# 11. START ALL SERVICES
+# 8. START ALL SERVICES
 # ============================================================
 
 systemctl daemon-reload
 
-# Start config integrity timer
+# Config integrity timer
 systemctl enable --now openclaw-config-check.timer
 
-# Start CloudWatch agent
+# CloudWatch agent
 systemctl enable --now amazon-cloudwatch-agent
 
-# Start OpenClaw container
-systemctl enable openclaw-$USER_ID.service
-systemctl start openclaw-$USER_ID.service
+# Start all user containers
+%{ for user_id, user_config in users ~}
+systemctl enable openclaw-${user_id}.service
+systemctl start openclaw-${user_id}.service
+%{ endfor ~}
 
 echo "=== OpenClaw Bootstrap Complete: $(date -u) ==="
-echo "Service: openclaw-$USER_ID"
-echo "Check: systemctl status openclaw-$USER_ID"
-echo "Timer: systemctl list-timers openclaw-config-check"
-echo "Agent: systemctl status amazon-cloudwatch-agent"
+%{ for user_id, user_config in users ~}
+echo "Service: openclaw-${user_id} (channel: ${user_config.slack_channel})"
+%{ endfor ~}
+echo "Check: systemctl status openclaw-<user_id>"

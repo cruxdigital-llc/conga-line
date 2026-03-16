@@ -49,28 +49,105 @@ terraform plan
 terraform apply
 ```
 
-### 3. Populate Secrets
+### 3. Populate Shared Secrets
 
 ```bash
 ./populate-secrets.sh
 ```
 
-Prompts for Slack tokens, Anthropic API key, and skill credentials.
+Prompts for the shared Slack bot and app tokens.
 
-### 4. Connect via SSM
+### 4. Onboard Yourself
 
 ```bash
-aws ssm start-session --target <instance-id> --region us-east-2 --profile 167595588574_AdministratorAccess
+../scripts/onboard-user.sh <your-slack-member-id> <your-aws-profile> us-east-2
 ```
+
+See [Adding a New User](#adding-a-new-user) below for full details.
 
 ### 5. Verify
 
 ```bash
-# On the instance via SSM:
+# Connect via SSM:
+aws ssm start-session --target <instance-id> --region us-east-2 --profile 167595588574_AdministratorAccess
+
+# On the instance:
 docker ps
-systemctl status openclaw-aaron
-docker logs openclaw-aaron --tail 20
+systemctl status openclaw-<member-id>
+docker logs openclaw-<member-id> --tail 20
 ```
+
+## Adding a New User
+
+Users are identified by their Slack member ID (e.g., `UA13HEGTS`). Adding a user is a two-step process split between admin and user.
+
+### Admin Steps
+
+1. **Create a Slack channel** for the new user
+
+2. **Get their Slack member ID** — In Slack: click their profile → three dots (⋯) → Copy member ID
+
+3. **Add them to `terraform/variables.tf`** (or a `.tfvars` file):
+   ```hcl
+   users = {
+     UA13HEGTS = {
+       slack_channel = "C0ALL272SV8"
+     }
+     U01UNLBCWNR = {
+       slack_channel = "C0ALU1AG6ES"
+     }
+   }
+   ```
+
+4. **Apply**:
+   ```bash
+   cd terraform
+   terraform apply
+   # Then replace the instance to pick up the new user-data:
+   terraform apply -replace=aws_instance.openclaw
+   ```
+   This will briefly restart all containers.
+
+5. **Share onboarding instructions** with the new user (see below).
+
+### User Steps
+
+The new user needs an IAM user in the AWS account with permissions to create secrets under their path.
+
+1. **Configure AWS CLI** with your credentials:
+   ```bash
+   aws configure --profile my-profile
+   ```
+
+2. **Run the onboarding script**:
+   ```bash
+   ./scripts/onboard-user.sh <your-member-id> <your-aws-profile> us-east-2
+   ```
+   The script will prompt for:
+   - **Anthropic API key** (required)
+   - **Any additional secrets** for skills you use (e.g., `trello-api-key`, `trello-token`)
+
+   Secret names are converted to env vars: `trello-api-key` → `TRELLO_API_KEY`
+
+3. **Ask your admin to restart your container**:
+   ```bash
+   # Admin runs via SSM:
+   systemctl restart openclaw-<member-id>
+   ```
+
+4. **Test** — send a message in your Slack channel
+
+### Adding More Secrets Later
+
+Users can add secrets at any time by re-running the onboarding script or directly:
+```bash
+aws secretsmanager create-secret \
+  --name openclaw/<member-id>/<secret-name> \
+  --secret-string "<value>" \
+  --profile <your-profile> \
+  --region us-east-2
+```
+Then ask an admin to restart your container to pick up the new secret.
 
 ## Project Structure
 
@@ -84,10 +161,12 @@ docker logs openclaw-aaron --tail 20
 │   ├── PROJECT_STATUS.md
 │   ├── standards/security.md
 │   └── ...
+├── scripts/
+│   └── onboard-user.sh          # Self-service user onboarding
 ├── specs/                       # Feature specs and trace logs
 └── terraform/                   # All infrastructure code
     ├── bootstrap.sh             # One-time state backend setup
-    ├── populate-secrets.sh      # Interactive secret population
+    ├── populate-secrets.sh      # Shared secret population (admin)
     ├── backend.tf               # S3 state backend
     ├── providers.tf             # AWS provider config
     ├── variables.tf             # Input variables
