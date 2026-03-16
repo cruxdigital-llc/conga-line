@@ -4,7 +4,7 @@
 **Status**: Complete
 
 ## Context
-Defining the project mission for OpenClaw's hardened AWS deployment, based on the reference document at `ingest/openclaw-aws-reference.md`.
+Defining the project mission for OpenClaw's hardened AWS deployment, based on an initial reference architecture document (since removed from repo).
 
 ## Interview Summary
 - This is an internal infrastructure project, not a product
