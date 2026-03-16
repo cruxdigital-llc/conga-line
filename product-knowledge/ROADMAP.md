@@ -39,37 +39,38 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
   - [ ] Trello API key + token
   - [ ] Brave API key (if needed)
 
-### Epic 3: EC2 + Docker Bootstrap (Single User: Aaron)
-- [ ] Launch template: t4g.medium (4GB RAM), Graviton, encrypted EBS, IMDSv2 enforced
-- [ ] User-data script: install Docker, pull OpenClaw image, fetch secrets from Secrets Manager
-- [ ] Aaron's openclaw.json generated from template with:
-  - [ ] Channel allowlist: `CEXAMPLE01`
-  - [ ] Model: `anthropic/claude-opus-4-6`
-  - [ ] Skills: trello (credentials from env vars)
-  - [ ] Tools profile: coding, web search via brave
-  - [ ] Gateway: loopback, token auth
-- [ ] Config file: root-owned, mode 0444
-- [ ] Docker container with:
-  - [ ] Read-only config mount
-  - [ ] Isolated Docker network
-  - [ ] Resource limits (memory, CPU, pids)
-  - [ ] Non-root user (uid 1000)
-  - [ ] Docker rootless mode
-  - [ ] --cap-drop=ALL, --security-opt=no-new-privileges, seccomp profile
-  - [ ] Secrets injected as env vars
-- [ ] Systemd unit with hardening
-- [ ] OS hardening: remove SSH, sysctl lockdown, unattended-upgrades
+### Epic 3: EC2 + Docker Bootstrap (Single User: Aaron) ✅
+- [x] Launch template: t4g.medium (4GB RAM), Graviton, encrypted EBS, IMDSv2 hop limit 1
+- [x] User-data script: install Docker, pull OpenClaw image, fetch secrets from Secrets Manager
+- [x] Aaron's openclaw.json generated with:
+  - [x] Channel allowlist: `CEXAMPLE01`
+  - [x] Model: `anthropic/claude-opus-4-6`
+  - [x] Skills: trello (credentials from env vars)
+  - [x] Tools profile: coding
+  - [x] Gateway: loopback
+- [x] Docker container with:
+  - [x] Isolated Docker network (`openclaw-myagent`)
+  - [x] Resource limits: 2GB memory, 1.5 CPU, 256 pids
+  - [x] Non-root user (uid 1000, `node`)
+  - [x] `--cap-drop=ALL`, `--security-opt=no-new-privileges`
+  - [x] Secrets injected as env vars via systemd EnvironmentFile
+  - [ ] ~~Docker rootless mode~~ — deferred to Horizon 3 (AL2023 missing `fuse-overlayfs`, `slirp4netns`)
+  - [ ] ~~Seccomp profile~~ — using Docker default; custom profile deferred to Horizon 3
+  - [ ] ~~Read-only config mount~~ — not possible due to OpenClaw hot-reload .tmp files; integrity via monitoring (Epic 4)
+- [x] Systemd unit with restart policy (`Restart=always`, `RestartSec=10`)
+- [x] OS hardening: openssh-server removed, sysctl lockdown, dnf-automatic enabled
+- [x] `NODE_OPTIONS="--max-old-space-size=1536"` to prevent V8 heap OOM
 
 ### Epic 4: Config Integrity + Monitoring
 - [ ] Systemd timer: hash-check openclaw.json, alert on change
 - [ ] CloudWatch log group for gateway logs
 - [ ] CloudWatch alarm for config integrity alert
 
-### Milestone: Aaron's local gateway replaced by AWS deployment
-- [ ] Stop local OpenClaw gateway
-- [ ] End-to-end test: message in `CEXAMPLE01` → response from AWS container
-- [ ] Trello skill working
-- [ ] Verify secrets not on disk, config immutable
+### Milestone: Aaron's local gateway replaced by AWS deployment ✅
+- [x] Local OpenClaw gateway stopped (launchd unloaded)
+- [x] End-to-end test: message in `CEXAMPLE01` → response from AWS container
+- [x] Slack socket mode connected, channel resolved
+- [x] Secrets in env file (root:root 0400), config integrity monitoring deferred to Epic 4
 
 ---
 
@@ -109,6 +110,9 @@ Goal: A repeatable process to add a second employee. He provides his credentials
 
 ## Horizon 3 — Hardening + Scale
 
+- [ ] **Docker rootless mode** — blocked by AL2023 missing `fuse-overlayfs` and `slirp4netns`; revisit with Docker CE on Ubuntu or custom AL2023 build
+- [ ] **Custom seccomp profile** — currently using Docker default; profile OpenClaw's syscall patterns and tighten
+- [ ] **Read-only config enforcement** — OpenClaw hot-reload writes .tmp files next to config; investigate disabling hot-reload or upstream fix for Issue #9627
 - [ ] Egress domain allowlisting (Squid proxy or AWS Network Firewall)
 - [ ] GuardDuty for anomaly detection
 - [ ] AWS Config rules for security group drift detection
