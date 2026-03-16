@@ -22,3 +22,23 @@ output "openclaw_host_sg_id" {
   description = "Security group ID for OpenClaw host"
   value       = aws_security_group.openclaw_host.id
 }
+
+output "instance_profile_arn" {
+  description = "IAM instance profile ARN for OpenClaw host"
+  value       = aws_iam_instance_profile.openclaw_host.arn
+}
+
+output "instance_profile_name" {
+  description = "IAM instance profile name for OpenClaw host"
+  value       = aws_iam_instance_profile.openclaw_host.name
+}
+
+output "kms_key_arn" {
+  description = "KMS key ARN for EBS encryption"
+  value       = aws_kms_key.ebs.arn
+}
+
+output "gateway_log_group" {
+  description = "CloudWatch log group for gateway logs"
+  value       = aws_cloudwatch_log_group.gateway.name
+}

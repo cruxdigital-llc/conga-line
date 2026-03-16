@@ -27,22 +27,24 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] **Tech stack defined**: `product-knowledge/TECH_STACK.md`
 - [x] **Epic 0**: Terraform foundation (S3 state + DynamoDB locks) — complete
 - [x] **Epic 1**: VPC + networking — complete (31 resources)
-- [ ] **Epic 2**: IAM + secrets
-- [ ] **Epic 3**: EC2 + bootstrap
+- [x] **Epic 2**: IAM + secrets — complete (5 secrets populated)
+- [ ] **Epic 3**: EC2 + Docker bootstrap (single user: Aaron)
 - [ ] **Epic 4**: Config integrity + monitoring
-- [ ] **Epic 5**: Slack integration (1 app, 2 channels, 2 instances)
-- [ ] **Epic 6**: Terraform packaging
+- **Milestone**: Aaron's local gateway replaced by AWS deployment
+- [ ] **Epic 5**: Config template + onboarding script (user 2)
+- [ ] **Epic 6**: Multi-user Terraform (for-each pattern)
 
 ### 2. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 
 ## Known Issues / Technical Debt
-- Open question: per-user vs shared Anthropic API keys
+- Per-user API keys: each employee brings their own credentials and plugins
 - Open question: egress domain allowlisting needed or port-443-only sufficient
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements
 
 ## Recent Changes
+- 2026-03-15: Epic 2 complete — IAM role + deny-dangerous policy, KMS key, 5 secrets populated
 - 2026-03-15: Epic 1 complete — VPC + networking (31 resources: VPC, subnets, fck-nat ASG, zero-ingress SG, NACLs, flow logs)
 - 2026-03-15: Epic 0 complete — Terraform foundation (S3 state backend + DynamoDB locks) verified and working
 - 2026-03-15: GLaDOS initialized, mission defined, security standards + roadmap + tech stack created

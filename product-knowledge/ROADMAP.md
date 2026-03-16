@@ -6,9 +6,9 @@ To modify: Edit directly.
 
 # Product Roadmap
 
-## MVP — 2 Users via Slack
+## Phase 1 — Get Aaron Live on AWS
 
-Goal: Two team members using OpenClaw via dedicated Slack channels, running as isolated Docker containers on a single hardened EC2 host. Target cost: ~$10/mo total.
+Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deployment. End state: message in Slack channel `C0ALL272SV8` → response from AWS-hosted container.
 
 ### Epic 0: Terraform Foundation ✅
 - [x] S3 backend bucket `openclaw-terraform-state-167595588574` (versioned, AES256, public access blocked)
@@ -29,43 +29,73 @@ Goal: Two team members using OpenClaw via dedicated Slack channels, running as i
 ### Epic 2: IAM + Secrets
 - [ ] Instance IAM role with least-privilege policies
 - [ ] Deny-dangerous IAM policy (iam:*, ec2:RunInstances, lambda:*, etc.)
-- [ ] Shared Secrets Manager secrets for Slack tokens (xapp-, xoxb-)
-- [ ] Per-user Secrets Manager secret for Anthropic API key (or shared — TBD)
 - [ ] KMS key for EBS encryption
 - [ ] SSM instance profile policies
+- [ ] Secrets Manager secrets for Aaron:
+  - [ ] Slack botToken (shared — will be reused by user 2)
+  - [ ] Slack appToken (shared)
+  - [ ] Anthropic API key
+  - [ ] Gateway auth token
+  - [ ] Trello API key + token
+  - [ ] Brave API key (if needed)
 
-### Epic 3: EC2 + Docker Bootstrap
+### Epic 3: EC2 + Docker Bootstrap (Single User: Aaron)
 - [ ] Launch template: t4g.medium (4GB RAM), Graviton, encrypted EBS, IMDSv2 enforced
 - [ ] User-data script: install Docker, pull OpenClaw image, fetch secrets from Secrets Manager
-- [ ] Per-user openclaw.json with channel allowlist (root-owned, mode 0444)
-- [ ] Per-user Docker container with:
+- [ ] Aaron's openclaw.json generated from template with:
+  - [ ] Channel allowlist: `C0ALL272SV8`
+  - [ ] Model: `anthropic/claude-opus-4-6`
+  - [ ] Skills: trello (credentials from env vars)
+  - [ ] Tools profile: coding, web search via brave
+  - [ ] Gateway: loopback, token auth
+- [ ] Config file: root-owned, mode 0444
+- [ ] Docker container with:
   - [ ] Read-only config mount
-  - [ ] Isolated Docker network (no inter-container communication)
-  - [ ] Per-container resource limits (memory, CPU, pids)
+  - [ ] Isolated Docker network
+  - [ ] Resource limits (memory, CPU, pids)
   - [ ] Non-root user (uid 1000)
-  - [ ] Per-user env vars (API keys injected, not shared across containers)
-- [ ] Per-user systemd units with hardening (NoNewPrivileges, ProtectSystem, ReadOnlyPaths, MemoryMax)
+  - [ ] Docker rootless mode
+  - [ ] --cap-drop=ALL, --security-opt=no-new-privileges, seccomp profile
+  - [ ] Secrets injected as env vars
+- [ ] Systemd unit with hardening
 - [ ] OS hardening: remove SSH, sysctl lockdown, unattended-upgrades
 
 ### Epic 4: Config Integrity + Monitoring
-- [ ] Systemd timer: hash-check all openclaw.json files, alert on change
-- [ ] CloudWatch log group for gateway logs (per-user log streams)
+- [ ] Systemd timer: hash-check openclaw.json, alert on change
+- [ ] CloudWatch log group for gateway logs
 - [ ] CloudWatch alarm for config integrity alert
 
-### Epic 5: Slack Integration
-> Slack app already exists and is validated locally with a working gateway.
-- [ ] Store existing Slack tokens (xapp-, xoxb-) in Secrets Manager
-- [ ] Create 2 dedicated channels (#openclaw-user1, #openclaw-user2)
-- [ ] Configure each container's openclaw.json with groupPolicy allowlist for its channel
-- [ ] Validate two containers connect to the same Slack app simultaneously via Socket Mode
-- [ ] End-to-end test: message in Slack → response from correct container only
+### Milestone: Aaron's local gateway replaced by AWS deployment
+- [ ] Stop local OpenClaw gateway
+- [ ] End-to-end test: message in `C0ALL272SV8` → response from AWS container
+- [ ] Trello skill working
+- [ ] Verify secrets not on disk, config immutable
 
-### Epic 6: Terraform Packaging
-- [ ] Modular Terraform structure (networking, iam, compute, secrets modules)
-- [ ] variables.tf with user list/config (channel name, API key secret ARN, etc.)
-- [ ] For-each pattern to stamp out per-user resources (secrets, configs, containers)
-- [ ] terraform.tfvars.example with documented variables
-- [ ] terraform plan produces clean output for 2 users
+---
+
+## Phase 2 — Onboarding Flow for User 2
+
+Goal: A repeatable process to add a second employee. He provides his credentials and channel, and gets a working OpenClaw agent.
+
+### Epic 5: Config Template + Onboarding Script
+- [ ] Base `openclaw.json` template with shared settings (gateway, Slack app, security policies)
+- [ ] Onboarding script that:
+  - [ ] Prompts for: Slack channel ID, Anthropic API key, and any skill credentials (Trello, etc.)
+  - [ ] Stores per-user secrets in Secrets Manager under `openclaw/{user_id}/*`
+  - [ ] Generates per-user openclaw.json from template + user inputs
+- [ ] Documentation: step-by-step onboarding guide for the new user
+
+### Epic 6: Multi-User Terraform
+- [ ] Terraform variables for user list/config (channel, secret ARNs, etc.)
+- [ ] For-each pattern to stamp out per-user resources (secrets, configs, containers, systemd units)
+- [ ] `terraform apply` deploys user 2's container alongside Aaron's
+- [ ] Validate: both containers running, isolated networks, correct channel routing
+- [ ] End-to-end test: messages in both channels → responses from correct containers only
+
+### Milestone: 2 users operational
+- [ ] Both users receiving responses in their respective Slack channels
+- [ ] No cross-channel leakage
+- [ ] Onboarding process documented and tested
 
 ---
 
@@ -75,7 +105,7 @@ Goal: Two team members using OpenClaw via dedicated Slack channels, running as i
 - [ ] EBS snapshot backups of OpenClaw memory/config
 - [ ] CloudWatch dashboard: per-container resource usage, NAT throughput, error rates
 - [ ] Idle-shutdown alarm to save costs when host is unused
-- [ ] Runbook documentation for common operations (rotate keys, add user, tear down user)
+- [ ] Runbook: common operations (rotate keys, add user, tear down user, recover NAT)
 
 ## Horizon 3 — Hardening + Scale
 
