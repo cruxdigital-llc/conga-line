@@ -22,3 +22,11 @@
 - **Suggested Severity**: should
 - **Confidence**: High
 - **Status**: pending
+
+### 2026-03-15 - Secrets on disk tradeoff for systemd env files
+- **Source**: Architecture decision during EC2 bootstrap spec
+- **Context**: Systemd needs a way to re-inject env vars on container restart. Pure in-memory injection isn't feasible.
+- **Proposed Standard**: "Secrets env files must be mode 0400, owned by the service user, on encrypted EBS. Document as accepted deviation from 'secrets never touch disk' principle."
+- **Suggested Severity**: should
+- **Confidence**: High
+- **Status**: pending

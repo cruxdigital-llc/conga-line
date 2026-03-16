@@ -42,3 +42,13 @@ output "gateway_log_group" {
   description = "CloudWatch log group for gateway logs"
   value       = aws_cloudwatch_log_group.gateway.name
 }
+
+output "instance_id" {
+  description = "OpenClaw host EC2 instance ID"
+  value       = aws_instance.openclaw.id
+}
+
+output "ssm_connect_command" {
+  description = "Command to connect via SSM"
+  value       = "aws ssm start-session --target ${aws_instance.openclaw.id} --region ${var.aws_region} --profile ${var.aws_profile}"
+}

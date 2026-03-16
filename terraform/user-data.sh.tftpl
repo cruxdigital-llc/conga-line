@@ -1,0 +1,258 @@
+#!/bin/bash
+set -euxo pipefail
+
+exec > >(tee /var/log/openclaw-bootstrap.log) 2>&1
+echo "=== OpenClaw Bootstrap Start: $(date -u) ==="
+
+AWS_REGION="${aws_region}"
+PROJECT_NAME="${project_name}"
+USER_ID="${user_id}"
+SLACK_CHANNEL="${slack_channel}"
+
+# ============================================================
+# 1. OS HARDENING
+# ============================================================
+
+# Remove SSH server
+dnf remove -y openssh-server || true
+
+# Enable automatic security updates
+dnf install -y dnf-automatic
+sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
+systemctl enable --now dnf-automatic-install.timer
+
+# Sysctl hardening
+cat > /etc/sysctl.d/99-openclaw.conf << 'SYSCTL'
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.tcp_syncookies = 1
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+SYSCTL
+sysctl --system
+
+# ============================================================
+# 2. INSTALL DOCKER
+# ============================================================
+
+# Install Docker from AL2023 repos
+dnf install -y docker
+
+# Create openclaw user
+useradd -m -s /bin/bash openclaw || true
+
+# Add openclaw to docker group
+usermod -aG docker openclaw
+
+# Start Docker
+systemctl enable --now docker
+
+echo "Docker installed and running"
+
+# ============================================================
+# 3. FETCH SECRETS
+# ============================================================
+
+get_secret() {
+  aws secretsmanager get-secret-value \
+    --secret-id "$1" \
+    --query SecretString \
+    --output text \
+    --region "$AWS_REGION"
+}
+
+SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
+SLACK_APP_TOKEN=$(get_secret "openclaw/shared/slack-app-token")
+ANTHROPIC_API_KEY=$(get_secret "openclaw/$USER_ID/anthropic-api-key")
+TRELLO_API_KEY=$(get_secret "openclaw/$USER_ID/trello-api-key")
+TRELLO_TOKEN=$(get_secret "openclaw/$USER_ID/trello-token")
+
+echo "All secrets fetched from Secrets Manager"
+
+# ============================================================
+# 4. GENERATE CONFIG (NO SECRETS)
+# ============================================================
+
+mkdir -p /opt/openclaw/config
+
+cat > /opt/openclaw/config/openclaw.json << OCCONFIG
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-opus-4-6"
+      },
+      "models": {
+        "anthropic/claude-opus-4-6": {}
+      },
+      "workspace": "/home/node/.openclaw/data/workspace"
+    }
+  },
+  "tools": {
+    "profile": "coding"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "command-logger": {
+          "enabled": true
+        },
+        "session-memory": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "channels": {
+    "slack": {
+      "mode": "socket",
+      "enabled": true,
+      "userTokenReadOnly": true,
+      "groupPolicy": "allowlist",
+      "streaming": "partial",
+      "nativeStreaming": true,
+      "channels": {
+        "$SLACK_CHANNEL": {
+          "allow": true,
+          "requireMention": false
+        }
+      }
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback"
+  },
+  "skills": {
+    "install": {
+      "nodeManager": "pnpm"
+    },
+    "entries": {
+      "trello": {
+        "env": {}
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "slack": {
+        "enabled": true
+      }
+    }
+  }
+}
+OCCONFIG
+
+chown root:root /opt/openclaw/config/openclaw.json
+chmod 0444 /opt/openclaw/config/openclaw.json
+
+echo "Config written (root-owned, read-only, no secrets)"
+
+# ============================================================
+# 5. CREATE PERSISTENT STORAGE
+# ============================================================
+
+# Container runs as node:node (uid 1000:gid 1000 inside the container).
+# Standard Docker maps container uids directly to host uids.
+mkdir -p /opt/openclaw/data/$USER_ID/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
+chown -R 1000:1000 /opt/openclaw/data/$USER_ID
+
+# Copy config into user data dir
+# OpenClaw's hot-reload writes .tmp files next to openclaw.json, so the dir
+# and file must be writable by the container user. Config integrity is
+# enforced via the hash-check monitor (Epic 4) rather than filesystem perms.
+cp /opt/openclaw/config/openclaw.json /opt/openclaw/data/$USER_ID/openclaw.json
+chown 1000:1000 /opt/openclaw/data/$USER_ID/openclaw.json
+
+echo "Persistent storage created at /opt/openclaw/data/$USER_ID"
+
+# ============================================================
+# 6. CREATE DOCKER NETWORK
+# ============================================================
+
+docker network create --driver bridge "openclaw-$USER_ID" || true
+
+echo "Docker network openclaw-$USER_ID created"
+
+# ============================================================
+# 7. PULL IMAGE
+# ============================================================
+
+docker pull ghcr.io/openclaw/openclaw:latest
+
+echo "OpenClaw image pulled"
+
+# ============================================================
+# 8. CREATE SYSTEMD SERVICE
+# ============================================================
+
+# Create env file with secrets (root-owned, mode 0400, on encrypted EBS)
+cat > /opt/openclaw/config/$USER_ID.env << ENVFILE
+ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
+SLACK_APP_TOKEN=$SLACK_APP_TOKEN
+TRELLO_API_KEY=$TRELLO_API_KEY
+TRELLO_TOKEN=$TRELLO_TOKEN
+ENVFILE
+chmod 0400 /opt/openclaw/config/$USER_ID.env
+
+cat > /etc/systemd/system/openclaw-$USER_ID.service << UNIT
+[Unit]
+Description=OpenClaw Gateway ($USER_ID)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/openclaw/config/$USER_ID.env
+ExecStartPre=-/usr/bin/docker rm -f openclaw-$USER_ID
+ExecStart=/usr/bin/docker run \
+  --name openclaw-$USER_ID \
+  --network openclaw-$USER_ID \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --memory 2g \
+  --cpus 1.5 \
+  -e NODE_OPTIONS="--max-old-space-size=1536" \
+  --pids-limit 256 \
+  -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw \
+  -e ANTHROPIC_API_KEY \
+  -e SLACK_BOT_TOKEN \
+  -e SLACK_APP_TOKEN \
+  -e TRELLO_API_KEY \
+  -e TRELLO_TOKEN \
+  ghcr.io/openclaw/openclaw:latest
+ExecStop=/usr/bin/docker stop openclaw-$USER_ID
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# ============================================================
+# 9. START SERVICE
+# ============================================================
+
+systemctl daemon-reload
+systemctl enable openclaw-$USER_ID.service
+systemctl start openclaw-$USER_ID.service
+
+echo "=== OpenClaw Bootstrap Complete: $(date -u) ==="
+echo "Service: openclaw-$USER_ID"
+echo "Check: systemctl status openclaw-$USER_ID"
