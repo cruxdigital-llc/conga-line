@@ -31,8 +31,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] **Epic 3**: EC2 + Docker bootstrap — complete, Slack connected, end-to-end verified
 - [x] **Epic 4**: Config integrity + monitoring — complete (timer + CW agent + alarm)
 - **Milestone**: Aaron's local gateway replaced by AWS deployment
-- [ ] **Epic 5**: Config template + onboarding script (user 2)
-- [ ] **Epic 6**: Multi-user Terraform (for-each pattern)
+- [ ] **Epics 5+6**: Multi-user onboarding — [plan](../specs/2026-03-16_feature_multi-user-onboarding/plan.md)
 
 ### 2. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
