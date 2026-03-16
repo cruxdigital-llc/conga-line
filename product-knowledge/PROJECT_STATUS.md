@@ -25,7 +25,8 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] **Security standards defined**: `product-knowledge/standards/security.md`
 - [x] **Roadmap defined**: `product-knowledge/ROADMAP.md`
 - [x] **Tech stack defined**: `product-knowledge/TECH_STACK.md`
-- [ ] **Epic 1**: Shared VPC + networking foundation
+- [ ] **Epic 0**: Terraform foundation (S3 state + DynamoDB locks) — [plan](../specs/2026-03-15_feature_terraform-foundation/plan.md)
+- [ ] **Epic 1**: VPC + networking
 - [ ] **Epic 2**: IAM + secrets
 - [ ] **Epic 3**: EC2 + bootstrap
 - [ ] **Epic 4**: Config integrity + monitoring
