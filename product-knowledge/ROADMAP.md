@@ -16,15 +16,15 @@ Goal: Two team members using OpenClaw via dedicated Slack channels, running as i
 - [x] backend.tf configuration (S3 backend with state locking)
 - [x] Bootstrap shell script (`terraform/bootstrap.sh`, idempotent)
 
-### Epic 1: VPC + Networking
-- [ ] VPC with /24 CIDR
-- [ ] Public subnet (/28) for fck-nat instance
-- [ ] Private subnet (/28) for the OpenClaw host
-- [ ] fck-nat instance (t4g.nano) in public subnet
-- [ ] Route tables: private subnet routes 0.0.0.0/0 through fck-nat
-- [ ] NACLs allowing 443 egress + ephemeral return only
-- [ ] Security group: zero ingress, 443 egress
-- [ ] VPC Flow Logs to CloudWatch
+### Epic 1: VPC + Networking ✅
+- [x] VPC `vpc-067ea4b769f7e994a` (10.0.0.0/24)
+- [x] Public subnet (10.0.0.0/28) for fck-nat instance
+- [x] Private subnet `subnet-06119ed58d773bd9d` (10.0.0.16/28) for OpenClaw host
+- [x] fck-nat (t4g.nano, ASG-backed, self-healing) via `RaJiska/fck-nat/aws` v1.4.0
+- [x] Route tables: private subnet 0.0.0.0/0 → fck-nat ENI
+- [x] NACLs: 443 egress + DNS + ephemeral return only
+- [x] Security group `sg-0f0c53457d0220f7c`: zero ingress, HTTPS + DNS egress
+- [x] VPC Flow Logs → CloudWatch `/openclaw/vpc-flow-logs` (30-day retention)
 
 ### Epic 2: IAM + Secrets
 - [ ] Instance IAM role with least-privilege policies
