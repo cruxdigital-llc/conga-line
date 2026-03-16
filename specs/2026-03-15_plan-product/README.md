@@ -4,7 +4,7 @@
 **Status**: Complete
 
 ## Context
-Planning the roadmap and tech stack for OpenClaw's hardened AWS deployment. Based on mission defined in `product-knowledge/MISSION.md` and reference architecture in `ingest/openclaw-aws-reference.md`.
+Planning the roadmap and tech stack for OpenClaw's hardened AWS deployment. Based on mission defined in `product-knowledge/MISSION.md` and an initial reference architecture document (since removed from repo).
 
 ## Key Decisions
 - **MVP: 2 users** — one Slack app, 2 channels, 2 EC2 instances with channel allowlists
