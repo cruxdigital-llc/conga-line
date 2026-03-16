@@ -13,7 +13,7 @@ Idempotent shell script that creates the state backend resources using AWS CLI.
 ```bash
 AWS_PROFILE="123456789012_AdministratorAccess"
 AWS_REGION="us-east-2"
-STATE_BUCKET="openclaw-terraform-state"
+STATE_BUCKET="openclaw-terraform-state-123456789012"
 LOCK_TABLE="openclaw-terraform-locks"
 ```
 
@@ -72,7 +72,7 @@ LOCK_TABLE="openclaw-terraform-locks"
 ```hcl
 terraform {
   backend "s3" {
-    bucket         = "openclaw-terraform-state"
+    bucket         = "openclaw-terraform-state-123456789012"
     key            = "openclaw/terraform.tfstate"
     region         = "us-east-2"
     dynamodb_table = "openclaw-terraform-locks"
@@ -130,7 +130,7 @@ variable "project_name" {
 ```hcl
 output "state_bucket" {
   description = "S3 bucket name for Terraform state"
-  value       = "openclaw-terraform-state"
+  value       = "openclaw-terraform-state-123456789012"
 }
 
 output "lock_table" {
@@ -165,7 +165,7 @@ project_name = "openclaw"
 
 | Scenario | Handling |
 |---|---|
-| S3 bucket name already taken globally | Script fails with clear error; user must choose a different name (e.g., suffix with account ID) |
+| S3 bucket name already taken globally | Resolved: suffixed with account ID (123456789012) |
 | AWS profile not configured | Script checks `aws sts get-caller-identity` first and exits with instructions |
 | DynamoDB table in CREATING state | Script waits for table to become ACTIVE before proceeding |
 | Re-running bootstrap after success | No-op for existing resources; safe to run multiple times |

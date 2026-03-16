@@ -10,11 +10,11 @@ To modify: Edit directly.
 
 Goal: Two team members using OpenClaw via dedicated Slack channels, running as isolated Docker containers on a single hardened EC2 host. Target cost: ~$10/mo total.
 
-### Epic 0: Terraform Foundation
-- [ ] S3 backend bucket for state (versioned, encrypted)
-- [ ] DynamoDB table for state locking
-- [ ] backend.tf configuration
-- [ ] Bootstrap script or separate mini-config to create the state bucket itself
+### Epic 0: Terraform Foundation ✅
+- [x] S3 backend bucket `openclaw-terraform-state-123456789012` (versioned, AES256, public access blocked)
+- [x] DynamoDB table `openclaw-terraform-locks` (PAY_PER_REQUEST)
+- [x] backend.tf configuration (S3 backend with state locking)
+- [x] Bootstrap shell script (`terraform/bootstrap.sh`, idempotent)
 
 ### Epic 1: VPC + Networking
 - [ ] VPC with /24 CIDR
