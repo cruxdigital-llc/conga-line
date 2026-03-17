@@ -5,24 +5,48 @@ Hardened AWS infrastructure for running [OpenClaw](https://github.com/openclaw/o
 ## Architecture
 
 ```
-Slack Cloud ←──WSS──→ OpenClaw Container (outbound-initiated, Socket Mode)
-                       ↕
-                    EC2 t4g.medium (AL2023, private subnet)
-                       │ Docker: per-user isolated containers
-                       │ Secrets: env vars from Secrets Manager
-                       │ Config: read-only openclaw.json (no secrets)
-                       │ Access: SSM only (no SSH, no public IP)
-                       ↕
-                    fck-nat (t4g.nano, ASG) → Internet (443 only)
+                         ┌─────────────────────────────────────────────────────────────┐
+                         │  EC2 t4g.medium  (AL2023, private subnet, SSM-only access)  │
+                         │                                                             │
+  Slack Cloud ──WSS──▶   │  ┌──────────────────────────────────┐                       │
+                         │  │  Router Container (Socket Mode)  │                       │
+                         │  │  • Receives all Slack events      │                       │
+                         │  │  • Filters bot echo / subtypes   │                       │
+                         │  │  • Routes by channel or member ID │                       │
+                         │  └──────┬───────────────┬───────────┘                       │
+                         │         │               │                                   │
+                         │    HTTP POST       HTTP POST                                │
+                         │    (signed)        (signed)                                 │
+                         │         ▼               ▼                                   │
+                         │  ┌─────────────┐ ┌─────────────┐                            │
+                         │  │  OpenClaw    │ │  OpenClaw    │  Per-user containers:     │
+                         │  │  User A      │ │  User B      │  • Isolated Docker net   │
+                         │  │  :18789      │ │  :18789      │  • cap-drop ALL          │
+                         │  └─────────────┘ └─────────────┘  • Secrets via env vars   │
+                         │                                   • 2GB mem / 1.5 CPU      │
+                         │                                                             │
+                         │  Encrypted EBS (KMS) ◄── data volumes                       │
+                         └───────────────────────────┬─────────────────────────────────┘
+                                                     │
+                                                     ▼
+                                          fck-nat (t4g.nano, ASG)
+                                                     │
+                                                     ▼
+                                             Internet (443 only)
+                                          ┌──────────┴──────────┐
+                                          │                     │
+                                     Anthropic API      Slack API / ECR
 ```
 
-- **Single EC2 host** with per-user Docker containers
-- **Zero ingress** — security group has no inbound rules
-- **No SSH** — access via AWS SSM Session Manager only
-- **Secrets off-disk** — API keys from Secrets Manager, injected as container env vars
-- **Encrypted EBS** — KMS-encrypted root volume
-- **Defense-in-depth** — NACLs + security groups + container hardening (cap-drop ALL, no-new-privileges, resource limits)
-- **~$10/mo total** for 2 users
+### Key design decisions
+
+- **Router + per-user containers** — Slack Socket Mode load-balances across connections to the same app, so each event must enter through a single router that fans out via HTTP to the correct user container.
+- **Zero ingress** — the security group has no inbound rules. All connections are outbound-initiated (WSS, HTTPS).
+- **No SSH** — access via AWS SSM Session Manager only.
+- **Secrets off-disk** — API keys from Secrets Manager, injected as container env vars.
+- **Encrypted EBS** — KMS-encrypted volumes with `prevent_destroy` on the key.
+- **Defense-in-depth** — NACLs + security groups + container hardening (cap-drop ALL, no-new-privileges, resource limits, isolated Docker networks).
+- **~$14/mo total** for 2 users.
 
 ## Quick Start
 
@@ -30,7 +54,7 @@ Slack Cloud ←──WSS──→ OpenClaw Container (outbound-initiated, Socket
 
 - AWS CLI configured with profile `openclaw`
 - Terraform >= 1.5
-- An OpenClaw Slack app (Socket Mode) with bot and app tokens
+- A Slack app with bot and app-level tokens
 
 ### 1. Bootstrap State Backend
 
@@ -161,6 +185,9 @@ Then ask an admin to restart your container to pick up the new secret.
 │   ├── PROJECT_STATUS.md
 │   ├── standards/security.md
 │   └── ...
+├── router/                      # Slack event router
+│   ├── package.json
+│   └── src/index.js             # Socket Mode → HTTP event fan-out
 ├── scripts/
 │   └── onboard-user.sh          # Self-service user onboarding
 ├── specs/                       # Feature specs and trace logs
@@ -171,16 +198,19 @@ Then ask an admin to restart your container to pick up the new secret.
     ├── providers.tf             # AWS provider config
     ├── variables.tf             # Input variables
     ├── outputs.tf               # Output values
+    ├── data.tf                  # Data sources + shared locals
     ├── vpc.tf                   # VPC, subnets, IGW, route tables
     ├── nat.tf                   # fck-nat module
     ├── security.tf              # Security group + NACLs
     ├── flow-logs.tf             # VPC Flow Logs
-    ├── iam.tf                   # Instance role + policies
-    ├── kms.tf                   # EBS encryption key
+    ├── iam.tf                   # Instance role + scoped policies
+    ├── kms.tf                   # EBS encryption key (prevent_destroy)
+    ├── ecr.tf                   # Container registry (prevent_destroy)
     ├── secrets.tf               # Secrets Manager entries
     ├── compute.tf               # EC2 instance + launch template
-    ├── user-data.sh.tftpl       # Cloud-init bootstrap script
-    └── data.tf                  # Data sources
+    ├── router.tf                # S3 objects for router + bootstrap
+    ├── monitoring.tf            # CloudWatch dashboard + alarms
+    └── user-data.sh.tftpl       # Cloud-init bootstrap script
 ```
 
 ## Security
@@ -188,9 +218,9 @@ Then ask an admin to restart your container to pick up the new secret.
 See [product-knowledge/standards/security.md](product-knowledge/standards/security.md) for the full security standards including:
 
 - Network controls (zero ingress, HTTPS-only egress, NACLs)
-- Container hardening (cap-drop ALL, no-new-privileges, resource limits, isolated networks)
+- Container hardening (cap-drop ALL, no-new-privileges, resource limits, isolated Docker networks)
 - Configuration integrity (hash-check monitoring)
-- IAM least-privilege with explicit deny-dangerous policy
+- IAM least-privilege with scoped ECR/S3 policies and explicit deny-dangerous policy
 - Isolation upgrade path (standard Docker → gVisor → per-user subnets → per-user VPCs)
 
 ## Cost
