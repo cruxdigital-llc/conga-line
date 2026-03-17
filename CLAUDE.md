@@ -58,6 +58,11 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 - `signingSecret` and `botToken` MUST be in `openclaw.json` (env var override doesn't work for these)
 - OpenClaw's health monitor triggers `stale-socket` restarts every ~30 min on shared apps due to Socket Mode event distribution
 
+## OpenClaw Behavioral Issues
+
+- **Billing/rate errors are cached**: When Anthropic returns a billing or rate limit error, OpenClaw's model fallback system caches the rejection. Even after the billing issue is resolved, the container must be restarted to clear the cached error state.
+- **Container restart requires router reconnection**: When a user container restarts, the router loses its Docker network connection and must be reconnected via `docker network connect`.
+
 ## Known Limitations
 
 - Docker rootless mode deferred — AL2023 lacks `fuse-overlayfs` and `slirp4netns` packages needed for rootless Docker CE. Using standard Docker with cap-drop ALL, no-new-privileges, and resource limits instead.

@@ -188,8 +188,8 @@ cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
 {
   "agents": {
     "defaults": {
-      "model": { "primary": "anthropic/claude-opus-4-6" },
-      "models": { "anthropic/claude-opus-4-6": {} },
+      "model": { "primary": "anthropic/claude-opus-4-6", "fallbacks": ["anthropic/claude-sonnet-4-6"] },
+      "models": { "anthropic/claude-opus-4-6": {}, "anthropic/claude-sonnet-4-6": {} },
       "workspace": "/home/node/.openclaw/data/workspace"
     }
   },
