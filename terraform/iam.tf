@@ -72,6 +72,16 @@ resource "aws_iam_role_policy" "secrets_read" {
           "ecr:BatchCheckLayerAvailability"
         ]
         Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "OpenClaw"
+          }
+        }
       }
     ]
   })

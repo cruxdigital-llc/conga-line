@@ -50,3 +50,58 @@ resource "aws_cloudwatch_metric_alarm" "config_violation" {
     Name = "${var.project_name}-config-integrity-alarm"
   }
 }
+
+# --- CloudWatch Dashboard ---
+
+resource "aws_cloudwatch_dashboard" "openclaw" {
+  dashboard_name = var.project_name
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Session Context Size (KB)"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.aws_region
+          metrics = [
+            for uid in keys(var.users) : [
+              "OpenClaw", "SessionSizeKB", "UserId", uid,
+              { label = uid, stat = "Maximum", period = 300 }
+            ]
+          ]
+          yAxis = {
+            left = { label = "KB", showUnits = false }
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Session Message Count"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.aws_region
+          metrics = [
+            for uid in keys(var.users) : [
+              "OpenClaw", "SessionMessageCount", "UserId", uid,
+              { label = uid, stat = "Maximum", period = 300 }
+            ]
+          ]
+          yAxis = {
+            left = { label = "Messages", showUnits = false }
+          }
+        }
+      }
+    ]
+  })
+}

@@ -100,7 +100,7 @@ echo "Images pulled from ECR"
 # 5. SETUP ROUTER
 # ============================================================
 
-mkdir -p /opt/openclaw/{config,scripts,router/src}
+mkdir -p /opt/openclaw/{bin,config,scripts,router/src}
 
 # Download router source from S3
 aws s3 cp s3://openclaw-terraform-state-167595588574/openclaw/router/package.json /opt/openclaw/router/package.json --region "$AWS_REGION"
@@ -188,9 +188,19 @@ cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
 {
   "agents": {
     "defaults": {
-      "model": { "primary": "anthropic/claude-opus-4-6", "fallbacks": ["anthropic/claude-sonnet-4-6"] },
-      "models": { "anthropic/claude-opus-4-6": {}, "anthropic/claude-sonnet-4-6": {} },
-      "workspace": "/home/node/.openclaw/data/workspace"
+      "model": { "primary": "anthropic/claude-opus-4-6", "fallbacks": [] },
+      "models": { "anthropic/claude-opus-4-6": { "params": { "cacheRetention": "long" } } },
+      "workspace": "/home/node/.openclaw/data/workspace",
+      "heartbeat": {
+        "every": "55m",
+        "lightContext": true,
+        "isolatedSession": true,
+        "target": "none"
+      },
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "55m"
+      }
     }
   },
   "tools": { "profile": "coding" },
@@ -324,7 +334,60 @@ WantedBy=timers.target
 CHECKTIMER
 
 # ============================================================
-# 8. CLOUDWATCH AGENT
+# 8. SESSION METRICS COLLECTION
+# ============================================================
+
+cat > /opt/openclaw/bin/publish-session-metrics.sh << 'SESSIONMETRICS'
+#!/bin/bash
+# Publish per-user session file sizes to CloudWatch
+REGION=$(ec2-metadata --availability-zone 2>/dev/null | awk '{print substr($2,1,length($2)-1)}')
+REGION=$${REGION:-us-east-2}
+
+for SESSION_DIR in /opt/openclaw/data/*/agents/main/sessions; do
+  USER_ID=$(echo "$SESSION_DIR" | sed 's|/opt/openclaw/data/||;s|/agents/main/sessions||')
+  [ -z "$USER_ID" ] && continue
+
+  # Find the active session file (largest .jsonl, excluding .reset files)
+  ACTIVE_SESSION=$(find "$SESSION_DIR" -maxdepth 1 -name '*.jsonl' ! -name '*.reset.*' -printf '%s %p\n' 2>/dev/null | sort -rn | head -1 | awk '{print $2}')
+  [ -z "$ACTIVE_SESSION" ] && continue
+
+  SIZE_BYTES=$(stat -c%s "$ACTIVE_SESSION" 2>/dev/null || echo 0)
+  SIZE_KB=$((SIZE_BYTES / 1024))
+  LINE_COUNT=$(wc -l < "$ACTIVE_SESSION" 2>/dev/null || echo 0)
+
+  aws cloudwatch put-metric-data \
+    --namespace "OpenClaw" \
+    --metric-data \
+      "[{\"MetricName\":\"SessionSizeKB\",\"Value\":$SIZE_KB,\"Unit\":\"Kilobytes\",\"Dimensions\":[{\"Name\":\"UserId\",\"Value\":\"$USER_ID\"}]},{\"MetricName\":\"SessionMessageCount\",\"Value\":$LINE_COUNT,\"Unit\":\"Count\",\"Dimensions\":[{\"Name\":\"UserId\",\"Value\":\"$USER_ID\"}]}]" \
+    --region "$REGION" 2>/dev/null
+done
+SESSIONMETRICS
+chmod +x /opt/openclaw/bin/publish-session-metrics.sh
+
+cat > /etc/systemd/system/openclaw-session-metrics.service << 'METRICSSVC'
+[Unit]
+Description=Publish OpenClaw session metrics to CloudWatch
+
+[Service]
+Type=oneshot
+ExecStart=/opt/openclaw/bin/publish-session-metrics.sh
+METRICSSVC
+
+cat > /etc/systemd/system/openclaw-session-metrics.timer << 'METRICSTIMER'
+[Unit]
+Description=Publish OpenClaw session metrics every 5 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+METRICSTIMER
+
+# ============================================================
+# 9. CLOUDWATCH AGENT (LOGS)
 # ============================================================
 
 dnf install -y amazon-cloudwatch-agent
@@ -358,13 +421,16 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCO
 CWCONFIG
 
 # ============================================================
-# 9. START ALL SERVICES
+# 10. START ALL SERVICES
 # ============================================================
 
 systemctl daemon-reload
 
 # Config integrity timer
 systemctl enable --now openclaw-config-check.timer
+
+# Session metrics timer
+systemctl enable --now openclaw-session-metrics.timer
 
 # CloudWatch agent
 systemctl enable --now amazon-cloudwatch-agent
