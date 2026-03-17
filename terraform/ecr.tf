@@ -12,6 +12,10 @@ resource "aws_ecr_repository" "openclaw" {
     kms_key         = aws_kms_key.ebs.arn
   }
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-ecr"
   }

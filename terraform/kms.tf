@@ -47,6 +47,10 @@ resource "aws_kms_key" "ebs" {
     ]
   })
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-ebs-key"
   }

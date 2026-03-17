@@ -57,21 +57,19 @@ resource "aws_iam_role_policy" "secrets_read" {
       },
       {
         Effect = "Allow"
-        Action = ["s3:GetObject"]
-        Resource = [
-          "arn:aws:s3:::openclaw-terraform-state-167595588574/openclaw/router/*",
-          "arn:aws:s3:::openclaw-terraform-state-167595588574/openclaw/bootstrap/*"
+        Action = [
+          "ecr:GetAuthorizationToken"
         ]
+        Resource = "*"
       },
       {
         Effect = "Allow"
         Action = [
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
-          "ecr:GetAuthorizationToken",
           "ecr:BatchCheckLayerAvailability"
         ]
-        Resource = "*"
+        Resource = aws_ecr_repository.openclaw.arn
       },
       {
         Effect   = "Allow"
@@ -84,6 +82,25 @@ resource "aws_iam_role_policy" "secrets_read" {
         }
       }
     ]
+  })
+}
+
+# --- S3 Read (bootstrap + router artifacts) ---
+
+resource "aws_iam_role_policy" "s3_read" {
+  name_prefix = "${var.project_name}-s3-"
+  role        = aws_iam_role.openclaw_host.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["s3:GetObject"]
+      Resource = [
+        "arn:aws:s3:::${local.state_bucket}/openclaw/router/*",
+        "arn:aws:s3:::${local.state_bucket}/openclaw/bootstrap/*"
+      ]
+    }]
   })
 }
 
