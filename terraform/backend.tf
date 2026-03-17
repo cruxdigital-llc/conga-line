@@ -5,6 +5,6 @@ terraform {
     region         = "us-east-2"
     dynamodb_table = "openclaw-terraform-locks"
     encrypt        = true
-    profile        = "123456789012_AdministratorAccess"
+    profile        = "openclaw"
   }
 }

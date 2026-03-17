@@ -11,15 +11,12 @@ PROJECT_NAME="${project_name}"
 # 1. OS HARDENING
 # ============================================================
 
-# Remove SSH server
 dnf remove -y openssh-server || true
 
-# Enable automatic security updates
 dnf install -y dnf-automatic
 sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
 systemctl enable --now dnf-automatic-install.timer
 
-# Sysctl hardening
 cat > /etc/sysctl.d/99-openclaw.conf << 'SYSCTL'
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.default.send_redirects = 0
@@ -32,15 +29,41 @@ SYSCTL
 sysctl --system
 
 # ============================================================
-# 2. INSTALL DOCKER
+# 2. INSTALL DOCKER + NODE.JS
 # ============================================================
 
-dnf install -y docker
+dnf install -y docker nodejs npm
 useradd -m -s /bin/bash openclaw || true
 usermod -aG docker openclaw
 systemctl enable --now docker
 
-echo "Docker installed and running"
+echo "Docker and Node.js installed"
+
+# ============================================================
+# 2b. MOUNT PERSISTENT DATA VOLUME
+# ============================================================
+
+DATA_DEVICE="/dev/xvdf"
+DATA_MOUNT="/opt/openclaw/data"
+
+while [ ! -b "$DATA_DEVICE" ]; do
+  echo "Waiting for data volume to attach..."
+  sleep 5
+done
+
+if ! blkid "$DATA_DEVICE" | grep -q ext4; then
+  echo "Formatting data volume (first time only)"
+  mkfs.ext4 "$DATA_DEVICE"
+fi
+
+mkdir -p "$DATA_MOUNT"
+mount "$DATA_DEVICE" "$DATA_MOUNT"
+
+if ! grep -q "$DATA_DEVICE" /etc/fstab; then
+  echo "$DATA_DEVICE $DATA_MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
+fi
+
+echo "Data volume mounted at $DATA_MOUNT"
 
 # ============================================================
 # 3. SHARED SECRETS
@@ -56,22 +79,79 @@ get_secret() {
 
 SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
 SLACK_APP_TOKEN=$(get_secret "openclaw/shared/slack-app-token")
+SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
 
 echo "Shared secrets fetched"
 
 # ============================================================
-# 4. PULL IMAGE (once, shared by all containers)
+# 4. PULL OPENCLAW IMAGE FROM ECR
 # ============================================================
 
-docker pull ghcr.io/openclaw/openclaw:latest
+ECR_REPO="123456789012.dkr.ecr.$AWS_REGION.amazonaws.com"
+aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REPO"
 
-echo "OpenClaw image pulled"
+OPENCLAW_IMAGE="$ECR_REPO/openclaw:latest"
+docker pull "$OPENCLAW_IMAGE"
+docker pull node:22-alpine
+
+echo "Images pulled from ECR"
 
 # ============================================================
-# 5. SETUP EACH USER
+# 5. SETUP ROUTER
 # ============================================================
 
-mkdir -p /opt/openclaw/{config,scripts}
+mkdir -p /opt/openclaw/{config,scripts,router/src}
+
+# Download router source from S3
+aws s3 cp s3://openclaw-terraform-state-123456789012/openclaw/router/package.json /opt/openclaw/router/package.json --region "$AWS_REGION"
+aws s3 cp s3://openclaw-terraform-state-123456789012/openclaw/router/src/index.js /opt/openclaw/router/src/index.js --region "$AWS_REGION"
+
+# Install router dependencies
+cd /opt/openclaw/router && npm install --production
+cd /
+
+# Generate routing config
+cat > /opt/openclaw/config/routing.json << 'ROUTINGEOF'
+${routing_json}
+ROUTINGEOF
+
+# Router env file
+cat > /opt/openclaw/config/router.env << ROUTERENV
+SLACK_APP_TOKEN=$SLACK_APP_TOKEN
+SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
+SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
+ROUTER_CONFIG=/opt/openclaw/config/routing.json
+ROUTERENV
+chmod 0400 /opt/openclaw/config/router.env
+
+# Router systemd unit
+cat > /etc/systemd/system/openclaw-router.service << 'ROUTERUNIT'
+[Unit]
+Description=OpenClaw Slack Event Router
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/openclaw/config/router.env
+ExecStartPre=-/usr/bin/docker rm -f openclaw-router
+ExecStart=/usr/bin/docker run --name openclaw-router --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --read-only -v /opt/openclaw/router:/app:ro -v /opt/openclaw/config/routing.json:/opt/openclaw/config/routing.json:ro -e SLACK_APP_TOKEN -e SLACK_BOT_TOKEN -e SLACK_SIGNING_SECRET -e ROUTER_CONFIG=/opt/openclaw/config/routing.json node:22-alpine node /app/src/index.js
+ExecStop=/usr/bin/docker stop openclaw-router
+StandardOutput=append:/var/log/openclaw-router.log
+StandardError=append:/var/log/openclaw-router.log
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
+ROUTERUNIT
+
+echo "Router configured"
+
+# ============================================================
+# 6. SETUP EACH USER
+# ============================================================
 
 %{ for user_id, user_config in users ~}
 echo "=== Setting up user: ${user_id} ==="
@@ -85,16 +165,16 @@ USER_SECRET_NAMES=$(aws secretsmanager list-secrets \
   --query 'SecretList[].Name' --output text \
   --region "$AWS_REGION" 2>/dev/null || echo "")
 
-# Build env file: shared secrets + user secrets
+# Build env file: shared bot token + signing secret + user secrets
+# Note: APP_TOKEN is NOT included — router holds it
 cat > /opt/openclaw/config/$USER_ID.env << ENVFILE
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
-SLACK_APP_TOKEN=$SLACK_APP_TOKEN
+SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
 ENVFILE
 
 if [ -n "$USER_SECRET_NAMES" ]; then
   for SECRET_PATH in $USER_SECRET_NAMES; do
     SECRET_VALUE=$(get_secret "$SECRET_PATH")
-    # Convert: openclaw/user_id/anthropic-api-key → ANTHROPIC_API_KEY
     SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|openclaw/$USER_ID/||" | tr '[:lower:]-' '[:upper:]_')
     echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/openclaw/config/$USER_ID.env
   done
@@ -103,7 +183,7 @@ chmod 0400 /opt/openclaw/config/$USER_ID.env
 
 echo "  Secrets loaded for $USER_ID"
 
-# --- Generate generic config with user's channel ---
+# --- Generate config — HTTP webhook mode (not Socket Mode) ---
 cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
 {
   "agents": {
@@ -127,29 +207,41 @@ cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
   },
   "channels": {
     "slack": {
-      "mode": "socket", "enabled": true, "userTokenReadOnly": true,
-      "groupPolicy": "allowlist", "streaming": "partial", "nativeStreaming": true,
+      "mode": "http",
+      "enabled": true,
+      "botToken": "$SLACK_BOT_TOKEN",
+      "signingSecret": "$SLACK_SIGNING_SECRET",
+      "webhookPath": "/slack/events",
+      "userTokenReadOnly": true,
+      "groupPolicy": "allowlist",
+      "streaming": "partial",
+      "nativeStreaming": true,
       "channels": { "$SLACK_CHANNEL": { "allow": true, "requireMention": false } }
     }
   },
-  "gateway": { "port": 18789, "mode": "local", "bind": "loopback" },
+  "gateway": { "port": 18789, "mode": "local", "bind": "lan" },
   "skills": { "install": { "nodeManager": "pnpm" } },
   "plugins": { "entries": { "slack": { "enabled": true } } }
 }
 OCCONFIG
 
 # --- Create persistent storage ---
-mkdir -p /opt/openclaw/data/$USER_ID/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
-chown -R 1000:1000 /opt/openclaw/data/$USER_ID
+if [ ! -d /opt/openclaw/data/$USER_ID ]; then
+  echo "  Creating new data directory for $USER_ID"
+  mkdir -p /opt/openclaw/data/$USER_ID/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
+  chown -R 1000:1000 /opt/openclaw/data/$USER_ID
+fi
 cp /opt/openclaw/config/$USER_ID-openclaw.json /opt/openclaw/data/$USER_ID/openclaw.json
 chown 1000:1000 /opt/openclaw/data/$USER_ID/openclaw.json
 
-# --- Store config hash baseline ---
+# --- Config hash baseline ---
 sha256sum /opt/openclaw/config/$USER_ID-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$USER_ID-openclaw.json.sha256
 chmod 0444 /opt/openclaw/config/$USER_ID-openclaw.json.sha256
 
 # --- Docker network ---
 docker network create --driver bridge "openclaw-$USER_ID" || true
+
+# --- Router will be connected to this network at startup (section 9) ---
 
 # --- Build -e flags from env file keys ---
 ENV_FLAGS=""
@@ -161,14 +253,14 @@ done < /opt/openclaw/config/$USER_ID.env
 cat > /etc/systemd/system/openclaw-$USER_ID.service << UNIT
 [Unit]
 Description=OpenClaw Gateway ($USER_ID)
-After=docker.service
+After=docker.service openclaw-router.service
 Requires=docker.service
 
 [Service]
 Type=simple
 EnvironmentFile=/opt/openclaw/config/$USER_ID.env
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$USER_ID
-ExecStart=/usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest
+ExecStart=/usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
 ExecStop=/usr/bin/docker stop openclaw-$USER_ID
 StandardOutput=append:/var/log/openclaw-$USER_ID.log
 StandardError=append:/var/log/openclaw-$USER_ID.log
@@ -185,7 +277,7 @@ echo "  User $USER_ID configured"
 %{ endfor ~}
 
 # ============================================================
-# 6. CONFIG INTEGRITY MONITORING
+# 7. CONFIG INTEGRITY MONITORING
 # ============================================================
 
 cat > /opt/openclaw/scripts/check-config-integrity.sh << 'CHECKSCRIPT'
@@ -232,7 +324,7 @@ WantedBy=timers.target
 CHECKTIMER
 
 # ============================================================
-# 7. CLOUDWATCH AGENT
+# 8. CLOUDWATCH AGENT
 # ============================================================
 
 dnf install -y amazon-cloudwatch-agent
@@ -266,7 +358,7 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCO
 CWCONFIG
 
 # ============================================================
-# 8. START ALL SERVICES
+# 9. START ALL SERVICES
 # ============================================================
 
 systemctl daemon-reload
@@ -277,14 +369,26 @@ systemctl enable --now openclaw-config-check.timer
 # CloudWatch agent
 systemctl enable --now amazon-cloudwatch-agent
 
-# Start all user containers
+# Start router FIRST — it connects to Slack
+systemctl enable --now openclaw-router.service
+sleep 5
+
+# Connect router to all user networks
+%{ for user_id, user_config in users ~}
+docker network connect "openclaw-${user_id}" openclaw-router 2>/dev/null || true
+%{ endfor ~}
+
+echo "Router connected to all user networks"
+
+# Start user containers
 %{ for user_id, user_config in users ~}
 systemctl enable openclaw-${user_id}.service
 systemctl start openclaw-${user_id}.service
 %{ endfor ~}
 
 echo "=== OpenClaw Bootstrap Complete: $(date -u) ==="
+echo "Router: openclaw-router (Socket Mode → HTTP forwarding)"
 %{ for user_id, user_config in users ~}
-echo "Service: openclaw-${user_id} (channel: ${user_config.slack_channel})"
+echo "Service: openclaw-${user_id} (channel: ${user_config.slack_channel}, HTTP webhook mode)"
 %{ endfor ~}
-echo "Check: systemctl status openclaw-<user_id>"
+echo "Check: systemctl status openclaw-router / openclaw-<member_id>"

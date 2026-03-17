@@ -62,3 +62,13 @@ output "config_check_interval" {
   description = "Config integrity check interval in minutes"
   value       = var.config_check_interval_minutes
 }
+
+output "data_volume_id" {
+  description = "Persistent EBS data volume ID"
+  value       = aws_ebs_volume.data.id
+}
+
+output "ecr_repository_url" {
+  description = "ECR repository URL for custom OpenClaw image"
+  value       = aws_ecr_repository.openclaw.repository_url
+}

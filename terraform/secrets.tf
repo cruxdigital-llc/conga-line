@@ -1,7 +1,8 @@
 locals {
   shared_secrets = {
-    "openclaw/shared/slack-bot-token" = "Slack bot token (xoxb-)"
-    "openclaw/shared/slack-app-token" = "Slack app token (xapp-)"
+    "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
+    "openclaw/shared/slack-app-token"      = "Slack app token (xapp-)"
+    "openclaw/shared/slack-signing-secret" = "Slack signing secret"
   }
 }
 

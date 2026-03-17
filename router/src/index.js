@@ -1,0 +1,137 @@
+import { SocketModeClient } from '@slack/socket-mode';
+import { readFileSync } from 'fs';
+import { createHmac } from 'crypto';
+
+// Load routing config
+const CONFIG_PATH = process.env.ROUTER_CONFIG || '/opt/openclaw/config/routing.json';
+let config;
+try {
+  config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+  console.log(`[router] Loaded config: ${Object.keys(config.channels).length} channels, ${Object.keys(config.members).length} members`);
+} catch (err) {
+  console.error(`[router] Failed to load config from ${CONFIG_PATH}:`, err.message);
+  process.exit(1);
+}
+
+const appToken = process.env.SLACK_APP_TOKEN;
+const signingSecret = process.env.SLACK_SIGNING_SECRET;
+if (!appToken) { console.error('[router] SLACK_APP_TOKEN required'); process.exit(1); }
+if (!signingSecret) { console.error('[router] SLACK_SIGNING_SECRET required'); process.exit(1); }
+
+// Socket Mode client
+const client = new SocketModeClient({ appToken });
+
+// Extract channel ID from various Slack event payload shapes
+function extractChannel(payload) {
+  return payload?.event?.channel
+    || payload?.event?.item?.channel
+    || payload?.channel?.id
+    || payload?.channel
+    || null;
+}
+
+// Extract user ID from various Slack event payload shapes
+function extractUser(payload) {
+  return payload?.event?.user
+    || payload?.user?.id
+    || payload?.user
+    || null;
+}
+
+// Find the target container URL for an event
+function resolveTarget(payload) {
+  const channel = extractChannel(payload);
+
+  if (channel) {
+    if (channel.startsWith('D')) {
+      const userId = extractUser(payload);
+      if (userId && config.members[userId]) {
+        return { target: config.members[userId], reason: `dm:${userId}` };
+      }
+    }
+    if (config.channels[channel]) {
+      return { target: config.channels[channel], reason: `channel:${channel}` };
+    }
+  }
+
+  // Fallback: user-based routing (app_home, etc.)
+  const userId = extractUser(payload);
+  if (userId && config.members[userId]) {
+    return { target: config.members[userId], reason: `user:${userId}` };
+  }
+
+  return null;
+}
+
+// Compute Slack request signature for the forwarded request
+function computeSlackSignature(timestamp, body) {
+  const sigBasestring = `v0:${timestamp}:${body}`;
+  const signature = createHmac('sha256', signingSecret)
+    .update(sigBasestring)
+    .digest('hex');
+  return `v0=${signature}`;
+}
+
+// Forward an event to the target container via HTTP POST
+// Sends in Events API HTTP format with proper Slack signature headers
+async function forwardEvent(target, payload) {
+  const body = JSON.stringify(payload);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signature = computeSlackSignature(timestamp, body);
+
+  try {
+    const res = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-slack-signature': signature,
+        'x-slack-request-timestamp': timestamp,
+      },
+      body,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error(`[router] Forward failed: ${res.status} → ${target} ${text}`);
+    }
+  } catch (err) {
+    console.error(`[router] Forward error to ${target}:`, err.message);
+  }
+}
+
+// Handle ALL incoming Slack events via the catch-all listener
+// SDK v2 emits specific event types that don't match the envelope type names,
+// so we use 'slack_event' which fires for everything
+client.on('slack_event', async ({ body, ack }) => {
+  // Ack immediately — Slack requires this within 3 seconds
+  if (ack) await ack();
+
+  const eventType = body?.event?.type || body?.type || 'unknown';
+  const route = resolveTarget(body);
+
+  if (route) {
+    console.log(`[router] ${eventType} → ${route.reason}`);
+    forwardEvent(route.target, body).catch(err =>
+      console.error(`[router] Async forward error:`, err.message)
+    );
+  } else {
+    const channel = extractChannel(body);
+    const user = extractUser(body);
+    console.log(`[router] No route: type=${eventType} channel=${channel} user=${user} — dropped`);
+  }
+});
+
+// Connection lifecycle
+client.on('connected', () => {
+  console.log('[router] Socket Mode connected to Slack');
+});
+
+client.on('disconnected', () => {
+  console.log('[router] Socket Mode disconnected — SDK will reconnect');
+});
+
+// Start
+console.log('[router] Starting OpenClaw Slack event router...');
+client.start().catch(err => {
+  console.error('[router] Fatal startup error:', err);
+  process.exit(1);
+});

@@ -28,7 +28,7 @@ Slack Cloud ←──WSS──→ OpenClaw Container (outbound-initiated, Socket
 
 ### Prerequisites
 
-- AWS CLI configured with profile `123456789012_AdministratorAccess`
+- AWS CLI configured with profile `openclaw`
 - Terraform >= 1.5
 - An OpenClaw Slack app (Socket Mode) with bot and app tokens
 
@@ -69,7 +69,7 @@ See [Adding a New User](#adding-a-new-user) below for full details.
 
 ```bash
 # Connect via SSM:
-aws ssm start-session --target <instance-id> --region us-east-2 --profile 123456789012_AdministratorAccess
+aws ssm start-session --target <instance-id> --region us-east-2 --profile openclaw
 
 # On the instance:
 docker ps

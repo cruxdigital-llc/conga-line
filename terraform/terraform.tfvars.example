@@ -1,6 +1,6 @@
 # AWS Configuration
 aws_region  = "us-east-2"
-aws_profile = "123456789012_AdministratorAccess"
+aws_profile = "openclaw"
 project_name = "openclaw"
 
 # Monitoring

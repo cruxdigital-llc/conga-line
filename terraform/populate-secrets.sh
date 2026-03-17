@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AWS_PROFILE="123456789012_AdministratorAccess"
+AWS_PROFILE="openclaw"
 AWS_REGION="us-east-2"
 
 echo "Populate shared OpenClaw secrets"
@@ -22,6 +22,7 @@ read_secret() {
 
 read_secret "openclaw/shared/slack-bot-token" "Slack Bot Token (xoxb-...)"
 read_secret "openclaw/shared/slack-app-token" "Slack App Token (xapp-...)"
+read_secret "openclaw/shared/slack-signing-secret" "Slack Signing Secret"
 
 echo ""
 echo "Shared secrets populated."

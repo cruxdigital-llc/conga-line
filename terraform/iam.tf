@@ -54,6 +54,24 @@ resource "aws_iam_role_policy" "secrets_read" {
         Effect   = "Allow"
         Action   = ["secretsmanager:ListSecrets"]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "arn:aws:s3:::openclaw-terraform-state-123456789012/openclaw/router/*",
+          "arn:aws:s3:::openclaw-terraform-state-123456789012/openclaw/bootstrap/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+        Resource = "*"
       }
     ]
   })

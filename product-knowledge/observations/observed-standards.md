@@ -30,3 +30,19 @@
 - **Suggested Severity**: should
 - **Confidence**: High
 - **Status**: pending
+
+### 2026-03-17 - Each OpenClaw user requires their own Slack app
+- **Source**: Implementation discovery — Slack Socket Mode load-balances events across connections, causing ~50% message loss with shared apps
+- **Context**: Attempted single-app multi-container architecture. Router prototype worked but blocked by OpenClaw HTTP webhook bug. Separate apps is the only working approach.
+- **Proposed Standard**: "Each OpenClaw user/container must have its own Slack app with dedicated app and bot tokens. Do not share Slack apps across containers."
+- **Suggested Severity**: must
+- **Confidence**: High
+- **Status**: pending
+
+### 2026-03-17 - Verify third-party HTTP mode before building on it
+- **Source**: Implementation discovery — spent significant time building a router only to find OpenClaw's HTTP webhook mode is broken in the compiled Docker image
+- **Context**: OpenClaw logs "http mode listening" but the route is never registered on the gateway HTTP server due to a module identity split bug
+- **Proposed Standard**: "Before building infrastructure that depends on a third-party feature, prototype and verify the feature works in isolation first."
+- **Suggested Severity**: should
+- **Confidence**: High
+- **Status**: pending

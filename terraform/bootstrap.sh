@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Configuration
-AWS_PROFILE="123456789012_AdministratorAccess"
+AWS_PROFILE="openclaw"
 AWS_REGION="us-east-2"
 STATE_BUCKET="openclaw-terraform-state-123456789012"
 LOCK_TABLE="openclaw-terraform-locks"

@@ -76,24 +76,26 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
 
 ---
 
-## Phase 2 — Onboarding Flow for User 2
+## Phase 2 — Multi-User with Separate Slack Apps
 
-Goal: A repeatable process to add a second employee. He provides his credentials and channel, and gets a working OpenClaw agent.
+Goal: Each user gets their own Slack app (Socket Mode), solving the event-splitting problem. Repeatable onboarding process.
 
-### Epic 5: Config Template + Onboarding Script
-- [ ] Base `openclaw.json` template with shared settings (gateway, Slack app, security policies)
-- [ ] Onboarding script that:
-  - [ ] Prompts for: Slack channel ID, Anthropic API key, and any skill credentials (Trello, etc.)
-  - [ ] Stores per-user secrets in Secrets Manager under `openclaw/{user_id}/*`
-  - [ ] Generates per-user openclaw.json from template + user inputs
-- [ ] Documentation: step-by-step onboarding guide for the new user
+### Why separate apps?
+Slack Socket Mode load-balances events across multiple connections to the same app. Two containers on one app means each only receives ~50% of messages. A router/proxy approach was prototyped but blocked by an OpenClaw bug (HTTP webhook mode has a module identity split — see `specs/2026-03-17_feature_slack-router/LEARNINGS.md`).
 
-### Epic 6: Multi-User Terraform
-- [ ] Terraform variables for user list/config (channel, secret ARNs, etc.)
-- [ ] For-each pattern to stamp out per-user resources (secrets, configs, containers, systemd units)
-- [ ] `terraform apply` deploys user 2's container alongside Aaron's
-- [ ] Validate: both containers running, isolated networks, correct channel routing
-- [ ] End-to-end test: messages in both channels → responses from correct containers only
+### Epic 5+6: Multi-User Onboarding (partially complete)
+- [x] `users` Terraform variable drives all per-user resources
+- [x] Dynamic secret discovery — users self-serve via `scripts/onboard-user.sh`
+- [x] User-data loops over users to create containers
+- [x] Persistent EBS data volume survives instance replacement
+- [x] SSM-based `scripts/add-user.sh` for adding users without instance replacement
+- [ ] **Switch to per-user Slack apps**: Each user entry in `users` variable includes their own `slack_app_token` and `slack_bot_token` secret paths
+- [ ] **Remove shared Slack tokens** — each user manages their own Slack app tokens
+- [ ] **Onboarding guide update**: Include Slack app creation steps per user
+- [ ] **Revert containers to Socket Mode** — remove router, revert `mode: "http"` to `mode: "socket"`
+- [ ] **Clean up router artifacts** — remove router container, systemd unit, S3 objects
+- [ ] Validate: both users receiving 100% of messages in their channels
+- [ ] End-to-end test: no missed messages, no stale-socket restarts
 
 ### Milestone: 2 users operational
 - [ ] Both users receiving responses in their respective Slack channels
@@ -104,6 +106,9 @@ Goal: A repeatable process to add a second employee. He provides his credentials
 
 ## Horizon 2 — Operational Maturity
 
+- [ ] **Slack event router (single app for all users)**: Blocked on OpenClaw HTTP webhook mode bug (module identity split). Router code exists at `router/src/index.js` and works correctly. Revisit when OpenClaw fixes HTTP mode or when we can build from source. Would eliminate the need for separate Slack apps per user. See `specs/2026-03-17_feature_slack-router/LEARNINGS.md`.
+- [ ] **Auto-approve Slack pairing on user setup**: Run `openclaw pairing approve slack <MEMBER_ID>` automatically after container starts for the first time. Currently requires manual SSM command. Could be added to the user-data bootstrap or the `add-user.sh` script.
+- [ ] **Self-service container restart via signal file**: User tells their OpenClaw agent to restart. Agent writes `.restart-requested` to its writable volume. A host-level systemd timer (or inotifywait) watches for the file, rebuilds the env file from Secrets Manager, and restarts the container. No Docker socket or systemd access exposed to the container. Enables users to add secrets and pick them up without admin involvement.
 - [ ] Automated secret rotation (Lambda or scheduled task)
 - [ ] EBS snapshot backups of OpenClaw memory/config
 - [ ] CloudWatch dashboard: per-container resource usage, NAT throughput, error rates
@@ -112,6 +117,8 @@ Goal: A repeatable process to add a second employee. He provides his credentials
 
 ## Horizon 3 — Hardening + Scale
 
+- [ ] **Proxy-based credential injection** (inspired by NVIDIA OpenShell) — agent process sees placeholder tokens, a proxy resolves to real secrets at request time. Secrets never exist in agent memory. Stronger than env var injection.
+- [ ] **Declarative policy engine** (inspired by NVIDIA OpenShell's OPA/Rego) — replace ad-hoc security hardening with formal policy definitions for filesystem, network, process access
 - [ ] **Docker rootless mode** — blocked by AL2023 missing `fuse-overlayfs` and `slirp4netns`; revisit with Docker CE on Ubuntu or custom AL2023 build
 - [ ] **Custom seccomp profile** — currently using Docker default; profile OpenClaw's syscall patterns and tighten
 - [ ] **Read-only config enforcement** — OpenClaw hot-reload writes .tmp files next to config; investigate disabling hot-reload or upstream fix for Issue #9627

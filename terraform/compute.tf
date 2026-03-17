@@ -34,11 +34,8 @@ resource "aws_launch_template" "openclaw" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = base64encode(templatefile("${path.module}/user-data.sh.tftpl", {
-    aws_region                    = var.aws_region
-    project_name                  = var.project_name
-    users                         = var.users
-    config_check_interval_minutes = var.config_check_interval_minutes
+  user_data = base64encode(templatefile("${path.module}/user-data-shim.sh.tftpl", {
+    aws_region = var.aws_region
   }))
 
   tag_specifications {
@@ -60,6 +57,24 @@ resource "aws_launch_template" "openclaw" {
   }
 }
 
+# --- Persistent Data Volume ---
+
+resource "aws_ebs_volume" "data" {
+  availability_zone = local.az
+  size              = 20
+  type              = "gp3"
+  encrypted         = true
+  kms_key_id        = aws_kms_key.ebs.arn
+
+  tags = {
+    Name = "${var.project_name}-data"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # --- EC2 Instance ---
 
 resource "aws_instance" "openclaw" {
@@ -73,4 +88,10 @@ resource "aws_instance" "openclaw" {
   tags = {
     Name = "${var.project_name}-host"
   }
+}
+
+resource "aws_volume_attachment" "data" {
+  device_name = "/dev/xvdf"
+  volume_id   = aws_ebs_volume.data.id
+  instance_id = aws_instance.openclaw.id
 }

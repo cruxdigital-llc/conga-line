@@ -7,7 +7,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 ## Key Context
 
 - **AWS Account**: 123456789012, region us-east-2
-- **AWS CLI Profile**: `123456789012_AdministratorAccess`
+- **AWS CLI Profile**: `openclaw`
 - **Architecture**: Single EC2 host (t4g.medium, AL2023) with per-user Docker containers in a zero-ingress VPC
 - **NAT**: fck-nat via `RaJiska/fck-nat/aws` module v1.4.0 (not AWS NAT Gateway)
 - **Terraform state**: S3 bucket `openclaw-terraform-state-123456789012` + DynamoDB `openclaw-terraform-locks`
@@ -50,6 +50,14 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 - Security standards in `product-knowledge/standards/security.md` — review before making security-relevant changes
 - Roadmap in `product-knowledge/ROADMAP.md`
 
+## Slack Architecture
+
+- **Each user needs their own Slack app** — Slack Socket Mode load-balances events across connections to the same app. Multiple containers on one app = missed messages (~50% go to wrong container).
+- A router/proxy approach was prototyped (`router/src/index.js`) but blocked by an OpenClaw bug — HTTP webhook mode has a module identity split where the route registers in one module instance but the gateway reads from a different empty instance. See `specs/2026-03-17_feature_slack-router/LEARNINGS.md`.
+- Each user's Slack app tokens (`xapp-`, `xoxb-`) go in their per-user secrets path (`openclaw/{member_id}/slack-app-token`, `openclaw/{member_id}/slack-bot-token`)
+- `signingSecret` and `botToken` MUST be in `openclaw.json` (env var override doesn't work for these)
+- OpenClaw's health monitor triggers `stale-socket` restarts every ~30 min on shared apps due to Socket Mode event distribution
+
 ## Known Limitations
 
 - Docker rootless mode deferred — AL2023 lacks `fuse-overlayfs` and `slirp4netns` packages needed for rootless Docker CE. Using standard Docker with cap-drop ALL, no-new-privileges, and resource limits instead.
@@ -58,7 +66,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 
 ## Debugging
 
-- Connect to instance: `aws ssm start-session --target <instance-id> --region us-east-2 --profile 123456789012_AdministratorAccess`
+- Connect to instance: `aws ssm start-session --target <instance-id> --region us-east-2 --profile openclaw`
 - Bootstrap log: `cat /var/log/openclaw-bootstrap.log`
 - Service status: `systemctl status openclaw-myagent`
 - Container logs: `docker logs openclaw-myagent --tail 50`
