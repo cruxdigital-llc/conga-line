@@ -33,15 +33,18 @@ variable "users" {
   type = map(object({
     slack_channel = string
     gateway_port  = number
+    iam_identity  = optional(string, "")
   }))
   default = {
     UA13HEGTS = {
       slack_channel = "C0ALL272SV8"
       gateway_port  = 18789
+      iam_identity  = "aaronstone"
     }
     U01UNLBCWNR = {
       slack_channel = "C0ALU1AG6ES"
       gateway_port  = 18790
+      iam_identity  = ""
     }
   }
 

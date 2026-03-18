@@ -1,0 +1,47 @@
+set -euxo pipefail
+AWS_REGION="{{.AWSRegion}}"
+MEMBER_ID="{{.MemberID}}"
+
+get_secret() {
+  aws secretsmanager get-secret-value \
+    --secret-id "$1" --query SecretString --output text --region "$AWS_REGION"
+}
+
+SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
+SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
+GOOGLE_CLIENT_ID=$(get_secret "openclaw/shared/google-client-id")
+GOOGLE_CLIENT_SECRET=$(get_secret "openclaw/shared/google-client-secret")
+
+cat > /opt/openclaw/config/$MEMBER_ID.env << EOF
+SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
+SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
+GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+EOF
+
+USER_SECRETS=$(aws secretsmanager list-secrets \
+  --filter Key=name,Values="openclaw/$MEMBER_ID/" \
+  --query 'SecretList[].Name' --output text \
+  --region "$AWS_REGION" 2>/dev/null || echo "")
+
+for SP in $USER_SECRETS; do
+  SV=$(get_secret "$SP")
+  SN=$(echo "$SP" | sed "s|openclaw/$MEMBER_ID/||" | tr '[:lower:]-' '[:upper:]_')
+  echo "$SN=$SV" >> /opt/openclaw/config/$MEMBER_ID.env
+done
+
+chmod 0400 /opt/openclaw/config/$MEMBER_ID.env
+
+ENV_FLAGS=""
+while IFS="=" read -r key value; do
+  [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
+done < /opt/openclaw/config/$MEMBER_ID.env
+
+# Extract existing port mapping from current systemd unit
+PORT_FLAG=$(grep -oP '\-p 127\.0\.0\.1:\d+:18789' /etc/systemd/system/openclaw-$MEMBER_ID.service || echo "")
+
+sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name openclaw-$MEMBER_ID --network openclaw-$MEMBER_ID $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/openclaw/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest|" /etc/systemd/system/openclaw-$MEMBER_ID.service
+
+systemctl daemon-reload
+systemctl restart openclaw-$MEMBER_ID
+echo "Secrets refreshed and container restarted for $MEMBER_ID"
