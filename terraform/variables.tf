@@ -39,7 +39,7 @@ variable "users" {
     UA13HEGTS = {
       slack_channel = "C0ALL272SV8"
       gateway_port  = 18789
-      iam_identity  = ""
+      iam_identity  = "aaronstone"
     }
     U01UNLBCWNR = {
       slack_channel = "C0ALU1AG6ES"
