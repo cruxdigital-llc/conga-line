@@ -72,3 +72,17 @@ output "ecr_repository_url" {
   description = "ECR repository URL for custom OpenClaw image"
   value       = aws_ecr_repository.openclaw.repository_url
 }
+
+output "ssm_port_forward_commands" {
+  description = "SSM port forwarding commands per user (local port always 18789 for OAuth redirects)"
+  value = {
+    for uid, cfg in var.users : uid => join(" ", [
+      "aws ssm start-session",
+      "--target ${aws_instance.openclaw.id}",
+      "--region ${var.aws_region}",
+      "--profile ${var.aws_profile}",
+      "--document-name AWS-StartPortForwardingSession",
+      "--parameters '{\"portNumber\":[\"${cfg.gateway_port}\"],\"localPortNumber\":[\"18789\"]}'"
+    ])
+  }
+}

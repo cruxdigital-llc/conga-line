@@ -1,7 +1,7 @@
 # Feature: SSM Port Forwarding for Web UI — Trace Log
 
 **Started**: 2026-03-17
-**Status**: Specified, ready for implementation
+**Status**: ✅ Verified and closed
 
 ## Active Personas
 - Architect — port binding, security surface, SSM document choice
@@ -32,7 +32,23 @@
 
 **QA**: Edge cases covered — port collisions (Terraform validation), container down (connection refused), instance replacement (re-run output). Uniqueness validation logic (`length == length(distinct(...))`) is correct. Transient connection refused during container startup is acceptable and self-resolving.
 
-## Standards Gate Report
+## Implementation Log
+- `terraform/variables.tf` — added `gateway_port` field, defaults (18789, 18790), range + uniqueness validation
+- `terraform/user-data.sh.tftpl` — added `-p 127.0.0.1:${user_config.gateway_port}:18789` to docker run, updated status echo
+- `terraform/outputs.tf` — added `ssm_port_forward_commands` output with per-user SSM commands
+- `terraform validate` — passed
+- `terraform plan` — 0 add, 1 change (bootstrap script S3 object), 0 destroy
+
+## Active Capabilities
+- Terraform CLI (validate, plan)
+
+## Verification Log
+- `terraform validate` — ✅ passed
+- `terraform plan` — ✅ 0 add, 1 change, 0 destroy (expected)
+- Diff review — 3 Terraform files, 43 insertions, 4 deletions, no extraneous changes
+- Spec alignment — implementation matches spec exactly, no divergences
+
+## Post-Implementation Standards Gate Report
 | Standard | Scope | Severity | Verdict |
 |---|---|---|---|
 | Zero ingress | network | must | ✅ PASSES — no inbound rules added; SSM uses outbound HTTPS |

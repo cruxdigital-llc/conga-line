@@ -3,6 +3,8 @@ locals {
     "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
     "openclaw/shared/slack-app-token"      = "Slack app token (xapp-)"
     "openclaw/shared/slack-signing-secret" = "Slack signing secret"
+    "openclaw/shared/google-client-id"     = "Google OAuth client ID"
+    "openclaw/shared/google-client-secret" = "Google OAuth client secret"
   }
 }
 

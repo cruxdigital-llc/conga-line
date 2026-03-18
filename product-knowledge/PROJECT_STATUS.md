@@ -33,13 +33,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - **Milestone**: Aaron's local gateway replaced by AWS deployment
 - [x] **Epics 5+6**: Multi-user onboarding + Slack router — complete
 
-### 2. SSM Port Forwarding for Web UI
-*Lead: Architect*
-- [x] **Spec complete**: `specs/2026-03-17_feature_ssm-port-forwarding/`
-- [ ] **Implementation**: Add `gateway_port` to users variable, publish container port, add SSM output commands
-- [ ] **Phase 2**: Per-user SSM documents, IAM restrictions, gateway auth tokens
-
-### 3. Backlog / Upcoming
+### 2. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 
@@ -49,6 +43,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements
 
 ## Recent Changes
+- 2026-03-17: SSM port forwarding for web UI — per-user `gateway_port`, localhost Docker binding, SSM output commands. Phase 2 (auth tokens, per-user SSM docs) pending.
 - 2026-03-17: Epics 5+6 complete — multi-user onboarding, Slack event router, patched OpenClaw image (HTTP webhook fix), ECR, persistent EBS volume
 - 2026-03-16: Epic 4 complete — config integrity timer, CloudWatch agent + alarm, SNS topic
 - 2026-03-16: Epic 3 complete — EC2 host running, OpenClaw container healthy, Slack socket mode connected, local gateway decommissioned
