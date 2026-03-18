@@ -33,7 +33,7 @@ variable "openclaw_image" {
   type        = string
 
   validation {
-    condition     = length(var.openclaw_image) > 0
+    condition     = length(trimspace(var.openclaw_image)) > 0
     error_message = "openclaw_image must be set. See terraform.tfvars.example for details."
   }
 }

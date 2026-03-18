@@ -53,7 +53,7 @@
 - **Proposed Standard**: "All environment-specific values (account IDs, Slack IDs, SSO URLs, usernames, deployed resource IDs) must be in gitignored config files with committed .example templates. Terraform backend.tf and terraform.tfvars are always gitignored."
 - **Suggested Severity**: must
 - **Confidence**: High
-- **Status**: pending
+- **Status**: enforced — implemented in PR #3 (open-source sanitization)
 
 ### 2026-03-18 - Docker image must be configurable, not hardcoded
 - **Source**: User correction — pointed out upstream ghcr.io/openclaw/openclaw:latest doesn't work without PR #49514 bugfix
@@ -61,4 +61,4 @@
 - **Proposed Standard**: "The OpenClaw Docker image name must be a configurable variable in both Terraform (openclaw_image) and CLI (config.toml openclaw_image). Never hardcode a specific registry/image."
 - **Suggested Severity**: must
 - **Confidence**: High
-- **Status**: pending
+- **Status**: enforced — implemented in PR #3 (open-source sanitization)

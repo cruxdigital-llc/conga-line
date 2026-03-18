@@ -46,11 +46,12 @@ func (c *Config) Save() error {
 	}
 
 	dir := filepath.Join(home, ".cruxclaw")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
-	f, err := os.Create(filepath.Join(dir, "config.toml"))
+	p := filepath.Join(dir, "config.toml")
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}

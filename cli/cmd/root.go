@@ -36,9 +36,11 @@ var rootCmd = &cobra.Command{
 			cfg.Region = flagRegion
 		}
 
-		// Auto-trigger init if required config is missing
+		// Auto-trigger init if required config is missing.
+		// NOTE: If a subcommand adds its own PersistentPreRun, Cobra will skip
+		// this one — use PersistentPreRunE on the subcommand and call the parent.
 		cmdName := cmd.Name()
-		if cmdName != "init" && cmdName != "help" && cmdName != "completion" {
+		if cmdName != "init" && cmdName != "help" && cmdName != "completion" && cmdName != "login" {
 			if missing := cfg.RequiredFieldsMissing(); len(missing) > 0 {
 				fmt.Printf("Missing configuration: %s\n", strings.Join(missing, ", "))
 				fmt.Println("Running first-time setup...")

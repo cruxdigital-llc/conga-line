@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AWS_PROFILE="${AWS_PROFILE:-openclaw}"
+AWS_PROFILE="${AWS_PROFILE:?Set AWS_PROFILE to your AWS CLI profile name}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 
 echo "Populate shared OpenClaw secrets"

@@ -52,5 +52,8 @@ func TextPromptWithDefault(label, defaultVal string) (string, error) {
 		}
 		return val, nil
 	}
-	return defaultVal, nil
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("failed to read input: %w", err)
+	}
+	return "", fmt.Errorf("no input received (stdin closed)")
 }

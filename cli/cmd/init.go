@@ -21,34 +21,59 @@ var initCmd = &cobra.Command{
 
 func runInit(cmd *cobra.Command, args []string) error {
 	existing := config.Load()
+	missing := make(map[string]bool)
+	for _, f := range existing.RequiredFieldsMissing() {
+		missing[f] = true
+	}
+	promptAll := cmd != nil && cmd.Name() == "init"
 
 	fmt.Println("CruxClaw Setup")
 	fmt.Println("==============")
 	fmt.Println()
 
-	region, err := ui.TextPromptWithDefault("AWS region", defaultOrVal(existing.Region, "us-east-2"))
-	if err != nil {
-		return err
+	region := existing.Region
+	if promptAll || missing["region"] {
+		var err error
+		region, err = ui.TextPromptWithDefault("AWS region", defaultOrVal(existing.Region, "us-east-2"))
+		if err != nil {
+			return err
+		}
 	}
 
-	ssoURL, err := ui.TextPromptWithDefault("AWS SSO start URL (e.g., https://your-org.awsapps.com/start/)", existing.SSOStartURL)
-	if err != nil {
-		return err
+	ssoURL := existing.SSOStartURL
+	if promptAll || missing["sso_start_url"] {
+		var err error
+		ssoURL, err = ui.TextPromptWithDefault("AWS SSO start URL (e.g., https://your-org.awsapps.com/start/)", existing.SSOStartURL)
+		if err != nil {
+			return err
+		}
 	}
 
-	accountID, err := ui.TextPromptWithDefault("AWS account ID", existing.SSOAccountID)
-	if err != nil {
-		return err
+	accountID := existing.SSOAccountID
+	if promptAll || missing["sso_account_id"] {
+		var err error
+		accountID, err = ui.TextPromptWithDefault("AWS account ID", existing.SSOAccountID)
+		if err != nil {
+			return err
+		}
 	}
 
-	roleName, err := ui.TextPromptWithDefault("SSO role/permission set name", defaultOrVal(existing.SSORoleName, "OpenClawUser"))
-	if err != nil {
-		return err
+	roleName := existing.SSORoleName
+	if promptAll || missing["sso_role_name"] {
+		var err error
+		roleName, err = ui.TextPromptWithDefault("SSO role/permission set name", defaultOrVal(existing.SSORoleName, "OpenClawUser"))
+		if err != nil {
+			return err
+		}
 	}
 
-	image, err := ui.TextPromptWithDefault("OpenClaw Docker image (e.g., <account>.dkr.ecr.<region>.amazonaws.com/openclaw:latest)", existing.OpenClawImage)
-	if err != nil {
-		return err
+	image := existing.OpenClawImage
+	if promptAll || missing["openclaw_image"] {
+		var err error
+		image, err = ui.TextPromptWithDefault("OpenClaw Docker image (e.g., <account>.dkr.ecr.<region>.amazonaws.com/openclaw:latest)", existing.OpenClawImage)
+		if err != nil {
+			return err
+		}
 	}
 
 	newCfg := &config.Config{
