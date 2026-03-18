@@ -46,6 +46,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements
 
 ## Recent Changes
+- 2026-03-18: Open-source sanitization — removed all hardcoded environment-specific values (account IDs, Slack IDs, SSO URLs, usernames). Gitignored `backend.tf` + `terraform.tfvars` with `.example` files. Added `openclaw_image` variable. New `cruxclaw init` command for first-run config. Consolidated README. See `specs/2026-03-18_feature_open-source-sanitization/`.
 - 2026-03-18: CruxClaw CLI — implemented. Go CLI with 13 commands (auth, secrets, connect, refresh, status, logs, admin). Terraform SSM parameters for discovery. GoReleaser + GitHub Actions for releases. See `specs/2026-03-18_feature_cruxclaw-cli/`.
 - 2026-03-17: SSM port forwarding for web UI — per-user `gateway_port`, localhost Docker binding, SSM output commands. Phase 2 (auth tokens, per-user SSM docs) pending.
 - 2026-03-17: Epics 5+6 complete — multi-user onboarding, Slack event router, patched OpenClaw image (HTTP webhook fix), ECR, persistent EBS volume

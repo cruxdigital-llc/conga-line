@@ -147,15 +147,17 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, struct {
-		MemberID     string
-		SlackChannel string
-		AWSRegion    string
-		GatewayPort  int
+		MemberID      string
+		SlackChannel  string
+		AWSRegion     string
+		GatewayPort   int
+		OpenClawImage string
 	}{
-		MemberID:     memberID,
-		SlackChannel: slackChannel,
-		AWSRegion:    cfg.Region,
-		GatewayPort:  gatewayPort,
+		MemberID:      memberID,
+		SlackChannel:  slackChannel,
+		AWSRegion:     cfg.Region,
+		GatewayPort:   gatewayPort,
+		OpenClawImage: cfg.OpenClawImage,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to render add-user script: %w", err)

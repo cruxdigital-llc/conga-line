@@ -1,0 +1,12 @@
+# Copy to backend.tf and fill in your values.
+# backend.tf is gitignored — Terraform does not support variables in backend blocks.
+terraform {
+  backend "s3" {
+    bucket         = "<project_name>-terraform-state-<account_id>"
+    key            = "<project_name>/terraform.tfstate"
+    region         = "<aws_region>"
+    dynamodb_table = "<project_name>-terraform-locks"
+    encrypt        = true
+    profile        = "<aws_profile>"
+  }
+}

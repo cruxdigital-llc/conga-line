@@ -8,21 +8,56 @@ import (
 )
 
 type Config struct {
-	Region       string `toml:"region"`
-	SSOStartURL  string `toml:"sso_start_url"`
-	SSOAccountID string `toml:"sso_account_id"`
-	SSORoleName  string `toml:"sso_role_name"`
-	InstanceTag  string `toml:"instance_tag"`
+	Region        string `toml:"region"`
+	SSOStartURL   string `toml:"sso_start_url"`
+	SSOAccountID  string `toml:"sso_account_id"`
+	SSORoleName   string `toml:"sso_role_name"`
+	InstanceTag   string `toml:"instance_tag"`
+	OpenClawImage string `toml:"openclaw_image"`
 }
 
 func Defaults() *Config {
 	return &Config{
-		Region:       "us-east-2",
-		SSOStartURL:  "https://example-sso.awsapps.com/start/",
-		SSOAccountID: "123456789012",
-		SSORoleName:  "OpenClawUser",
-		InstanceTag:  "openclaw-host",
+		InstanceTag: "openclaw-host",
 	}
+}
+
+func (c *Config) RequiredFieldsMissing() []string {
+	var missing []string
+	if c.Region == "" {
+		missing = append(missing, "region")
+	}
+	if c.SSOStartURL == "" {
+		missing = append(missing, "sso_start_url")
+	}
+	if c.SSOAccountID == "" {
+		missing = append(missing, "sso_account_id")
+	}
+	if c.OpenClawImage == "" {
+		missing = append(missing, "openclaw_image")
+	}
+	return missing
+}
+
+func (c *Config) Save() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Join(home, ".cruxclaw")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+
+	p := filepath.Join(dir, "config.toml")
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return toml.NewEncoder(f).Encode(c)
 }
 
 func Load() *Config {
@@ -52,6 +87,9 @@ func Load() *Config {
 	}
 	if v := os.Getenv("CRUXCLAW_INSTANCE_TAG"); v != "" {
 		cfg.InstanceTag = v
+	}
+	if v := os.Getenv("CRUXCLAW_OPENCLAW_IMAGE"); v != "" {
+		cfg.OpenClawImage = v
 	}
 
 	return cfg

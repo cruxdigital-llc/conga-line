@@ -37,3 +37,23 @@ func TextPrompt(label string) (string, error) {
 	}
 	return "", fmt.Errorf("no input received")
 }
+
+func TextPromptWithDefault(label, defaultVal string) (string, error) {
+	if defaultVal != "" {
+		fmt.Printf("%s [%s]: ", label, defaultVal)
+	} else {
+		fmt.Printf("%s: ", label)
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		val := strings.TrimSpace(scanner.Text())
+		if val == "" {
+			return defaultVal, nil
+		}
+		return val, nil
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("failed to read input: %w", err)
+	}
+	return "", fmt.Errorf("no input received (stdin closed)")
+}

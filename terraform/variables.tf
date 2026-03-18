@@ -28,6 +28,16 @@ variable "alert_email" {
   default     = ""
 }
 
+variable "openclaw_image" {
+  description = "Docker image for OpenClaw containers (ECR, GHCR, or Docker Hub). Required — upstream image needs PR #49514 fix."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.openclaw_image)) > 0
+    error_message = "openclaw_image must be set. See terraform.tfvars.example for details."
+  }
+}
+
 variable "users" {
   description = "Map of user IDs to their config. Admin adds entries, users self-serve secrets."
   type = map(object({
@@ -35,18 +45,7 @@ variable "users" {
     gateway_port  = number
     iam_identity  = optional(string, "")
   }))
-  default = {
-    UEXAMPLE01 = {
-      slack_channel = "CEXAMPLE01"
-      gateway_port  = 18789
-      iam_identity  = "exampleuser"
-    }
-    UEXAMPLE02 = {
-      slack_channel = "CEXAMPLE02"
-      gateway_port  = 18790
-      iam_identity  = ""
-    }
-  }
+  default = {}
 
   validation {
     condition = alltrue([
