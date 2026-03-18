@@ -685,3 +685,16 @@ Triggered on tag push (`v*`). Runs GoReleaser to build and publish to GitHub Rel
 | `terraform/ecr.tf` | CLI doesn't interact with ECR |
 | `terraform/router.tf` | Router unchanged |
 | `scripts/*.sh` | Shell scripts remain as-is for power users |
+
+---
+
+## Implementation Divergences from Spec
+
+| Spec Item | Implementation | Reason |
+|-----------|---------------|--------|
+| `charmbracelet/huh` for prompts | `golang.org/x/term` + manual prompts | Simpler, fewer dependencies |
+| `charmbracelet/lipgloss` for output | Plain `fmt` output | Not needed for v1 |
+| SSO OIDC device auth in `auth login` | Guided instructions (prints `aws configure sso` steps) | Pragmatic for v1; full OIDC flow deferred |
+| `scripts/` embedded via package-level `//go:embed` | Separate `scripts/embed.go` package | Go embed requires files in same package or below |
+| `remove-user.sh.tmpl` not in original spec | Added during implementation | Needed for `admin remove-user` command |
+| Input validation not in original spec | Added `validateMemberID`/`validateChannelID` in `root.go` | Security fix — prevents shell injection via `--user` flag |

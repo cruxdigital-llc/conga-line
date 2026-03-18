@@ -1,0 +1,12 @@
+set -euxo pipefail
+MEMBER_ID="{{.MemberID}}"
+
+echo "=== Removing user: $MEMBER_ID ==="
+
+systemctl stop openclaw-$MEMBER_ID || true
+systemctl disable openclaw-$MEMBER_ID || true
+rm -f /etc/systemd/system/openclaw-$MEMBER_ID.service
+systemctl daemon-reload
+docker network rm openclaw-$MEMBER_ID || true
+
+echo "=== User $MEMBER_ID removed from instance ==="
