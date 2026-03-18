@@ -36,7 +36,13 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 2. CruxClaw CLI — ✅ Complete
 - [x] All 11 phases implemented and verified. See `specs/2026-03-18_feature_cruxclaw-cli/`
 
-### 3. Backlog / Upcoming
+### 3. Open-Source Sanitization — Spec Complete, Ready for Implementation
+- [ ] Terraform: gitignore config files, add `openclaw_image` var, fix template plumbing, genericize scripts
+- [ ] CLI: new `cruxclaw init` command (interactive first-run setup), configurable Docker image, empty defaults
+- [ ] Docs: consolidate READMEs, scrub CLAUDE.md + ROADMAP.md
+- 23 files total (21 edits, 2 new). See `specs/2026-03-18_feature_open-source-sanitization/spec.md`
+
+### 4. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 
