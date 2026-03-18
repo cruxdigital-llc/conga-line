@@ -4,28 +4,15 @@ Cross-platform CLI for managing your OpenClaw deployment on AWS. Designed for no
 
 ## Install
 
-### Download via GitHub CLI
+### One-liner (recommended)
 
-The repo is private, so use `gh` to download:
+Requires the [GitHub CLI](https://cli.github.com/) (`brew install gh && gh auth login`):
 
 ```bash
-# Install GitHub CLI if needed
-brew install gh    # macOS
-gh auth login
-
-# Download and install (pick your platform)
-# macOS Apple Silicon:
-gh release download v0.0.1 --repo cruxdigital-llc/crux-claw --pattern '*darwin_arm64*'
-# macOS Intel:
-gh release download v0.0.1 --repo cruxdigital-llc/crux-claw --pattern '*darwin_amd64*'
-# Linux amd64:
-gh release download v0.0.1 --repo cruxdigital-llc/crux-claw --pattern '*linux_amd64*'
-
-# Extract and install
-tar xzf cruxclaw_*.tar.gz
-sudo mv cruxclaw /usr/local/bin/
-rm cruxclaw_*.tar.gz
+gh release download --repo cruxdigital-llc/crux-claw -p "cruxclaw_*$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" -O- | sudo tar xz -C /usr/local/bin cruxclaw
 ```
+
+This auto-detects your platform, downloads the latest release, and installs to `/usr/local/bin`.
 
 ### Build from source (for maintainers)
 
