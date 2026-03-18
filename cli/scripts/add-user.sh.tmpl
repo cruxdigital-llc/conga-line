@@ -12,7 +12,6 @@ get_secret() {
 echo "=== Setting up user: $MEMBER_ID ==="
 
 SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
-SLACK_APP_TOKEN=$(get_secret "openclaw/shared/slack-app-token")
 SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
 GOOGLE_CLIENT_ID=$(get_secret "openclaw/shared/google-client-id")
 GOOGLE_CLIENT_SECRET=$(get_secret "openclaw/shared/google-client-secret")
@@ -47,7 +46,9 @@ cat > /opt/openclaw/config/$MEMBER_ID-openclaw.json << OCCONFIG
       "workspace": "/home/node/.openclaw/data/workspace",
       "heartbeat": {
         "every": "55m",
-        "strategy": "noop"
+        "lightContext": true,
+        "isolatedSession": true,
+        "target": "none"
       },
       "contextPruning": {
         "mode": "cache-ttl",
@@ -72,12 +73,19 @@ cat > /opt/openclaw/config/$MEMBER_ID-openclaw.json << OCCONFIG
   },
   "channels": {
     "slack": {
-      "mode": "socket", "enabled": true, "userTokenReadOnly": true,
-      "groupPolicy": "allowlist", "streaming": "partial", "nativeStreaming": true,
+      "mode": "http",
+      "enabled": true,
+      "botToken": "$SLACK_BOT_TOKEN",
+      "signingSecret": "$SLACK_SIGNING_SECRET",
+      "webhookPath": "/slack/events",
+      "userTokenReadOnly": true,
+      "groupPolicy": "allowlist",
+      "streaming": "partial",
+      "nativeStreaming": true,
       "channels": { "$SLACK_CHANNEL": { "allow": true, "requireMention": false } }
     }
   },
-  "gateway": { "port": 18789, "mode": "local", "bind": "loopback" },
+  "gateway": { "port": 18789, "mode": "local", "bind": "lan" },
   "skills": { "install": { "nodeManager": "pnpm" } },
   "plugins": { "entries": { "slack": { "enabled": true } } }
 }
@@ -103,7 +111,7 @@ done < /opt/openclaw/config/$MEMBER_ID.env
 cat > /etc/systemd/system/openclaw-$MEMBER_ID.service << UNIT
 [Unit]
 Description=OpenClaw Gateway ($MEMBER_ID)
-After=docker.service
+After=docker.service openclaw-router.service
 Requires=docker.service
 
 [Service]
@@ -111,6 +119,7 @@ Type=simple
 EnvironmentFile=/opt/openclaw/config/$MEMBER_ID.env
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$MEMBER_ID
 ExecStart=/usr/bin/docker run --name openclaw-$MEMBER_ID --network openclaw-$MEMBER_ID -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest
+ExecStartPost=/usr/bin/docker network connect openclaw-$MEMBER_ID openclaw-router
 ExecStop=/usr/bin/docker stop openclaw-$MEMBER_ID
 StandardOutput=append:/var/log/openclaw-$MEMBER_ID.log
 StandardError=append:/var/log/openclaw-$MEMBER_ID.log
@@ -126,5 +135,19 @@ UNIT
 systemctl daemon-reload
 systemctl enable openclaw-$MEMBER_ID.service
 systemctl start openclaw-$MEMBER_ID.service
+
+# Update routing config with the new user's channel + member entry
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('/opt/openclaw/config/routing.json', 'utf-8'));
+  cfg.channels['$SLACK_CHANNEL'] = 'http://openclaw-$MEMBER_ID:18789/slack/events';
+  cfg.members['$MEMBER_ID'] = 'http://openclaw-$MEMBER_ID:18789/slack/events';
+  fs.writeFileSync('/opt/openclaw/config/routing.json', JSON.stringify(cfg, null, 2));
+"
+
+# Restart router to pick up new routing config, then connect it to the new user's network
+systemctl restart openclaw-router
+sleep 3
+docker network connect "openclaw-$MEMBER_ID" openclaw-router 2>/dev/null || true
 
 echo "=== User $MEMBER_ID setup complete ==="

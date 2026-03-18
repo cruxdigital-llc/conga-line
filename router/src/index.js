@@ -114,7 +114,7 @@ client.on('slack_event', async ({ body, ack }) => {
   if (eventType === 'app_mention') {
     return;
   }
-  if (subtype && ['bot_message', 'message_changed', 'message_deleted'].includes(subtype)) {
+  if (subtype && ['bot_message', 'message_changed', 'message_deleted', 'message_replied'].includes(subtype)) {
     return;
   }
   // Drop messages from bots (covers bot users that don't use the bot_message subtype)
