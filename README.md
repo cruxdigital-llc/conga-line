@@ -43,6 +43,7 @@ Hardened AWS infrastructure for running [OpenClaw](https://github.com/openclaw/o
 - **Router + per-user containers** — Slack Socket Mode load-balances across connections to the same app, so each event must enter through a single router that fans out via HTTP to the correct user container.
 - **Zero ingress** — the security group has no inbound rules. All connections are outbound-initiated (WSS, HTTPS).
 - **No SSH** — access via AWS SSM Session Manager only.
+- **Web UI via SSM port forwarding** — each user's gateway port is bound to `127.0.0.1` on the host, accessed via SSM tunnel. No ingress rules needed.
 - **Secrets off-disk** — API keys from Secrets Manager, injected as container env vars.
 - **Encrypted EBS** — KMS-encrypted volumes with `prevent_destroy` on the key.
 - **Defense-in-depth** — NACLs + security groups + container hardening (cap-drop ALL, no-new-privileges, resource limits, isolated Docker networks).
@@ -116,12 +117,15 @@ Users are identified by their Slack member ID (e.g., `UA13HEGTS`). Adding a user
    users = {
      UA13HEGTS = {
        slack_channel = "C0ALL272SV8"
+       gateway_port  = 18789
      }
      U01UNLBCWNR = {
        slack_channel = "C0ALU1AG6ES"
+       gateway_port  = 18790
      }
    }
    ```
+   Each user needs a unique `gateway_port` in the range 18789–18889.
 
 4. **Apply**:
    ```bash
@@ -161,6 +165,39 @@ The new user needs an IAM user in the AWS account with permissions to create sec
 
 4. **Test** — send a message in your Slack channel
 
+## Web UI Access
+
+Each user can access the OpenClaw web UI via SSM port forwarding — no VPC ingress changes required.
+
+### One-Command Connect
+
+```bash
+./scripts/connect-ui.sh <your-member-id>
+```
+
+This script:
+1. Looks up the instance ID and gateway port from Terraform output
+2. Fetches the gateway auth token from the instance
+3. Starts an SSM port forwarding tunnel on `localhost:18789`
+4. Polls for device pairing requests and auto-approves them
+
+Open `http://localhost:18789` in your browser and paste the token when prompted.
+
+### Manual Connect
+
+```bash
+# Get the SSM command from Terraform output:
+cd terraform && terraform output ssm_port_forward_commands
+
+# Run the command for your user:
+aws ssm start-session \
+  --target <instance-id> \
+  --region us-east-2 \
+  --profile openclaw \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["<your-port>"],"localPortNumber":["18789"]}'
+```
+
 ### Adding More Secrets Later
 
 Users can add secrets at any time by re-running the onboarding script or directly:
@@ -189,7 +226,10 @@ Then ask an admin to restart your container to pick up the new secret.
 │   ├── package.json
 │   └── src/index.js             # Socket Mode → HTTP event fan-out
 ├── scripts/
-│   └── onboard-user.sh          # Self-service user onboarding
+│   ├── add-user.sh              # Admin: add a new user to the deployment
+│   ├── connect-ui.sh            # Connect to OpenClaw web UI via SSM tunnel
+│   ├── onboard-user.sh          # Self-service user onboarding (secrets)
+│   └── refresh-user.sh          # Restart a user's container
 ├── specs/                       # Feature specs and trace logs
 └── terraform/                   # All infrastructure code
     ├── bootstrap.sh             # One-time state backend setup
@@ -230,6 +270,6 @@ See [product-knowledge/standards/security.md](product-knowledge/standards/securi
 | EC2 t4g.medium | ~$6 |
 | fck-nat t4g.nano | ~$3 |
 | EBS 20GB gp3 | ~$1.60 |
-| Secrets Manager (5) | ~$2 |
+| Secrets Manager (7) | ~$3 |
 | CloudWatch | ~$1 |
-| **Total** | **~$14** |
+| **Total** | **~$15** |
