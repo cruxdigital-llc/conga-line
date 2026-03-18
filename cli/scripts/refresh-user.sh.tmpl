@@ -40,7 +40,7 @@ done < /opt/openclaw/config/$MEMBER_ID.env
 # Extract existing port mapping from current systemd unit
 PORT_FLAG=$(grep -oP '\-p 127\.0\.0\.1:\d+:18789' /etc/systemd/system/openclaw-$MEMBER_ID.service || echo "")
 
-sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name openclaw-$MEMBER_ID --network openclaw-$MEMBER_ID $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/openclaw/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest|" /etc/systemd/system/openclaw-$MEMBER_ID.service
+sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name openclaw-$MEMBER_ID --network openclaw-$MEMBER_ID $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/openclaw/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS {{.OpenClawImage}}|" /etc/systemd/system/openclaw-$MEMBER_ID.service
 
 systemctl daemon-reload
 systemctl restart openclaw-$MEMBER_ID

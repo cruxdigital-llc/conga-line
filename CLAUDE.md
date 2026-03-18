@@ -6,23 +6,23 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 
 ## Key Context
 
-- **AWS Account**: 123456789012, region us-east-2
-- **AWS CLI Profile**: `openclaw`
 - **Architecture**: Single EC2 host (t4g.medium, AL2023) with per-user Docker containers in a zero-ingress VPC
 - **NAT**: fck-nat via `RaJiska/fck-nat/aws` module v1.4.0 (not AWS NAT Gateway)
-- **Terraform state**: S3 bucket `openclaw-terraform-state-123456789012` + DynamoDB `openclaw-terraform-locks`
+- **Terraform state**: S3 bucket `<project_name>-terraform-state-<account_id>` + DynamoDB `<project_name>-terraform-locks`
+- **Configuration**: Environment-specific values are in gitignored `terraform/terraform.tfvars` and `terraform/backend.tf`. See `.example` files.
 
 ## Working with Terraform
 
 - All Terraform files are in `terraform/`
 - Always `cd terraform` before running terraform commands
 - AWS provider is `~> 6.0` (v6.36.0) — required by the fck-nat module
-- Backend block values are hardcoded (Terraform limitation — no variables in backend blocks)
-- S3 bucket names must include the account ID suffix to avoid global namespace collisions
+- `backend.tf` is gitignored (Terraform limitation — no variables in backend blocks). Copy from `backend.tf.example`
+- `terraform.tfvars` is gitignored. Copy from `terraform.tfvars.example`
+- S3 bucket names include the account ID suffix to avoid global namespace collisions
 
 ## Secrets
 
-- Secrets are in AWS Secrets Manager under `openclaw/shared/*` and `openclaw/UEXAMPLE01/*`
+- Secrets are in AWS Secrets Manager under `openclaw/shared/*` and `openclaw/<member_id>/*`
 - Terraform creates secrets with `REPLACE_ME` placeholders + `ignore_changes` lifecycle
 - Real values populated via `terraform/populate-secrets.sh`
 - Never put real secret values in Terraform files or state
@@ -31,15 +31,14 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 
 ## OpenClaw-Specific
 
-- Docker image: `ghcr.io/openclaw/openclaw:latest`
+- Docker image: configured via `openclaw_image` variable in `terraform.tfvars` (upstream image requires PR #49514 fix)
 - Container runs as `node` user (uid 1000 inside container)
 - Config at `/opt/openclaw/data/{user_id}/openclaw.json` — no secrets in this file
 - Env file at `/opt/openclaw/config/{user_id}.env` — secrets, mode 0400
 - OpenClaw hot-reload writes `.tmp` files next to `openclaw.json` — the config directory must be writable by the container user
 - Container needs `NODE_OPTIONS="--max-old-space-size=1536"` to avoid V8 heap OOM
 - Container memory limit: 2GB (1.5GB was too low)
-- Users are keyed by Slack member ID (e.g., `UEXAMPLE01`), not username
-- Aaron's member ID: `UEXAMPLE01`, Slack channel: `CEXAMPLE01`
+- Users are keyed by Slack member ID, not username
 - Per-user secrets under `openclaw/{member_id}/*` — users self-serve via `cruxclaw secrets set`
 - Shared secrets (Slack tokens) under `openclaw/shared/*` — managed by Terraform
 
@@ -73,8 +72,8 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 
 ## Debugging
 
-- Connect to instance: `aws ssm start-session --target <instance-id> --region us-east-2 --profile openclaw`
+- Connect to instance: `aws ssm start-session --target <instance-id> --region <region> --profile <profile>`
 - Bootstrap log: `cat /var/log/openclaw-bootstrap.log`
-- Service status: `systemctl status openclaw-myagent`
-- Container logs: `docker logs openclaw-myagent --tail 50`
-- Journal: `journalctl -u openclaw-myagent --no-pager -n 50`
+- Service status: `systemctl status openclaw-<member_id>`
+- Container logs: `docker logs openclaw-<member_id> --tail 50`
+- Journal: `journalctl -u openclaw-<member_id> --no-pager -n 50`

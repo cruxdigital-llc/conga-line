@@ -43,11 +43,13 @@ var refreshCmd = &cobra.Command{
 
 		var buf bytes.Buffer
 		err = tmpl.Execute(&buf, struct {
-			MemberID  string
-			AWSRegion string
+			MemberID      string
+			AWSRegion     string
+			OpenClawImage string
 		}{
-			MemberID:  memberID,
-			AWSRegion: cfg.Region,
+			MemberID:      memberID,
+			AWSRegion:     cfg.Region,
+			OpenClawImage: cfg.OpenClawImage,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to render refresh script: %w", err)

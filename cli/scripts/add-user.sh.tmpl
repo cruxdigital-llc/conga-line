@@ -118,7 +118,7 @@ Requires=docker.service
 Type=simple
 EnvironmentFile=/opt/openclaw/config/$MEMBER_ID.env
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$MEMBER_ID
-ExecStart=/usr/bin/docker run --name openclaw-$MEMBER_ID --network openclaw-$MEMBER_ID -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest
+ExecStart=/usr/bin/docker run --name openclaw-$MEMBER_ID --network openclaw-$MEMBER_ID -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS {{.OpenClawImage}}
 ExecStartPost=/usr/bin/docker network connect openclaw-$MEMBER_ID openclaw-router
 ExecStop=/usr/bin/docker stop openclaw-$MEMBER_ID
 StandardOutput=append:/var/log/openclaw-$MEMBER_ID.log

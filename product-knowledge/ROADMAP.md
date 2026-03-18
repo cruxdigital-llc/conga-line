@@ -6,24 +6,24 @@ To modify: Edit directly.
 
 # Product Roadmap
 
-## Phase 1 — Get Aaron Live on AWS
+## Phase 1 — First User Live on AWS
 
-Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deployment. End state: message in Slack channel `CEXAMPLE01` → response from AWS-hosted container.
+Goal: Migrate a locally-running OpenClaw gateway to a hardened AWS deployment. End state: message in Slack channel → response from AWS-hosted container.
 
 ### Epic 0: Terraform Foundation ✅
-- [x] S3 backend bucket `openclaw-terraform-state-123456789012` (versioned, AES256, public access blocked)
-- [x] DynamoDB table `openclaw-terraform-locks` (PAY_PER_REQUEST)
+- [x] S3 backend bucket `<project_name>-terraform-state-<account_id>` (versioned, AES256, public access blocked)
+- [x] DynamoDB table `<project_name>-terraform-locks` (PAY_PER_REQUEST)
 - [x] backend.tf configuration (S3 backend with state locking)
 - [x] Bootstrap shell script (`terraform/bootstrap.sh`, idempotent)
 
 ### Epic 1: VPC + Networking ✅
-- [x] VPC `vpc-067ea4b769f7e994a` (10.0.0.0/24)
+- [x] VPC (10.0.0.0/24)
 - [x] Public subnet (10.0.0.0/28) for fck-nat instance
-- [x] Private subnet `subnet-06119ed58d773bd9d` (10.0.0.16/28) for OpenClaw host
+- [x] Private subnet (10.0.0.16/28) for OpenClaw host
 - [x] fck-nat (t4g.nano, ASG-backed, self-healing) via `RaJiska/fck-nat/aws` v1.4.0
 - [x] Route tables: private subnet 0.0.0.0/0 → fck-nat ENI
 - [x] NACLs: 443 egress + DNS + ephemeral return only
-- [x] Security group `sg-0f0c53457d0220f7c`: zero ingress, HTTPS + DNS egress
+- [x] Security group: zero ingress, HTTPS + DNS egress
 - [x] VPC Flow Logs → CloudWatch `/openclaw/vpc-flow-logs` (30-day retention)
 
 ### Epic 2: IAM + Secrets
@@ -31,7 +31,7 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
 - [ ] Deny-dangerous IAM policy (iam:*, ec2:RunInstances, lambda:*, etc.)
 - [ ] KMS key for EBS encryption
 - [ ] SSM instance profile policies
-- [ ] Secrets Manager secrets for Aaron:
+- [ ] Secrets Manager secrets per user:
   - [ ] Slack botToken (shared — will be reused by user 2)
   - [ ] Slack appToken (shared)
   - [ ] Anthropic API key
@@ -39,17 +39,17 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
   - [ ] Trello API key + token
   - [ ] Brave API key (if needed)
 
-### Epic 3: EC2 + Docker Bootstrap (Single User: Aaron) ✅
+### Epic 3: EC2 + Docker Bootstrap (Single User) ✅
 - [x] Launch template: t4g.medium (4GB RAM), Graviton, encrypted EBS, IMDSv2 hop limit 1
 - [x] User-data script: install Docker, pull OpenClaw image, fetch secrets from Secrets Manager
-- [x] Aaron's openclaw.json generated with:
-  - [x] Channel allowlist: `CEXAMPLE01`
+- [x] Per-user openclaw.json generated with:
+  - [x] Channel allowlist: `<channel_id>`
   - [x] Model: `anthropic/claude-opus-4-6`
   - [x] Skills: trello (credentials from env vars)
   - [x] Tools profile: coding
   - [x] Gateway: loopback
 - [x] Docker container with:
-  - [x] Isolated Docker network (`openclaw-myagent`)
+  - [x] Isolated Docker network (`openclaw-<member_id>`)
   - [x] Resource limits: 2GB memory, 1.5 CPU, 256 pids
   - [x] Non-root user (uid 1000, `node`)
   - [x] `--cap-drop=ALL`, `--security-opt=no-new-privileges`
@@ -68,9 +68,9 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
 - [x] CloudWatch alarm → SNS topic (`alert_email` configurable, no subscribers by default)
 - [ ] TODO: Move hash baseline to after OpenClaw's first boot settles (~60s delay) to avoid false positive
 
-### Milestone: Aaron's local gateway replaced by AWS deployment ✅
+### Milestone: First user's local gateway replaced by AWS deployment ✅
 - [x] Local OpenClaw gateway stopped (launchd unloaded)
-- [x] End-to-end test: message in `CEXAMPLE01` → response from AWS container
+- [x] End-to-end test: message in Slack channel → response from AWS container
 - [x] Slack socket mode connected, channel resolved
 - [x] Secrets in env file (root:root 0400), config integrity monitoring deferred to Epic 4
 
@@ -107,6 +107,8 @@ Single Slack app → Socket Mode connection held by the router (`router/src/inde
 
 - [x] **SSM port forwarding for web UI (Phase 1)**: Per-user `gateway_port` in `users` variable, Docker `-p 127.0.0.1:<port>:18789`, SSM output commands. See `specs/2026-03-17_feature_ssm-port-forwarding/`.
 - [x] **CruxClaw CLI**: Cross-platform Go CLI for non-technical users. AWS SSO auth, SSM Parameter Store discovery, embedded bash scripts. 13 commands: auth, secrets, connect, refresh, status, logs, admin (add-user, remove-user, list-users, cycle-host). See `specs/2026-03-18_feature_cruxclaw-cli/`.
+- [ ] **Git history rewrite before public release**: Git history contains real AWS account IDs, Slack member/channel IDs, SSO URLs, and usernames from before the OSS sanitization (PR #3). Run `git filter-repo` or equivalent before making the repo public. Alternatively, accept that the account ID is public info and scrub only PII (usernames, Slack IDs).
+- [ ] **Evaluate spec files for public repo**: `specs/` contains internal planning artifacts (requirements, plans, task lists, trace logs). Decide whether to keep (transparency), strip (noise reduction), or move to a wiki before open-sourcing.
 - [ ] **SSO permission sets for CLI access control**: Create scoped IAM Identity Center permission sets — `OpenClawUser` (secrets on own path, SSM StartSession, EC2 DescribeInstances) and `OpenClawAdmin` (SSM SendCommand, SSM PutParameter, EC2 Stop/Start, secrets on shared path). Currently all SSO users get `AdministratorAccess`. The CLI enforces user-level isolation (blocks `--user` override on non-admin commands), but IAM-level enforcement is defense-in-depth.
 - [ ] **SSM port forwarding Phase 2 — user isolation**: Per-user custom SSM documents (hardcode allowed port), IAM policy restrictions (each user can only use their document), gateway auth token (`openclaw/{user_id}/gateway-token` secret).
 - [x] **Slack event router (single app for all users)**: Deployed using forked OpenClaw image with HTTP webhook fix (PR openclaw/openclaw#49514). Router at `router/src/index.js`. Single Slack app, single Socket Mode connection, HTTP fan-out to per-user containers.
