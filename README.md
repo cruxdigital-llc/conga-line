@@ -1,276 +1,166 @@
-# OpenClaw AWS Deployment
+# CruxClaw CLI
 
-Hardened AWS infrastructure for running [OpenClaw](https://github.com/openclaw/openclaw) — an open-source, self-hosted autonomous AI assistant — securely for a small team.
+Cross-platform CLI for managing your OpenClaw deployment on AWS. Designed for non-technical users — all you need is AWS SSO credentials.
 
-## Architecture
+## Install
 
-```
-                         ┌─────────────────────────────────────────────────────────────┐
-                         │  EC2 t4g.medium  (AL2023, private subnet, SSM-only access)  │
-                         │                                                             │
-  Slack Cloud ──WSS──▶   │  ┌──────────────────────────────────┐                       │
-                         │  │  Router Container (Socket Mode)  │                       │
-                         │  │  • Receives all Slack events      │                       │
-                         │  │  • Filters bot echo / subtypes   │                       │
-                         │  │  • Routes by channel or member ID │                       │
-                         │  └──────┬───────────────┬───────────┘                       │
-                         │         │               │                                   │
-                         │    HTTP POST       HTTP POST                                │
-                         │    (signed)        (signed)                                 │
-                         │         ▼               ▼                                   │
-                         │  ┌─────────────┐ ┌─────────────┐                            │
-                         │  │  OpenClaw    │ │  OpenClaw    │  Per-user containers:     │
-                         │  │  User A      │ │  User B      │  • Isolated Docker net   │
-                         │  │  :18789      │ │  :18789      │  • cap-drop ALL          │
-                         │  └─────────────┘ └─────────────┘  • Secrets via env vars   │
-                         │                                   • 2GB mem / 1.5 CPU      │
-                         │                                                             │
-                         │  Encrypted EBS (KMS) ◄── data volumes                       │
-                         └───────────────────────────┬─────────────────────────────────┘
-                                                     │
-                                                     ▼
-                                          fck-nat (t4g.nano, ASG)
-                                                     │
-                                                     ▼
-                                             Internet (443 only)
-                                          ┌──────────┴──────────┐
-                                          │                     │
-                                     Anthropic API      Slack API / ECR
-```
-
-### Key design decisions
-
-- **Router + per-user containers** — Slack Socket Mode load-balances across connections to the same app, so each event must enter through a single router that fans out via HTTP to the correct user container.
-- **Zero ingress** — the security group has no inbound rules. All connections are outbound-initiated (WSS, HTTPS).
-- **No SSH** — access via AWS SSM Session Manager only.
-- **Web UI via SSM port forwarding** — each user's gateway port is bound to `127.0.0.1` on the host, accessed via SSM tunnel. No ingress rules needed.
-- **Secrets off-disk** — API keys from Secrets Manager, injected as container env vars.
-- **Encrypted EBS** — KMS-encrypted volumes with `prevent_destroy` on the key.
-- **Defense-in-depth** — NACLs + security groups + container hardening (cap-drop ALL, no-new-privileges, resource limits, isolated Docker networks).
-- **~$14/mo total** for 2 users.
-
-## For Users — CruxClaw CLI
-
-If you're a user (not managing the infrastructure), you don't need this repo. Install the CLI and get started:
+Download the binary for your platform from [GitHub Releases](https://github.com/cruxdigital-llc/crux-claw/releases), or build from source:
 
 ```bash
-# Install (macOS Apple Silicon)
-curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_darwin_arm64.tar.gz | tar xz
-sudo mv cruxclaw /usr/local/bin/
+cd cli
+go build -o cruxclaw .
+```
 
-# Also install prerequisites
-brew install awscli
-brew install --cask session-manager-plugin
+## Quick Start
 
-# Set up AWS SSO (one time)
+### 1. Authenticate
+
+```bash
+# First time — configure your SSO profile
 aws configure sso --profile openclaw
-export AWS_PROFILE=openclaw  # add to ~/.zshrc
+```
 
-# Log in and go
+When prompted, use these settings:
+
+| Setting | Value |
+|---------|-------|
+| SSO session name | `openclaw` |
+| SSO start URL | `https://example-sso.awsapps.com/start/` |
+| SSO region | `us-east-1` |
+| SSO registration scopes | (leave default) |
+
+Your browser will open to complete the SSO authorization. Then back in the terminal:
+
+| Setting | Value |
+|---------|-------|
+| CLI default client Region | `us-east-2` |
+| CLI default output format | `json` |
+| CLI profile name | `openclaw` |
+
+Then set it as your default profile so you don't need `--profile` on every command:
+
+```bash
+# Add to your ~/.zshrc or ~/.bashrc
+export AWS_PROFILE=openclaw
+
+# Log in (do this whenever your session expires)
 aws sso login
+```
+
+### 2. Verify your identity
+
+```bash
+cruxclaw auth status
+```
+
+Output:
+```
+Identity:  arn:aws:sts::123456789012:assumed-role/.../exampleuser
+Account:   123456789012
+User:      UEXAMPLE01
+```
+
+Your OpenClaw user is auto-detected from your IAM identity. No need to know your Slack member ID.
+
+### 3. Set your API key
+
+```bash
 cruxclaw secrets set anthropic-api-key
+# Prompts for value (hidden input)
+```
+
+### 4. Restart to pick up new secrets
+
+```bash
 cruxclaw refresh
+```
+
+### 5. Connect to the web UI
+
+```bash
 cruxclaw connect
-# Open http://localhost:18789
 ```
 
-See [`cli/README.md`](cli/README.md) for full documentation including all commands and SSO setup details.
+This starts an SSM tunnel to your container's gateway, displays the auth token, and auto-approves device pairing. Open http://localhost:18789 in your browser.
 
----
+## Commands
 
-## For Admins — Infrastructure Setup
+### User Commands
 
-Everything below is for infrastructure maintainers who manage the Terraform deployment.
+| Command | Description |
+|---------|-------------|
+| `cruxclaw auth login` | Show SSO setup instructions |
+| `cruxclaw auth status` | Show your AWS identity and OpenClaw user |
+| `cruxclaw secrets set <name>` | Create or update a secret |
+| `cruxclaw secrets list` | List your secrets |
+| `cruxclaw secrets delete <name>` | Delete a secret |
+| `cruxclaw connect` | Open SSM tunnel to web UI |
+| `cruxclaw refresh` | Restart container with fresh secrets |
+| `cruxclaw status` | Show container status and resource usage |
+| `cruxclaw logs` | Tail container logs |
 
-### Prerequisites
+### Admin Commands
 
-- AWS CLI configured with profile `openclaw`
-- Terraform >= 1.5
-- A Slack app with bot and app-level tokens
+| Command | Description |
+|---------|-------------|
+| `cruxclaw admin add-user <id> <channel>` | Provision a new user |
+| `cruxclaw admin list-users` | Show all provisioned users |
+| `cruxclaw admin remove-user <id>` | Remove a user |
+| `cruxclaw admin cycle-host` | Stop/start the EC2 instance |
 
-### 1. Bootstrap State Backend
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var) |
+| `--region` | AWS region (default: us-east-2) |
+| `--user` | Override auto-detected user |
+| `--verbose` | Verbose output |
+
+## Onboarding a New User
+
+### Admin does:
 
 ```bash
-cd terraform
-./bootstrap.sh
+# Provision the user on the instance
+cruxclaw admin add-user U01NEWUSER C0NEWCHAN
+
+# The CLI auto-assigns a gateway port and prompts for the user's SSO identity
 ```
 
-Creates the S3 bucket and DynamoDB table for Terraform state.
-
-### 2. Deploy Infrastructure
+### User does:
 
 ```bash
-terraform init
-terraform plan
-terraform apply
-```
+# 1. Set up AWS SSO (one time)
+aws configure sso --profile openclaw
+export AWS_PROFILE=openclaw
 
-### 3. Populate Shared Secrets
+# 2. Log in
+aws sso login
 
-```bash
-./populate-secrets.sh
-```
-
-Prompts for the shared Slack bot and app tokens.
-
-### 4. Onboard Yourself
-
-```bash
-# Add your user via CLI
-cruxclaw admin add-user <your-slack-member-id> <your-slack-channel>
-
-# Set your API key
+# 3. Add their Anthropic API key
 cruxclaw secrets set anthropic-api-key
 
-# Restart to pick up secrets
+# 4. Refresh to pick up the new secret
 cruxclaw refresh
-```
 
-See [Adding a New User](#adding-a-new-user) below for full details.
-
-### 5. Verify
-
-```bash
-cruxclaw status
-cruxclaw logs --lines 20
-cruxclaw connect
-# Open http://localhost:18789
-```
-
-## Adding a New User
-
-### Via CruxClaw CLI (recommended)
-
-```bash
-# Admin provisions the user (auto-assigns port, prompts for SSO identity)
-cruxclaw admin add-user <SLACK_MEMBER_ID> <SLACK_CHANNEL_ID>
-
-# Then share the user onboarding instructions from cli/README.md
-```
-
-The user installs the CLI and follows the [Quick Start](cli/README.md#quick-start) — no repo access needed.
-
-### Via Terraform + shell scripts (alternative)
-
-For admins who prefer to work directly with Terraform:
-
-1. **Get their Slack member ID** — In Slack: click their profile → three dots (⋯) → Copy member ID
-
-2. **Add them to `terraform/variables.tf`**:
-   ```hcl
-   users = {
-     UEXAMPLE01 = {
-       slack_channel = "CEXAMPLE01"
-       gateway_port  = 18789
-       iam_identity  = "exampleuser"
-     }
-     NEW_MEMBER_ID = {
-       slack_channel = "C0NEWCHANNEL"
-       gateway_port  = 18791
-       iam_identity  = "newuser"
-     }
-   }
-   ```
-
-3. **Apply**:
-   ```bash
-   cd terraform
-   terraform apply
-   terraform apply -replace=aws_instance.openclaw
-   ```
-
-4. **User onboards** via CLI: `cruxclaw secrets set anthropic-api-key && cruxclaw refresh`
-
-## Web UI Access
-
-Each user can access the OpenClaw web UI via SSM port forwarding — no VPC ingress changes required.
-
-### Via CruxClaw CLI (recommended)
-
-```bash
+# 5. Connect to the web UI
 cruxclaw connect
 ```
 
-Opens a tunnel, displays the gateway token, and auto-approves device pairing. Open http://localhost:18789 in your browser.
+## Prerequisites
 
-### Via SSM directly
+- **AWS CLI v2** with SSO configured
+- **session-manager-plugin** (required for `connect` command)
+  - macOS: `brew install --cask session-manager-plugin`
+  - Linux/Windows: [AWS docs](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 
-```bash
-aws ssm start-session \
-  --target <instance-id> \
-  --region us-east-2 \
-  --profile openclaw \
-  --document-name AWS-StartPortForwardingSession \
-  --parameters '{"portNumber":["<your-port>"],"localPortNumber":["18789"]}'
-```
+## How It Works
 
-### Adding More Secrets Later
+The CLI discovers infrastructure via AWS APIs — no Terraform, no repo clone needed:
 
-```bash
-cruxclaw secrets set <secret-name>
-cruxclaw refresh
-```
-
-## Project Structure
-
-```
-├── README.md
-├── CLAUDE.md                    # Instructions for Claude Code
-├── cli/                         # CruxClaw CLI (Go)
-│   ├── README.md                # User-facing install + usage docs
-│   ├── cmd/                     # Cobra commands
-│   ├── internal/                # AWS clients, discovery, tunnel, UI
-│   └── scripts/                 # Embedded bash templates
-├── product-knowledge/           # GLaDOS planning docs
-│   ├── MISSION.md
-│   ├── ROADMAP.md
-│   ├── TECH_STACK.md
-│   ├── PROJECT_STATUS.md
-│   ├── standards/security.md
-│   └── ...
-├── router/                      # Slack event router
-│   ├── package.json
-│   └── src/index.js             # Socket Mode → HTTP event fan-out
-├── specs/                       # Feature specs and trace logs
-└── terraform/                   # All infrastructure code
-    ├── bootstrap.sh             # One-time state backend setup
-    ├── populate-secrets.sh      # Shared secret population (admin)
-    ├── backend.tf               # S3 state backend
-    ├── providers.tf             # AWS provider config
-    ├── variables.tf             # Input variables
-    ├── outputs.tf               # Output values
-    ├── data.tf                  # Data sources + shared locals
-    ├── vpc.tf                   # VPC, subnets, IGW, route tables
-    ├── nat.tf                   # fck-nat module
-    ├── security.tf              # Security group + NACLs
-    ├── flow-logs.tf             # VPC Flow Logs
-    ├── iam.tf                   # Instance role + scoped policies
-    ├── kms.tf                   # EBS encryption key (prevent_destroy)
-    ├── ecr.tf                   # Container registry (prevent_destroy)
-    ├── secrets.tf               # Secrets Manager entries
-    ├── compute.tf               # EC2 instance + launch template
-    ├── router.tf                # S3 objects for router + bootstrap
-    ├── monitoring.tf            # CloudWatch dashboard + alarms
-    └── user-data.sh.tftpl       # Cloud-init bootstrap script
-```
-
-## Security
-
-See [product-knowledge/standards/security.md](product-knowledge/standards/security.md) for the full security standards including:
-
-- Network controls (zero ingress, HTTPS-only egress, NACLs)
-- Container hardening (cap-drop ALL, no-new-privileges, resource limits, isolated Docker networks)
-- Configuration integrity (hash-check monitoring)
-- IAM least-privilege with scoped ECR/S3 policies and explicit deny-dangerous policy
-- Isolation upgrade path (standard Docker → gVisor → per-user subnets → per-user VPCs)
-
-## Cost
-
-| Resource | Monthly |
-|---|---|
-| EC2 t4g.medium | ~$6 |
-| fck-nat t4g.nano | ~$3 |
-| EBS 20GB gp3 | ~$1.60 |
-| Secrets Manager (7) | ~$3 |
-| CloudWatch | ~$1 |
-| **Total** | **~$15** |
+- **Instance**: Found by EC2 tag `Name=openclaw-host`
+- **User config**: Stored in SSM Parameter Store at `/openclaw/users/{member_id}`
+- **Identity mapping**: Your SSO username maps to your member ID via `/openclaw/users/by-iam/{sso_name}`
+- **Secrets**: Managed in AWS Secrets Manager under `openclaw/{member_id}/`
+- **Remote operations**: Executed via SSM RunCommand (no SSH, no ingress)

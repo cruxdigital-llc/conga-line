@@ -4,28 +4,28 @@ Cross-platform CLI for managing your OpenClaw deployment on AWS. Designed for no
 
 ## Install
 
-### macOS (Apple Silicon)
+### Download via GitHub CLI
+
+The repo is private, so use `gh` to download:
 
 ```bash
-curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_darwin_arm64.tar.gz | tar xz
+# Install GitHub CLI if needed
+brew install gh    # macOS
+gh auth login
+
+# Download and install (pick your platform)
+# macOS Apple Silicon:
+gh release download v0.0.1 --repo cruxdigital-llc/crux-claw --pattern '*darwin_arm64*'
+# macOS Intel:
+gh release download v0.0.1 --repo cruxdigital-llc/crux-claw --pattern '*darwin_amd64*'
+# Linux amd64:
+gh release download v0.0.1 --repo cruxdigital-llc/crux-claw --pattern '*linux_amd64*'
+
+# Extract and install
+tar xzf cruxclaw_*.tar.gz
 sudo mv cruxclaw /usr/local/bin/
+rm cruxclaw_*.tar.gz
 ```
-
-### macOS (Intel)
-
-```bash
-curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_darwin_amd64.tar.gz | tar xz
-sudo mv cruxclaw /usr/local/bin/
-```
-
-### Linux (amd64)
-
-```bash
-curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_linux_amd64.tar.gz | tar xz
-sudo mv cruxclaw /usr/local/bin/
-```
-
-Or download any platform from [GitHub Releases](https://github.com/cruxdigital-llc/crux-claw/releases).
 
 ### Build from source (for maintainers)
 
