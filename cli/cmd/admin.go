@@ -53,6 +53,13 @@ func init() {
 	removeUserCmd.Flags().BoolVar(&adminForce, "force", false, "Skip confirmation")
 	removeUserCmd.Flags().BoolVar(&adminDeleteSecrets, "delete-secrets", false, "Also delete user secrets")
 
+	mapUserCmd := &cobra.Command{
+		Use:   "map-user <slack_member_id> <iam_identity>",
+		Short: "Create or update the IAM-to-user mapping so auth status resolves correctly",
+		Args:  cobra.ExactArgs(2),
+		RunE:  adminMapUserRun,
+	}
+
 	cycleHostCmd := &cobra.Command{
 		Use:   "cycle-host",
 		Short: "Stop and restart the EC2 instance (re-bootstraps all containers)",
@@ -60,7 +67,7 @@ func init() {
 	}
 	cycleHostCmd.Flags().BoolVar(&adminForce, "force", false, "Skip confirmation")
 
-	adminCmd.AddCommand(addUserCmd, listUsersCmd, removeUserCmd, cycleHostCmd)
+	adminCmd.AddCommand(addUserCmd, listUsersCmd, removeUserCmd, mapUserCmd, cycleHostCmd)
 	rootCmd.AddCommand(adminCmd)
 }
 
@@ -170,6 +177,29 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Setup failed:\n%s\n%s\n", result.Stdout, result.Stderr)
 	}
+	return nil
+}
+
+func adminMapUserRun(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	if err := ensureClients(ctx); err != nil {
+		return err
+	}
+
+	memberID := args[0]
+	iamIdentity := args[1]
+
+	if err := validateMemberID(memberID); err != nil {
+		return err
+	}
+
+	paramName := fmt.Sprintf("/openclaw/users/by-iam/%s", iamIdentity)
+	if err := awsutil.PutParameter(ctx, clients.SSM, paramName, memberID); err != nil {
+		return fmt.Errorf("failed to create IAM mapping: %w", err)
+	}
+
+	fmt.Printf("Mapped IAM identity '%s' → %s\n", iamIdentity, memberID)
+	fmt.Println("The user can now run `cruxclaw auth status` to verify.")
 	return nil
 }
 

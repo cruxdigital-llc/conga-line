@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
 	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
@@ -94,10 +95,10 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	headers := []string{"NAME", "LAST CHANGED"}
+	headers := []string{"NAME", "ENV VAR", "LAST CHANGED"}
 	var rows [][]string
 	for _, e := range entries {
-		rows = append(rows, []string{e.Name, e.LastChanged})
+		rows = append(rows, []string{e.Name, secretNameToEnvVar(e.Name), e.LastChanged})
 	}
 	ui.PrintTable(headers, rows)
 	return nil
@@ -128,4 +129,10 @@ func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Secret '%s' deleted.\n", args[0])
 	return nil
+}
+
+// secretNameToEnvVar converts a secret name to the environment variable name
+// injected into the container. Mirrors the bootstrap transform in user-data.sh.tftpl.
+func secretNameToEnvVar(name string) string {
+	return strings.NewReplacer("-", "_").Replace(strings.ToUpper(name))
 }
