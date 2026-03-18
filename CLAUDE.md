@@ -40,7 +40,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 - Container memory limit: 2GB (1.5GB was too low)
 - Users are keyed by Slack member ID (e.g., `UA13HEGTS`), not username
 - Aaron's member ID: `UA13HEGTS`, Slack channel: `C0ALL272SV8`
-- Per-user secrets under `openclaw/{member_id}/*` — users self-serve via `scripts/onboard-user.sh`
+- Per-user secrets under `openclaw/{member_id}/*` — users self-serve via `cruxclaw secrets set`
 - Shared secrets (Slack tokens) under `openclaw/shared/*` — managed by Terraform
 
 ## Planning

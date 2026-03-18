@@ -85,10 +85,10 @@ Slack Socket Mode load-balances events across multiple connections to the same a
 
 ### Epic 5+6: Multi-User Onboarding (partially complete)
 - [x] `users` Terraform variable drives all per-user resources
-- [x] Dynamic secret discovery — users self-serve via `scripts/onboard-user.sh`
+- [x] Dynamic secret discovery — users self-serve via `cruxclaw secrets set`
 - [x] User-data loops over users to create containers
 - [x] Persistent EBS data volume survives instance replacement
-- [x] SSM-based `scripts/add-user.sh` for adding users without instance replacement
+- [x] SSM-based user provisioning via `cruxclaw admin add-user` (replaces `scripts/add-user.sh`)
 - [ ] **Switch to per-user Slack apps**: Each user entry in `users` variable includes their own `slack_app_token` and `slack_bot_token` secret paths
 - [ ] **Remove shared Slack tokens** — each user manages their own Slack app tokens
 - [ ] **Onboarding guide update**: Include Slack app creation steps per user

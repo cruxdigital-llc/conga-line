@@ -49,7 +49,38 @@ Hardened AWS infrastructure for running [OpenClaw](https://github.com/openclaw/o
 - **Defense-in-depth** — NACLs + security groups + container hardening (cap-drop ALL, no-new-privileges, resource limits, isolated Docker networks).
 - **~$14/mo total** for 2 users.
 
-## Quick Start
+## For Users — CruxClaw CLI
+
+If you're a user (not managing the infrastructure), you don't need this repo. Install the CLI and get started:
+
+```bash
+# Install (macOS Apple Silicon)
+curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_darwin_arm64.tar.gz | tar xz
+sudo mv cruxclaw /usr/local/bin/
+
+# Also install prerequisites
+brew install awscli
+brew install --cask session-manager-plugin
+
+# Set up AWS SSO (one time)
+aws configure sso --profile openclaw
+export AWS_PROFILE=openclaw  # add to ~/.zshrc
+
+# Log in and go
+aws sso login
+cruxclaw secrets set anthropic-api-key
+cruxclaw refresh
+cruxclaw connect
+# Open http://localhost:18789
+```
+
+See [`cli/README.md`](cli/README.md) for full documentation including all commands and SSO setup details.
+
+---
+
+## For Admins — Infrastructure Setup
+
+Everything below is for infrastructure maintainers who manage the Terraform deployment.
 
 ### Prerequisites
 
@@ -85,7 +116,14 @@ Prompts for the shared Slack bot and app tokens.
 ### 4. Onboard Yourself
 
 ```bash
-../scripts/onboard-user.sh <your-slack-member-id> <your-aws-profile> us-east-2
+# Add your user via CLI
+cruxclaw admin add-user <your-slack-member-id> <your-slack-channel>
+
+# Set your API key
+cruxclaw secrets set anthropic-api-key
+
+# Restart to pick up secrets
+cruxclaw refresh
 ```
 
 See [Adding a New User](#adding-a-new-user) below for full details.
@@ -93,103 +131,71 @@ See [Adding a New User](#adding-a-new-user) below for full details.
 ### 5. Verify
 
 ```bash
-# Connect via SSM:
-aws ssm start-session --target <instance-id> --region us-east-2 --profile openclaw
-
-# On the instance:
-docker ps
-systemctl status openclaw-<member-id>
-docker logs openclaw-<member-id> --tail 20
+cruxclaw status
+cruxclaw logs --lines 20
+cruxclaw connect
+# Open http://localhost:18789
 ```
 
 ## Adding a New User
 
-Users are identified by their Slack member ID (e.g., `UA13HEGTS`). Adding a user is a two-step process split between admin and user.
+### Via CruxClaw CLI (recommended)
 
-### Admin Steps
+```bash
+# Admin provisions the user (auto-assigns port, prompts for SSO identity)
+cruxclaw admin add-user <SLACK_MEMBER_ID> <SLACK_CHANNEL_ID>
 
-1. **Create a Slack channel** for the new user
+# Then share the user onboarding instructions from cli/README.md
+```
 
-2. **Get their Slack member ID** — In Slack: click their profile → three dots (⋯) → Copy member ID
+The user installs the CLI and follows the [Quick Start](cli/README.md#quick-start) — no repo access needed.
 
-3. **Add them to `terraform/variables.tf`** (or a `.tfvars` file):
+### Via Terraform + shell scripts (alternative)
+
+For admins who prefer to work directly with Terraform:
+
+1. **Get their Slack member ID** — In Slack: click their profile → three dots (⋯) → Copy member ID
+
+2. **Add them to `terraform/variables.tf`**:
    ```hcl
    users = {
      UA13HEGTS = {
        slack_channel = "C0ALL272SV8"
        gateway_port  = 18789
+       iam_identity  = "aaronstone"
      }
-     U01UNLBCWNR = {
-       slack_channel = "C0ALU1AG6ES"
-       gateway_port  = 18790
+     NEW_MEMBER_ID = {
+       slack_channel = "C0NEWCHANNEL"
+       gateway_port  = 18791
+       iam_identity  = "newuser"
      }
    }
    ```
-   Each user needs a unique `gateway_port` in the range 18789–18889.
 
-4. **Apply**:
+3. **Apply**:
    ```bash
    cd terraform
    terraform apply
-   # Then replace the instance to pick up the new user-data:
    terraform apply -replace=aws_instance.openclaw
    ```
-   This will briefly restart all containers.
 
-5. **Share onboarding instructions** with the new user (see below).
-
-### User Steps
-
-The new user needs an IAM user in the AWS account with permissions to create secrets under their path.
-
-1. **Configure AWS CLI** with your credentials:
-   ```bash
-   aws configure --profile my-profile
-   ```
-
-2. **Run the onboarding script**:
-   ```bash
-   ./scripts/onboard-user.sh <your-member-id> <your-aws-profile> us-east-2
-   ```
-   The script will prompt for:
-   - **Anthropic API key** (required)
-   - **Any additional secrets** for skills you use (e.g., `trello-api-key`, `trello-token`)
-
-   Secret names are converted to env vars: `trello-api-key` → `TRELLO_API_KEY`
-
-3. **Ask your admin to restart your container**:
-   ```bash
-   # Admin runs via SSM:
-   systemctl restart openclaw-<member-id>
-   ```
-
-4. **Test** — send a message in your Slack channel
+4. **User onboards** via CLI: `cruxclaw secrets set anthropic-api-key && cruxclaw refresh`
 
 ## Web UI Access
 
 Each user can access the OpenClaw web UI via SSM port forwarding — no VPC ingress changes required.
 
-### One-Command Connect
+### Via CruxClaw CLI (recommended)
 
 ```bash
-./scripts/connect-ui.sh <your-member-id>
+cruxclaw connect
 ```
 
-This script:
-1. Looks up the instance ID and gateway port from Terraform output
-2. Fetches the gateway auth token from the instance
-3. Starts an SSM port forwarding tunnel on `localhost:18789`
-4. Polls for device pairing requests and auto-approves them
+Opens a tunnel, displays the gateway token, and auto-approves device pairing. Open http://localhost:18789 in your browser.
 
-Open `http://localhost:18789` in your browser and paste the token when prompted.
-
-### Manual Connect
+### Via SSM directly
 
 ```bash
-# Get the SSM command from Terraform output:
-cd terraform && terraform output ssm_port_forward_commands
-
-# Run the command for your user:
 aws ssm start-session \
   --target <instance-id> \
   --region us-east-2 \
@@ -200,21 +206,21 @@ aws ssm start-session \
 
 ### Adding More Secrets Later
 
-Users can add secrets at any time by re-running the onboarding script or directly:
 ```bash
-aws secretsmanager create-secret \
-  --name openclaw/<member-id>/<secret-name> \
-  --secret-string "<value>" \
-  --profile <your-profile> \
-  --region us-east-2
+cruxclaw secrets set <secret-name>
+cruxclaw refresh
 ```
-Then ask an admin to restart your container to pick up the new secret.
 
 ## Project Structure
 
 ```
 ├── README.md
 ├── CLAUDE.md                    # Instructions for Claude Code
+├── cli/                         # CruxClaw CLI (Go)
+│   ├── README.md                # User-facing install + usage docs
+│   ├── cmd/                     # Cobra commands
+│   ├── internal/                # AWS clients, discovery, tunnel, UI
+│   └── scripts/                 # Embedded bash templates
 ├── product-knowledge/           # GLaDOS planning docs
 │   ├── MISSION.md
 │   ├── ROADMAP.md
@@ -225,11 +231,6 @@ Then ask an admin to restart your container to pick up the new secret.
 ├── router/                      # Slack event router
 │   ├── package.json
 │   └── src/index.js             # Socket Mode → HTTP event fan-out
-├── scripts/
-│   ├── add-user.sh              # Admin: add a new user to the deployment
-│   ├── connect-ui.sh            # Connect to OpenClaw web UI via SSM tunnel
-│   ├── onboard-user.sh          # Self-service user onboarding (secrets)
-│   └── refresh-user.sh          # Restart a user's container
 ├── specs/                       # Feature specs and trace logs
 └── terraform/                   # All infrastructure code
     ├── bootstrap.sh             # One-time state backend setup

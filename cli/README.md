@@ -4,12 +4,44 @@ Cross-platform CLI for managing your OpenClaw deployment on AWS. Designed for no
 
 ## Install
 
-Download the binary for your platform from [GitHub Releases](https://github.com/cruxdigital-llc/crux-claw/releases), or build from source:
+### macOS (Apple Silicon)
+
+```bash
+curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_darwin_arm64.tar.gz | tar xz
+sudo mv cruxclaw /usr/local/bin/
+```
+
+### macOS (Intel)
+
+```bash
+curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_darwin_amd64.tar.gz | tar xz
+sudo mv cruxclaw /usr/local/bin/
+```
+
+### Linux (amd64)
+
+```bash
+curl -sL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_0.0.1_linux_amd64.tar.gz | tar xz
+sudo mv cruxclaw /usr/local/bin/
+```
+
+Or download any platform from [GitHub Releases](https://github.com/cruxdigital-llc/crux-claw/releases).
+
+### Build from source (for maintainers)
 
 ```bash
 cd cli
 go build -o cruxclaw .
 ```
+
+### Prerequisites
+
+You also need:
+
+- **AWS CLI v2** — [Install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+- **session-manager-plugin** (required for `cruxclaw connect`)
+  - macOS: `brew install --cask session-manager-plugin`
+  - Linux/Windows: [AWS install guide](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 
 ## Quick Start
 
@@ -147,13 +179,6 @@ cruxclaw refresh
 # 5. Connect to the web UI
 cruxclaw connect
 ```
-
-## Prerequisites
-
-- **AWS CLI v2** with SSO configured
-- **session-manager-plugin** (required for `connect` command)
-  - macOS: `brew install --cask session-manager-plugin`
-  - Linux/Windows: [AWS docs](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 
 ## How It Works
 
