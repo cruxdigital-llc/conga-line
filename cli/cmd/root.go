@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
 	"github.com/cruxdigital-llc/openclaw-template/cli/internal/config"
@@ -29,11 +30,26 @@ var rootCmd = &cobra.Command{
 	Use:   "cruxclaw",
 	Short: "CruxClaw — manage your OpenClaw deployment",
 	Long:  "Cross-platform CLI for managing OpenClaw containers on AWS via SSM.",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		cfg = config.Load()
 		if flagRegion != "" {
 			cfg.Region = flagRegion
 		}
+
+		// Auto-trigger init if required config is missing
+		cmdName := cmd.Name()
+		if cmdName != "init" && cmdName != "help" && cmdName != "completion" {
+			if missing := cfg.RequiredFieldsMissing(); len(missing) > 0 {
+				fmt.Printf("Missing configuration: %s\n", strings.Join(missing, ", "))
+				fmt.Println("Running first-time setup...")
+				fmt.Println()
+				if err := runInit(cmd, nil); err != nil {
+					return err
+				}
+				cfg = config.Load()
+			}
+		}
+		return nil
 	},
 }
 
@@ -66,14 +82,14 @@ func ensureClients(ctx context.Context) error {
 
 func validateMemberID(id string) error {
 	if !validIDPattern.MatchString(id) {
-		return fmt.Errorf("invalid member ID %q: must be uppercase alphanumeric (e.g., UA13HEGTS)", id)
+		return fmt.Errorf("invalid member ID %q: must be uppercase alphanumeric (e.g., UXXXXXXXXXX)", id)
 	}
 	return nil
 }
 
 func validateChannelID(id string) error {
 	if !validChannelPattern.MatchString(id) {
-		return fmt.Errorf("invalid channel ID %q: must be uppercase alphanumeric (e.g., C0ALL272SV8)", id)
+		return fmt.Errorf("invalid channel ID %q: must be uppercase alphanumeric (e.g., CXXXXXXXXXX)", id)
 	}
 	return nil
 }

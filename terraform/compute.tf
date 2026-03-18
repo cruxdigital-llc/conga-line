@@ -35,7 +35,8 @@ resource "aws_launch_template" "openclaw" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user-data-shim.sh.tftpl", {
-    aws_region = var.aws_region
+    aws_region   = var.aws_region
+    state_bucket = local.state_bucket
   }))
 
   tag_specifications {

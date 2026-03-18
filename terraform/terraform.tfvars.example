@@ -1,17 +1,22 @@
 # AWS Configuration
-aws_region  = "us-east-2"
-aws_profile = "openclaw"
+aws_region   = "us-east-2"
+aws_profile  = "your-aws-profile"
 project_name = "openclaw"
+
+# OpenClaw Docker image — REQUIRED
+# The upstream ghcr.io/openclaw/openclaw:latest does not work with Slack
+# without the fix from PR https://github.com/openclaw/openclaw/pull/49514.
+# Build your own image with that fix applied and push to ECR or another registry.
+# Example: openclaw_image = "123456789012.dkr.ecr.us-east-2.amazonaws.com/openclaw:latest"
+openclaw_image = ""
 
 # Monitoring
 config_check_interval_minutes = 5
 alert_email = ""  # Set to receive alert emails
 
 # Users — add entries to onboard new users
+# Keys are Slack Member IDs, found in Slack profile > "..." > "Copy member ID"
 users = {
-  UA13HEGTS = {
-    slack_channel = "C0ALL272SV8"
-  }
   # UXXXXXXXXXX = {
   #   slack_channel = "CXXXXXXXXXX"
   # }

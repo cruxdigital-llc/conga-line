@@ -46,3 +46,19 @@
 - **Suggested Severity**: should
 - **Confidence**: High
 - **Status**: pending
+
+### 2026-03-18 - Environment-specific values must never be hardcoded in committed files
+- **Source**: User explicit statement — "All details NEED to be made available in a variables file that is gitignored with an example"
+- **Context**: Preparing repository for open-source release; discovered 150+ hardcoded references across 22+ files
+- **Proposed Standard**: "All environment-specific values (account IDs, Slack IDs, SSO URLs, usernames, deployed resource IDs) must be in gitignored config files with committed .example templates. Terraform backend.tf and terraform.tfvars are always gitignored."
+- **Suggested Severity**: must
+- **Confidence**: High
+- **Status**: pending
+
+### 2026-03-18 - Docker image must be configurable, not hardcoded
+- **Source**: User correction — pointed out upstream ghcr.io/openclaw/openclaw:latest doesn't work without PR #49514 bugfix
+- **Context**: CLI scripts and Terraform templates had hardcoded image references that would fail for any new user
+- **Proposed Standard**: "The OpenClaw Docker image name must be a configurable variable in both Terraform (openclaw_image) and CLI (config.toml openclaw_image). Never hardcode a specific registry/image."
+- **Suggested Severity**: must
+- **Confidence**: High
+- **Status**: pending

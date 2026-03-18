@@ -6,24 +6,24 @@ To modify: Edit directly.
 
 # Product Roadmap
 
-## Phase 1 — Get Aaron Live on AWS
+## Phase 1 — First User Live on AWS
 
-Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deployment. End state: message in Slack channel `C0ALL272SV8` → response from AWS-hosted container.
+Goal: Migrate a locally-running OpenClaw gateway to a hardened AWS deployment. End state: message in Slack channel → response from AWS-hosted container.
 
 ### Epic 0: Terraform Foundation ✅
-- [x] S3 backend bucket `openclaw-terraform-state-167595588574` (versioned, AES256, public access blocked)
-- [x] DynamoDB table `openclaw-terraform-locks` (PAY_PER_REQUEST)
+- [x] S3 backend bucket `<project_name>-terraform-state-<account_id>` (versioned, AES256, public access blocked)
+- [x] DynamoDB table `<project_name>-terraform-locks` (PAY_PER_REQUEST)
 - [x] backend.tf configuration (S3 backend with state locking)
 - [x] Bootstrap shell script (`terraform/bootstrap.sh`, idempotent)
 
 ### Epic 1: VPC + Networking ✅
-- [x] VPC `vpc-067ea4b769f7e994a` (10.0.0.0/24)
+- [x] VPC (10.0.0.0/24)
 - [x] Public subnet (10.0.0.0/28) for fck-nat instance
-- [x] Private subnet `subnet-06119ed58d773bd9d` (10.0.0.16/28) for OpenClaw host
+- [x] Private subnet (10.0.0.16/28) for OpenClaw host
 - [x] fck-nat (t4g.nano, ASG-backed, self-healing) via `RaJiska/fck-nat/aws` v1.4.0
 - [x] Route tables: private subnet 0.0.0.0/0 → fck-nat ENI
 - [x] NACLs: 443 egress + DNS + ephemeral return only
-- [x] Security group `sg-0f0c53457d0220f7c`: zero ingress, HTTPS + DNS egress
+- [x] Security group: zero ingress, HTTPS + DNS egress
 - [x] VPC Flow Logs → CloudWatch `/openclaw/vpc-flow-logs` (30-day retention)
 
 ### Epic 2: IAM + Secrets
@@ -31,7 +31,7 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
 - [ ] Deny-dangerous IAM policy (iam:*, ec2:RunInstances, lambda:*, etc.)
 - [ ] KMS key for EBS encryption
 - [ ] SSM instance profile policies
-- [ ] Secrets Manager secrets for Aaron:
+- [ ] Secrets Manager secrets per user:
   - [ ] Slack botToken (shared — will be reused by user 2)
   - [ ] Slack appToken (shared)
   - [ ] Anthropic API key
@@ -39,17 +39,17 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
   - [ ] Trello API key + token
   - [ ] Brave API key (if needed)
 
-### Epic 3: EC2 + Docker Bootstrap (Single User: Aaron) ✅
+### Epic 3: EC2 + Docker Bootstrap (Single User) ✅
 - [x] Launch template: t4g.medium (4GB RAM), Graviton, encrypted EBS, IMDSv2 hop limit 1
 - [x] User-data script: install Docker, pull OpenClaw image, fetch secrets from Secrets Manager
-- [x] Aaron's openclaw.json generated with:
-  - [x] Channel allowlist: `C0ALL272SV8`
+- [x] Per-user openclaw.json generated with:
+  - [x] Channel allowlist: `<channel_id>`
   - [x] Model: `anthropic/claude-opus-4-6`
   - [x] Skills: trello (credentials from env vars)
   - [x] Tools profile: coding
   - [x] Gateway: loopback
 - [x] Docker container with:
-  - [x] Isolated Docker network (`openclaw-aaron`)
+  - [x] Isolated Docker network (`openclaw-<member_id>`)
   - [x] Resource limits: 2GB memory, 1.5 CPU, 256 pids
   - [x] Non-root user (uid 1000, `node`)
   - [x] `--cap-drop=ALL`, `--security-opt=no-new-privileges`
@@ -68,9 +68,9 @@ Goal: Migrate Aaron's locally-running OpenClaw gateway to a hardened AWS deploym
 - [x] CloudWatch alarm → SNS topic (`alert_email` configurable, no subscribers by default)
 - [ ] TODO: Move hash baseline to after OpenClaw's first boot settles (~60s delay) to avoid false positive
 
-### Milestone: Aaron's local gateway replaced by AWS deployment ✅
+### Milestone: First user's local gateway replaced by AWS deployment ✅
 - [x] Local OpenClaw gateway stopped (launchd unloaded)
-- [x] End-to-end test: message in `C0ALL272SV8` → response from AWS container
+- [x] End-to-end test: message in Slack channel → response from AWS container
 - [x] Slack socket mode connected, channel resolved
 - [x] Secrets in env file (root:root 0400), config integrity monitoring deferred to Epic 4
 

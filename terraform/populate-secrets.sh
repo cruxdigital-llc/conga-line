@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AWS_PROFILE="openclaw"
-AWS_REGION="us-east-2"
+AWS_PROFILE="${AWS_PROFILE:-openclaw}"
+AWS_REGION="${AWS_REGION:-us-east-2}"
 
 echo "Populate shared OpenClaw secrets"
 echo "================================"

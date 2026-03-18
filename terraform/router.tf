@@ -7,6 +7,8 @@ locals {
     project_name                  = var.project_name
     users                         = var.users
     config_check_interval_minutes = var.config_check_interval_minutes
+    openclaw_image                = var.openclaw_image
+    state_bucket                  = local.state_bucket
     routing_json = jsonencode({
       channels = { for uid, cfg in var.users : cfg.slack_channel => "http://openclaw-${uid}:18789/slack/events" }
       members  = { for uid, cfg in var.users : uid => "http://openclaw-${uid}:18789/slack/events" }

@@ -89,14 +89,18 @@ echo "Shared secrets fetched"
 # 4. PULL OPENCLAW IMAGE FROM ECR
 # ============================================================
 
-ECR_REPO="167595588574.dkr.ecr.$AWS_REGION.amazonaws.com"
-aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REPO"
+OPENCLAW_IMAGE="${openclaw_image}"
 
-OPENCLAW_IMAGE="$ECR_REPO/openclaw:latest"
+# Auto-login to ECR if image is from ECR
+ECR_DOMAIN=$(echo "$OPENCLAW_IMAGE" | cut -d'/' -f1)
+if [[ "$ECR_DOMAIN" == *".dkr.ecr."* ]]; then
+  aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_DOMAIN"
+fi
+
 docker pull "$OPENCLAW_IMAGE"
 docker pull node:22-alpine
 
-echo "Images pulled from ECR"
+echo "OpenClaw image pulled"
 
 # ============================================================
 # 5. SETUP ROUTER
@@ -105,8 +109,8 @@ echo "Images pulled from ECR"
 mkdir -p /opt/openclaw/{bin,config,scripts,router/src}
 
 # Download router source from S3
-aws s3 cp s3://openclaw-terraform-state-167595588574/openclaw/router/package.json /opt/openclaw/router/package.json --region "$AWS_REGION"
-aws s3 cp s3://openclaw-terraform-state-167595588574/openclaw/router/src/index.js /opt/openclaw/router/src/index.js --region "$AWS_REGION"
+aws s3 cp s3://${state_bucket}/openclaw/router/package.json /opt/openclaw/router/package.json --region "$AWS_REGION"
+aws s3 cp s3://${state_bucket}/openclaw/router/src/index.js /opt/openclaw/router/src/index.js --region "$AWS_REGION"
 
 # Install router dependencies
 cd /opt/openclaw/router && npm install --production
@@ -348,7 +352,7 @@ cat > /opt/openclaw/bin/publish-session-metrics.sh << 'SESSIONMETRICS'
 #!/bin/bash
 # Publish per-user session file sizes to CloudWatch
 REGION=$(ec2-metadata --availability-zone 2>/dev/null | awk '{print substr($2,1,length($2)-1)}')
-REGION=$${REGION:-us-east-2}
+REGION=$${REGION:-${aws_region}}
 
 for SESSION_DIR in /opt/openclaw/data/*/agents/main/sessions; do
   USER_ID=$(echo "$SESSION_DIR" | sed 's|/opt/openclaw/data/||;s|/agents/main/sessions||')

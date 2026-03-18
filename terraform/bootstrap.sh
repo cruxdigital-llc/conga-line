@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Configuration
-AWS_PROFILE="openclaw"
-AWS_REGION="us-east-2"
-STATE_BUCKET="openclaw-terraform-state-167595588574"
-LOCK_TABLE="openclaw-terraform-locks"
+# Configuration — override via environment variables or pass project name as $1
+PROJECT_NAME="${1:-openclaw}"
+AWS_PROFILE="${AWS_PROFILE:-openclaw}"
+AWS_REGION="${AWS_REGION:-us-east-2}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -26,6 +25,10 @@ aws sts get-caller-identity --profile "$AWS_PROFILE" --region "$AWS_REGION" >/de
 
 ACCOUNT_ID=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query Account --output text)
 info "Authenticated as account: $ACCOUNT_ID"
+
+# Derive resource names (matches terraform/data.tf pattern)
+STATE_BUCKET="${PROJECT_NAME}-terraform-state-${ACCOUNT_ID}"
+LOCK_TABLE="${PROJECT_NAME}-terraform-locks"
 
 # Create S3 bucket
 if aws s3api head-bucket --bucket "$STATE_BUCKET" --profile "$AWS_PROFILE" 2>/dev/null; then
@@ -94,4 +97,4 @@ info "S3 Bucket:        $STATE_BUCKET (versioning: $BUCKET_VERSIONING)"
 info "DynamoDB Table:   $LOCK_TABLE (status: $TABLE_STATUS)"
 info "Region:           $AWS_REGION"
 echo ""
-info "Next step: cd terraform && terraform init"
+info "Next step: cp backend.tf.example backend.tf && edit values, then terraform init"
