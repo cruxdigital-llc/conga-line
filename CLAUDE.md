@@ -53,7 +53,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 ## Slack Architecture
 
 - **Each user needs their own Slack app** — Slack Socket Mode load-balances events across connections to the same app. Multiple containers on one app = missed messages (~50% go to wrong container).
-- A router/proxy approach was prototyped (`router/src/index.js`) but blocked by an OpenClaw bug — HTTP webhook mode has a module identity split where the route registers in one module instance but the gateway reads from a different empty instance. See `specs/2026-03-17_feature_slack-router/LEARNINGS.md`.
+- A Slack event router (`router/src/index.js`) fans out Socket Mode events to per-user containers via HTTP webhook mode. This was initially blocked by an OpenClaw module identity split bug, now fixed in our fork (PR openclaw/openclaw#49514). The deployed image includes this fix.
 - Each user's Slack app tokens (`xapp-`, `xoxb-`) go in their per-user secrets path (`openclaw/{member_id}/slack-app-token`, `openclaw/{member_id}/slack-bot-token`)
 - `signingSecret` and `botToken` MUST be in `openclaw.json` (env var override doesn't work for these)
 - OpenClaw's health monitor triggers `stale-socket` restarts every ~30 min on shared apps due to Socket Mode event distribution
