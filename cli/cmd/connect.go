@@ -125,36 +125,28 @@ func pollDevicePairing(ctx context.Context, instanceID, memberID string) {
 
 	for i := 0; i < 30; i++ {
 		select {
-		case <-time.After(10 * time.Second):
+		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
 			return
 		}
 
-		listScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices list 2>&1", memberID)
+		listScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices list --json 2>&1", memberID)
 		result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, listScript, 30*time.Second)
 		if err != nil {
 			continue
 		}
 
-		if !strings.Contains(result.Stdout, "Pending") {
+		if !strings.Contains(result.Stdout, "pending") && !strings.Contains(result.Stdout, "Pending") {
 			continue
 		}
 
-		// Extract UUID
-		lines := strings.Split(result.Stdout, "\n")
-		for _, line := range lines {
-			if !strings.Contains(line, "Pending") {
-				continue
-			}
-			// Find UUID pattern
-			for _, word := range strings.Fields(line) {
-				if len(word) == 36 && strings.Count(word, "-") == 4 {
-					approveScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices approve %s 2>&1", memberID, word)
-					awsutil.RunCommand(ctx, clients.SSM, instanceID, approveScript, 30*time.Second)
-					fmt.Printf("Device approved: %s. Refresh your browser.\n", word)
-					return
-				}
-			}
+		approveScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices approve --latest 2>&1", memberID)
+		result, err = awsutil.RunCommand(ctx, clients.SSM, instanceID, approveScript, 30*time.Second)
+		if err != nil {
+			continue
 		}
+
+		fmt.Printf("Device paired! Refresh your browser.\n")
+		return
 	}
 }
