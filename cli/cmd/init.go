@@ -70,7 +70,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	image := existing.OpenClawImage
 	if promptAll || missing["openclaw_image"] {
 		var err error
-		image, err = ui.TextPromptWithDefault("OpenClaw Docker image (e.g., <account>.dkr.ecr.<region>.amazonaws.com/openclaw:latest)", existing.OpenClawImage)
+		image, err = ui.TextPromptWithDefault("OpenClaw Docker image (must include PR #49514 fix)", existing.OpenClawImage)
 		if err != nil {
 			return err
 		}
