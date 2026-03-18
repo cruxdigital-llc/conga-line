@@ -80,6 +80,8 @@ get_secret() {
 SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
 SLACK_APP_TOKEN=$(get_secret "openclaw/shared/slack-app-token")
 SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
+GOOGLE_CLIENT_ID=$(get_secret "openclaw/shared/google-client-id")
+GOOGLE_CLIENT_SECRET=$(get_secret "openclaw/shared/google-client-secret")
 
 echo "Shared secrets fetched"
 
@@ -170,6 +172,8 @@ USER_SECRET_NAMES=$(aws secretsmanager list-secrets \
 cat > /opt/openclaw/config/$USER_ID.env << ENVFILE
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
 SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
+GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
 ENVFILE
 
 if [ -n "$USER_SECRET_NAMES" ]; then
@@ -189,7 +193,7 @@ cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
   "agents": {
     "defaults": {
       "model": { "primary": "anthropic/claude-opus-4-6", "fallbacks": [] },
-      "models": { "anthropic/claude-opus-4-6": { "params": { "cacheRetention": "long" } } },
+      "models": { "anthropic/claude-opus-4-6": { "params": {} } },
       "workspace": "/home/node/.openclaw/data/workspace",
       "heartbeat": {
         "every": "55m",
@@ -199,7 +203,10 @@ cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
       },
       "contextPruning": {
         "mode": "cache-ttl",
-        "ttl": "55m"
+        "ttl": "5m"
+      },
+      "compaction": {
+        "mode": "safeguard"
       }
     }
   },
@@ -270,7 +277,7 @@ Requires=docker.service
 Type=simple
 EnvironmentFile=/opt/openclaw/config/$USER_ID.env
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$USER_ID
-ExecStart=/usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStart=/usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID -p 127.0.0.1:${user_config.gateway_port}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
 ExecStop=/usr/bin/docker stop openclaw-$USER_ID
 StandardOutput=append:/var/log/openclaw-$USER_ID.log
 StandardError=append:/var/log/openclaw-$USER_ID.log
@@ -455,6 +462,6 @@ systemctl start openclaw-${user_id}.service
 echo "=== OpenClaw Bootstrap Complete: $(date -u) ==="
 echo "Router: openclaw-router (Socket Mode → HTTP forwarding)"
 %{ for user_id, user_config in users ~}
-echo "Service: openclaw-${user_id} (channel: ${user_config.slack_channel}, HTTP webhook mode)"
+echo "Service: openclaw-${user_id} (channel: ${user_config.slack_channel}, port: ${user_config.gateway_port}, HTTP webhook mode)"
 %{ endfor ~}
 echo "Check: systemctl status openclaw-router / openclaw-<member_id>"

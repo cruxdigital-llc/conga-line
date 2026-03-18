@@ -32,13 +32,28 @@ variable "users" {
   description = "Map of user IDs to their config. Admin adds entries, users self-serve secrets."
   type = map(object({
     slack_channel = string
+    gateway_port  = number
   }))
   default = {
     UA13HEGTS = {
       slack_channel = "C0ALL272SV8"
+      gateway_port  = 18789
     }
     U01UNLBCWNR = {
       slack_channel = "C0ALU1AG6ES"
+      gateway_port  = 18790
     }
+  }
+
+  validation {
+    condition = alltrue([
+      for uid, cfg in var.users : cfg.gateway_port >= 18789 && cfg.gateway_port <= 18889
+    ])
+    error_message = "All gateway_port values must be in range 18789-18889."
+  }
+
+  validation {
+    condition     = length(values(var.users)[*].gateway_port) == length(distinct(values(var.users)[*].gateway_port))
+    error_message = "All gateway_port values must be unique."
   }
 }
