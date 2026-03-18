@@ -78,18 +78,34 @@ func validateChannelID(id string) error {
 	return nil
 }
 
+// resolveUserID returns the caller's member ID. If allowOverride is true,
+// the --user flag can specify a different user (for admin commands).
+// User-facing commands should pass allowOverride=false to prevent
+// cross-user operations.
 func resolveUserID(ctx context.Context) (string, error) {
-	if flagUser != "" {
-		if err := validateMemberID(flagUser); err != nil {
-			return "", err
-		}
-		return flagUser, nil
-	}
+	return resolveUserIDWithOverride(ctx, false)
+}
 
+func resolveUserIDAdmin(ctx context.Context) (string, error) {
+	return resolveUserIDWithOverride(ctx, true)
+}
+
+func resolveUserIDWithOverride(ctx context.Context, allowOverride bool) (string, error) {
 	identity, err := discovery.ResolveIdentity(ctx, clients.STS, clients.SSM)
 	if err != nil {
 		return "", err
 	}
+
+	if flagUser != "" {
+		if err := validateMemberID(flagUser); err != nil {
+			return "", err
+		}
+		if !allowOverride && identity.MemberID != "" && flagUser != identity.MemberID {
+			return "", fmt.Errorf("cannot operate on another user's resources. You are %s", identity.MemberID)
+		}
+		return flagUser, nil
+	}
+
 	if identity.MemberID == "" {
 		return "", fmt.Errorf("your IAM identity (%s) is not mapped to an OpenClaw user.\nUse --user <member_id> or ask admin to update the mapping", identity.SessionName)
 	}
