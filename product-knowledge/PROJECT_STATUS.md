@@ -33,7 +33,17 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - **Milestone**: Aaron's local gateway replaced by AWS deployment
 - [x] **Epics 5+6**: Multi-user onboarding + Slack router — complete
 
-### 2. Backlog / Upcoming
+### 2. CruxClaw CLI — Cross-Platform User Tool
+*Lead: Architect*
+- [ ] **Phase 1**: Terraform — SSM Parameter Store for infrastructure discovery (`/openclaw/users/*`, `/openclaw/users/by-iam/*`)
+- [ ] **Phase 2**: Go CLI scaffold — Cobra, AWS SDK v2, project structure in `cli/`
+- [ ] **Phase 3-4**: Auth commands + infrastructure discovery (SSO login, EC2 tag lookup, IAM identity resolution)
+- [ ] **Phase 5-8**: User commands — secrets, status, logs, refresh, connect (SSM tunnel + device pairing)
+- [ ] **Phase 9-10**: Admin commands — add-user, remove-user, list-users, cycle-host
+- [ ] **Phase 11**: Distribution — GoReleaser, GitHub Releases
+- See `specs/2026-03-18_feature_cruxclaw-cli/`
+
+### 3. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 
@@ -43,6 +53,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements
 
 ## Recent Changes
+- 2026-03-18: CruxClaw CLI — plan and spec complete. Go CLI for non-technical users (AWS SSO, SSM discovery, 13 commands). See `specs/2026-03-18_feature_cruxclaw-cli/`.
 - 2026-03-17: SSM port forwarding for web UI — per-user `gateway_port`, localhost Docker binding, SSM output commands. Phase 2 (auth tokens, per-user SSM docs) pending.
 - 2026-03-17: Epics 5+6 complete — multi-user onboarding, Slack event router, patched OpenClaw image (HTTP webhook fix), ECR, persistent EBS volume
 - 2026-03-16: Epic 4 complete — config integrity timer, CloudWatch agent + alarm, SNS topic

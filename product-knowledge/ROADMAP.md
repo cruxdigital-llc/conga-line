@@ -107,6 +107,7 @@ Slack Socket Mode load-balances events across multiple connections to the same a
 ## Horizon 2 — Operational Maturity
 
 - [x] **SSM port forwarding for web UI (Phase 1)**: Per-user `gateway_port` in `users` variable, Docker `-p 127.0.0.1:<port>:18789`, SSM output commands. See `specs/2026-03-17_feature_ssm-port-forwarding/`.
+- [ ] **CruxClaw CLI**: Cross-platform Go CLI for non-technical users. AWS SSO auth, SSM Parameter Store discovery, embedded bash scripts. Replaces shell scripts for secrets, connect, refresh, admin operations. See `specs/2026-03-18_feature_cruxclaw-cli/`.
 - [ ] **SSM port forwarding Phase 2 — user isolation**: Per-user custom SSM documents (hardcode allowed port), IAM policy restrictions (each user can only use their document), gateway auth token (`openclaw/{user_id}/gateway-token` secret).
 - [ ] **Slack event router (single app for all users)**: Blocked on OpenClaw HTTP webhook mode bug (module identity split). Router code exists at `router/src/index.js` and works correctly. Revisit when OpenClaw fixes HTTP mode or when we can build from source. Would eliminate the need for separate Slack apps per user. See `specs/2026-03-17_feature_slack-router/LEARNINGS.md`.
 - [ ] **Fix router network reconnection on container restart**: When a user container restarts, the router loses its Docker network connection to that container. Need to add `ExecStartPost` to each user's systemd unit (or the router's unit) to reconnect. Currently requires manual `docker network connect` after any container restart.
