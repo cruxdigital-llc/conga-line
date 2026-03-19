@@ -38,6 +38,18 @@ variable "openclaw_image" {
   }
 }
 
+variable "shared_secrets" {
+  description = "Map of shared secret paths to descriptions. Created in Secrets Manager with placeholder values."
+  type        = map(string)
+  default = {
+    "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
+    "openclaw/shared/slack-app-token"      = "Slack app token (xapp-)"
+    "openclaw/shared/slack-signing-secret" = "Slack signing secret"
+    "openclaw/shared/google-client-id"     = "Google OAuth client ID"
+    "openclaw/shared/google-client-secret" = "Google OAuth client secret"
+  }
+}
+
 variable "users" {
   description = "Map of user IDs to their config. Admin adds entries, users self-serve secrets."
   type = map(object({

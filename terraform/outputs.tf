@@ -50,7 +50,7 @@ output "instance_id" {
 
 output "ssm_connect_command" {
   description = "Command to connect via SSM"
-  value       = "aws ssm start-session --target ${aws_instance.openclaw.id} --region ${var.aws_region} --profile ${var.aws_profile}"
+  value       = "aws ssm start-session --target ${aws_instance.openclaw.id} --region ${var.aws_region}"
 }
 
 output "sns_topic_arn" {
@@ -80,7 +80,6 @@ output "ssm_port_forward_commands" {
       "aws ssm start-session",
       "--target ${aws_instance.openclaw.id}",
       "--region ${var.aws_region}",
-      "--profile ${var.aws_profile}",
       "--document-name AWS-StartPortForwardingSession",
       "--parameters '{\"portNumber\":[\"${cfg.gateway_port}\"],\"localPortNumber\":[\"18789\"]}'"
     ])

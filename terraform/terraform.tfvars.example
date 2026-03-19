@@ -14,6 +14,16 @@ openclaw_image = ""
 config_check_interval_minutes = 5
 alert_email = ""  # Set to receive alert emails
 
+# Shared secrets — created in Secrets Manager with REPLACE_ME placeholders.
+# Override to add/remove shared secrets. Run populate-secrets.sh after first apply.
+# shared_secrets = {
+#   "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
+#   "openclaw/shared/slack-app-token"      = "Slack app token (xapp-)"
+#   "openclaw/shared/slack-signing-secret" = "Slack signing secret"
+#   "openclaw/shared/google-client-id"     = "Google OAuth client ID"
+#   "openclaw/shared/google-client-secret" = "Google OAuth client secret"
+# }
+
 # Users — add entries to onboard new users
 # Keys are Slack Member IDs, found in Slack profile > "..." > "Copy member ID"
 users = {
