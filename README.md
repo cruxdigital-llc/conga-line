@@ -218,7 +218,7 @@ cli/
 |------|-------------|
 | `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var) |
 | `--region` | AWS region (default: from config) |
-| `--user` | Override auto-detected agent name |
+| `--agent` | Override auto-detected agent name |
 | `--verbose` | Verbose output |
 
 ## How It Works

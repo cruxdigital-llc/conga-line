@@ -66,7 +66,7 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	agentName, err := resolveAgentName(ctx)
+	agentName, err := resolveAgentNameAdmin(ctx)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	agentName, err := resolveAgentName(ctx)
+	agentName, err := resolveAgentNameAdmin(ctx)
 	if err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	agentName, err := resolveAgentName(ctx)
+	agentName, err := resolveAgentNameAdmin(ctx)
 	if err != nil {
 		return err
 	}

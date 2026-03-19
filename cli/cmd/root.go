@@ -19,7 +19,7 @@ var validChannelPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
 var (
 	flagRegion  string
 	flagProfile string
-	flagUser    string
+	flagAgent    string
 	flagVerbose bool
 
 	cfg     *config.Config
@@ -58,7 +58,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagRegion, "region", "", "AWS region (default: from config)")
 	rootCmd.PersistentFlags().StringVar(&flagProfile, "profile", "", "AWS CLI profile name")
-	rootCmd.PersistentFlags().StringVar(&flagUser, "user", "", "Agent name (auto-detected from IAM if omitted)")
+	rootCmd.PersistentFlags().StringVar(&flagAgent, "agent", "", "Agent name (auto-detected from IAM if omitted)")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 }
 
@@ -115,7 +115,7 @@ func validateChannelID(id string) error {
 }
 
 // resolveAgentName returns the caller's agent name. If allowOverride is true,
-// the --user flag can specify a different agent (for admin commands).
+// the --agent flag can specify a different agent (for admin commands).
 // User-facing commands should pass allowOverride=false to prevent
 // cross-user operations.
 func resolveAgentName(ctx context.Context) (string, error) {
@@ -132,15 +132,15 @@ func resolveAgentNameWithOverride(ctx context.Context, allowOverride bool) (stri
 		return "", err
 	}
 
-	if flagUser != "" {
-		if !allowOverride && identity.AgentName != "" && flagUser != identity.AgentName {
+	if flagAgent != "" {
+		if !allowOverride && identity.AgentName != "" && flagAgent != identity.AgentName {
 			return "", fmt.Errorf("cannot operate on another user's resources. Your agent name is %s", identity.AgentName)
 		}
-		return flagUser, nil
+		return flagAgent, nil
 	}
 
 	if identity.AgentName == "" {
-		return "", fmt.Errorf("your IAM identity (%s) is not mapped to an agent.\nUse --user <agent_name> or ask admin to run `cruxclaw admin add-user`", identity.SessionName)
+		return "", fmt.Errorf("your IAM identity (%s) is not mapped to an agent.\nUse --agent <name> or ask admin to run `cruxclaw admin add-user`", identity.SessionName)
 	}
 	return identity.AgentName, nil
 }

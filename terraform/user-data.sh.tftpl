@@ -476,15 +476,30 @@ if [ -z "$(echo "$ALL_AGENT_NAMES" | tr -d ' ')" ]; then
   echo "WARNING: No agents found in SSM. Router will start with empty routing config."
 fi
 
-# --- Generate CloudWatch dashboard from discovered agents ---
+# --- Install dashboard update helper ---
+# Called by bootstrap and by CLI add-user/add-team scripts
+mkdir -p /opt/openclaw/bin
+cat > /opt/openclaw/bin/update-dashboard.sh << 'DASHSCRIPT'
+#!/bin/bash
+set -euo pipefail
+AWS_REGION=$(ec2-metadata --availability-zone 2>/dev/null | awk '{print substr($2,1,length($2)-1)}')
+PROJECT_NAME=$(aws ssm get-parameter --name "/openclaw/config/setup-manifest" \
+  --query "Parameter.Name" --output text --region "$AWS_REGION" 2>/dev/null | cut -d/ -f3)
+PROJECT_NAME="openclaw"
+
+AGENT_PARAMS=$(aws ssm get-parameters-by-path \
+  --path "/openclaw/agents/" \
+  --query "Parameters[].Name" \
+  --output json --region "$AWS_REGION" 2>/dev/null || echo '[]')
+
 METRICS_SIZE="[]"
 METRICS_COUNT="[]"
-for AGENT_NAME in $ALL_AGENT_NAMES; do
+for NAME in $(echo "$AGENT_PARAMS" | jq -r '.[]' | xargs -I{} basename {}); do
   METRICS_SIZE=$(echo "$METRICS_SIZE" | jq \
-    --arg name "$AGENT_NAME" \
+    --arg name "$NAME" \
     '. + [["OpenClaw", "SessionSizeKB", "UserId", $name, {"label": $name, "stat": "Maximum", "period": 300}]]')
   METRICS_COUNT=$(echo "$METRICS_COUNT" | jq \
-    --arg name "$AGENT_NAME" \
+    --arg name "$NAME" \
     '. + [["OpenClaw", "SessionMessageCount", "UserId", $name, {"label": $name, "stat": "Maximum", "period": 300}]]')
 done
 
@@ -508,9 +523,15 @@ DASHBOARD_BODY=$(jq -n \
 aws cloudwatch put-dashboard \
   --dashboard-name "$PROJECT_NAME" \
   --dashboard-body "$DASHBOARD_BODY" \
-  --region "$AWS_REGION" 2>/dev/null || echo "WARNING: Failed to create CloudWatch dashboard"
+  --region "$AWS_REGION" 2>/dev/null || echo "WARNING: Failed to update CloudWatch dashboard"
 
-echo "CloudWatch dashboard updated with $(echo $ALL_AGENT_NAMES | wc -w) agents"
+AGENT_COUNT=$(echo "$AGENT_PARAMS" | jq 'length')
+echo "CloudWatch dashboard updated with $AGENT_COUNT agents"
+DASHSCRIPT
+chmod +x /opt/openclaw/bin/update-dashboard.sh
+
+# Run it now for the bootstrap
+/opt/openclaw/bin/update-dashboard.sh
 
 # ============================================================
 # 7. CONFIG INTEGRITY MONITORING

@@ -70,7 +70,7 @@ var authStatusCmd = &cobra.Command{
 		if err == nil && identity.AgentName != "" {
 			fmt.Printf("Agent:           %s\n", identity.AgentName)
 		} else {
-			fmt.Println("Agent:           (not mapped — use --user or ask admin)")
+			fmt.Println("Agent:           (not mapped — use --agent or ask admin)")
 		}
 
 		return nil

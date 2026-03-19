@@ -152,4 +152,7 @@ node -e "
 # Connect router to the new agent's network
 docker network connect "openclaw-$AGENT_NAME" openclaw-router 2>/dev/null || true
 
+# Update CloudWatch dashboard with all agents
+/opt/openclaw/bin/update-dashboard.sh || echo "WARNING: Dashboard update failed"
+
 echo "=== User agent $AGENT_NAME setup complete ==="

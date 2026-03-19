@@ -453,6 +453,9 @@ func adminRemoveAgentRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Update CloudWatch dashboard to reflect removal
+	awsutil.RunCommand(ctx, clients.SSM, instanceID, "/opt/openclaw/bin/update-dashboard.sh", 30*time.Second)
+
 	fmt.Printf("Agent %s removed.\n", agentName)
 	return nil
 }
