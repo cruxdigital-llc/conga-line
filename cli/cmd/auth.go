@@ -28,7 +28,7 @@ var authLoginCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		profile := resolveProfile()
 		if profile == "" {
-			profile = "cruxclaw"
+			profile = "your-profile"
 		}
 		fmt.Println("To authenticate, run:")
 		fmt.Println()
