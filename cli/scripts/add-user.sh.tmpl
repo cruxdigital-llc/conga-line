@@ -136,11 +136,13 @@ systemctl enable openclaw-$MEMBER_ID.service
 systemctl start openclaw-$MEMBER_ID.service
 
 # Update routing config with the new user's channel + member entry
-WEBHOOK_URL="http://openclaw-$MEMBER_ID:18789/slack/events"
-jq --arg ch "$SLACK_CHANNEL" --arg mem "$MEMBER_ID" --arg url "$WEBHOOK_URL" \
-  '.channels[$ch] = $url | .members[$mem] = $url' \
-  /opt/openclaw/config/routing.json > /opt/openclaw/config/routing.json.tmp \
-  && mv /opt/openclaw/config/routing.json.tmp /opt/openclaw/config/routing.json
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('/opt/openclaw/config/routing.json', 'utf-8'));
+  cfg.channels['$SLACK_CHANNEL'] = 'http://openclaw-$MEMBER_ID:18789/slack/events';
+  cfg.members['$MEMBER_ID'] = 'http://openclaw-$MEMBER_ID:18789/slack/events';
+  fs.writeFileSync('/opt/openclaw/config/routing.json', JSON.stringify(cfg, null, 2));
+"
 
 # Connect router to the new user's network so it can reach the container
 docker network connect "openclaw-$MEMBER_ID" openclaw-router 2>/dev/null || true

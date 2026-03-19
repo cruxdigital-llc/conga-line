@@ -32,7 +32,7 @@ sysctl --system
 # 2. INSTALL DOCKER + NODE.JS
 # ============================================================
 
-dnf install -y docker nodejs npm jq
+dnf install -y docker nodejs npm
 useradd -m -s /bin/bash openclaw || true
 usermod -aG docker openclaw
 systemctl enable --now docker
