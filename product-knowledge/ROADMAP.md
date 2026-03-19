@@ -76,26 +76,25 @@ Goal: Migrate a locally-running OpenClaw gateway to a hardened AWS deployment. E
 
 ---
 
-## Phase 2 — Multi-User with Separate Slack Apps
+## Phase 2 — Multi-User with Shared Slack App + Router
 
-Goal: Each user gets their own Slack app (Socket Mode), solving the event-splitting problem. Repeatable onboarding process.
+Goal: Single shared Slack app with a centralized event router. Repeatable onboarding via `cruxclaw admin add-user`.
 
-### Why separate apps?
-Slack Socket Mode load-balances events across multiple connections to the same app. Two containers on one app means each only receives ~50% of messages. A router/proxy fans out events from a single Socket Mode connection to per-user containers via HTTP. This was initially blocked by an OpenClaw module identity split bug, now fixed in our fork (PR openclaw/openclaw#49514).
+### Architecture
+Single Slack app → Socket Mode connection held by the router (`router/src/index.js`) → HTTP fan-out to per-user containers in webhook mode. This avoids the Socket Mode event-splitting problem (multiple connections to the same app = ~50% missed messages). The approach was unblocked by our fork's HTTP webhook fix (PR openclaw/openclaw#49514).
 
-### Epic 5+6: Multi-User Onboarding (partially complete)
+### Epic 5+6: Multi-User Onboarding
 - [x] `users` Terraform variable drives all per-user resources
 - [x] Dynamic secret discovery — users self-serve via `cruxclaw secrets set`
 - [x] User-data loops over users to create containers
 - [x] Persistent EBS data volume survives instance replacement
 - [x] SSM-based user provisioning via `cruxclaw admin add-user` (replaces `scripts/add-user.sh`)
-- [ ] **Switch to per-user Slack apps**: Each user entry in `users` variable includes their own `slack_app_token` and `slack_bot_token` secret paths
-- [ ] **Remove shared Slack tokens** — each user manages their own Slack app tokens
-- [ ] **Onboarding guide update**: Include Slack app creation steps per user
-- [ ] **Revert containers to Socket Mode** — remove router, revert `mode: "http"` to `mode: "socket"`
-- [ ] **Clean up router artifacts** — remove router container, systemd unit, S3 objects
+- [x] **Slack event router deployed** — single Socket Mode connection, HTTP fan-out to per-user containers
+- [x] **Containers use HTTP webhook mode** — `mode: "http"` with `botToken`/`signingSecret` in config
+- [x] **`add-user.sh.tmpl` aligned with router architecture** — updates `routing.json`, connects router to user network
 - [ ] Validate: both users receiving 100% of messages in their channels
 - [ ] End-to-end test: no missed messages, no stale-socket restarts
+- [ ] Onboarding guide update: document shared app setup and `cruxclaw admin add-user` workflow
 
 ### Milestone: 2 users operational
 - [ ] Both users receiving responses in their respective Slack channels

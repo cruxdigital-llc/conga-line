@@ -1,17 +1,36 @@
 import { SocketModeClient } from '@slack/socket-mode';
-import { readFileSync } from 'fs';
+import { readFileSync, watch } from 'fs';
 import { createHmac } from 'crypto';
 
 // Load routing config
 const CONFIG_PATH = process.env.ROUTER_CONFIG || '/opt/openclaw/config/routing.json';
 let config;
+
+function loadConfig() {
+  const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+  console.log(`[router] Loaded config: ${Object.keys(raw.channels).length} channels, ${Object.keys(raw.members).length} members`);
+  return raw;
+}
+
 try {
-  config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
-  console.log(`[router] Loaded config: ${Object.keys(config.channels).length} channels, ${Object.keys(config.members).length} members`);
+  config = loadConfig();
 } catch (err) {
   console.error(`[router] Failed to load config from ${CONFIG_PATH}:`, err.message);
   process.exit(1);
 }
+
+// Watch for config changes and hot-reload
+let reloadTimer;
+watch(CONFIG_PATH, () => {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    try {
+      config = loadConfig();
+    } catch (err) {
+      console.error(`[router] Config reload failed, keeping previous config:`, err.message);
+    }
+  }, 500);
+});
 
 const appToken = process.env.SLACK_APP_TOKEN;
 const signingSecret = process.env.SLACK_SIGNING_SECRET;
