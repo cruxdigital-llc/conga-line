@@ -100,6 +100,11 @@ variable "agents" {
     condition     = length(values(var.agents)[*].gateway_port) == length(distinct(values(var.agents)[*].gateway_port))
     error_message = "All gateway_port values must be unique."
   }
+
+  validation {
+    condition = length([for k, v in var.agents : v.member_id if v.type == "user"]) == length(distinct([for k, v in var.agents : v.member_id if v.type == "user"]))
+    error_message = "All user agent member_id values must be unique."
+  }
 }
 
 locals {

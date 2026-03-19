@@ -367,13 +367,13 @@ func adminRemoveUserRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Run remove script on instance
-	tmpl, err := template.New("removeuser").Parse(scripts.RemoveUserScript)
+	tmpl, err := template.New("removeagent").Parse(scripts.RemoveAgentScript)
 	if err != nil {
-		return fmt.Errorf("failed to parse remove-user template: %w", err)
+		return fmt.Errorf("failed to parse remove-agent template: %w", err)
 	}
 
 	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, struct{ MemberID string }{MemberID: memberID})
+	err = tmpl.Execute(&buf, struct{ ContainerID string }{ContainerID: memberID})
 	if err != nil {
 		return fmt.Errorf("failed to render remove-user script: %w", err)
 	}
@@ -435,13 +435,13 @@ func adminRemoveTeamRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Run remove script on instance — team containers use team name as container ID
-	tmpl, err := template.New("removeteam").Parse(scripts.RemoveUserScript)
+	tmpl, err := template.New("removeagent").Parse(scripts.RemoveAgentScript)
 	if err != nil {
-		return fmt.Errorf("failed to parse remove template: %w", err)
+		return fmt.Errorf("failed to parse remove-agent template: %w", err)
 	}
 
 	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, struct{ MemberID string }{MemberID: teamName})
+	err = tmpl.Execute(&buf, struct{ ContainerID string }{ContainerID: teamName})
 	if err != nil {
 		return fmt.Errorf("failed to render remove template: %w", err)
 	}
@@ -524,7 +524,10 @@ func resolveGatewayPort(ctx context.Context) (int, error) {
 	maxPort := 18788
 
 	// Check user agents
-	userEntries, _ := awsutil.GetParametersByPath(ctx, clients.SSM, "/openclaw/users/")
+	userEntries, userErr := awsutil.GetParametersByPath(ctx, clients.SSM, "/openclaw/users/")
+	if userErr != nil {
+		return 0, fmt.Errorf("failed to query user agents for port assignment: %w", userErr)
+	}
 	for _, e := range userEntries {
 		var cfg struct {
 			GatewayPort int `json:"gateway_port"`
@@ -535,7 +538,10 @@ func resolveGatewayPort(ctx context.Context) (int, error) {
 	}
 
 	// Check team agents
-	teamEntries, _ := awsutil.GetParametersByPath(ctx, clients.SSM, "/openclaw/teams/")
+	teamEntries, teamErr := awsutil.GetParametersByPath(ctx, clients.SSM, "/openclaw/teams/")
+	if teamErr != nil {
+		return 0, fmt.Errorf("failed to query team agents for port assignment: %w", teamErr)
+	}
 	for _, e := range teamEntries {
 		var cfg struct {
 			GatewayPort int `json:"gateway_port"`

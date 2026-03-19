@@ -11,5 +11,5 @@ var AddTeamScript string
 //go:embed refresh-user.sh.tmpl
 var RefreshUserScript string
 
-//go:embed remove-user.sh.tmpl
-var RemoveUserScript string
+//go:embed remove-agent.sh.tmpl
+var RemoveAgentScript string
