@@ -72,14 +72,28 @@ func ensureClients(ctx context.Context) error {
 	if clients != nil {
 		return nil
 	}
-	profile := flagProfile
 	region := cfg.Region
-	c, err := awsutil.NewClients(ctx, region, profile)
+	c, err := awsutil.NewClients(ctx, region, resolveProfile())
 	if err != nil {
 		return fmt.Errorf("failed to initialize AWS session: %w\nRun `cruxclaw auth login` to authenticate", err)
 	}
 	clients = c
 	return nil
+}
+
+// resolveProfile returns the AWS profile to use. Priority:
+//  1. --profile flag
+//  2. AWS_PROFILE env var (handled by SDK when we pass "")
+//  3. profile from config file
+//  4. empty → SDK default chain (active SSO session, default profile, etc.)
+func resolveProfile() string {
+	if flagProfile != "" {
+		return flagProfile
+	}
+	if os.Getenv("AWS_PROFILE") != "" {
+		return "" // let the SDK read AWS_PROFILE directly
+	}
+	return cfg.Profile
 }
 
 func validateMemberID(id string) error {

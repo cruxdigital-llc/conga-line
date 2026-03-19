@@ -20,12 +20,27 @@ func init() {
 	}
 
 	setCmd := &cobra.Command{
-		Use:   "set <name>",
+		Use:   "set [name]",
 		Short: "Create or update a secret",
-		Args:  cobra.ExactArgs(1),
-		RunE:  secretsSetRun,
+		Long: `Create or update a secret in AWS Secrets Manager.
+
+The secret name is transformed into an environment variable and injected into
+your OpenClaw container in SCREAMING_SNAKE_CASE format. For example:
+
+  anthropic-api-key  →  ANTHROPIC_API_KEY
+  google-client-id   →  GOOGLE_CLIENT_ID
+
+If no name is provided, you will be prompted interactively for both the name
+and value. Use --value to pass the secret value non-interactively.
+
+After setting a secret, run 'cruxclaw refresh' to inject it into your container.`,
+		Example: `  cruxclaw secrets set                          # interactive mode
+  cruxclaw secrets set anthropic-api-key         # prompts for value
+  cruxclaw secrets set anthropic-api-key --value sk-ant-...  # non-interactive`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: secretsSetRun,
 	}
-	setCmd.Flags().StringVar(&secretValue, "value", "", "Secret value (prompted if omitted)")
+	setCmd.Flags().StringVar(&secretValue, "value", "", "Secret value (will be prompted if omitted)")
 
 	listCmd := &cobra.Command{
 		Use:   "list",
@@ -56,20 +71,38 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	var name string
+	if len(args) > 0 {
+		name = args[0]
+	} else {
+		fmt.Println("Secret names are injected as env vars in SCREAMING_SNAKE_CASE (e.g. anthropic-api-key → ANTHROPIC_API_KEY).")
+		name, err = ui.TextPrompt("Secret name (e.g. anthropic-api-key)")
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			return fmt.Errorf("secret name cannot be empty")
+		}
+		fmt.Printf("  → will be injected as: %s\n", secretNameToEnvVar(name))
+	}
+
 	value := secretValue
 	if value == "" {
-		value, err = ui.SecretPrompt(fmt.Sprintf("Enter value for %s", args[0]))
+		value, err = ui.SecretPrompt(fmt.Sprintf("Enter value for %s", name))
 		if err != nil {
 			return err
 		}
 	}
+	if value == "" {
+		return fmt.Errorf("secret value cannot be empty")
+	}
 
-	secretPath := fmt.Sprintf("openclaw/%s/%s", memberID, args[0])
+	secretPath := fmt.Sprintf("openclaw/%s/%s", memberID, name)
 	if err := awsutil.SetSecret(ctx, clients.SecretsManager, secretPath, value); err != nil {
 		return err
 	}
 
-	fmt.Printf("Secret '%s' saved. Run `cruxclaw refresh` to pick it up.\n", args[0])
+	fmt.Printf("Secret '%s' saved (env var: %s). Run `cruxclaw refresh` to pick it up.\n", name, secretNameToEnvVar(name))
 	return nil
 }
 

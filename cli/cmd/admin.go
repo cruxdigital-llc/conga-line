@@ -11,6 +11,7 @@ import (
 	"time"
 
 	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
+	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
 	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
 	"github.com/cruxdigital-llc/openclaw-template/cli/scripts"
 	"github.com/spf13/cobra"
@@ -111,8 +112,13 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 	// Get IAM identity
 	iamIdentity := adminIAMIdentity
 	if iamIdentity == "" {
+		// Auto-detect caller's SSO identity as default
+		defaultIdentity := ""
+		if id, err := discovery.ResolveIdentity(ctx, clients.STS, clients.SSM); err == nil && id.SessionName != "" {
+			defaultIdentity = id.SessionName
+		}
 		var err error
-		iamIdentity, err = ui.TextPrompt("IAM identity (SSO username/email) for this user")
+		iamIdentity, err = ui.TextPromptWithDefault("SSO username/email of the user to add", defaultIdentity)
 		if err != nil {
 			return err
 		}

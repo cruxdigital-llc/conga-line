@@ -26,12 +26,12 @@ var authLoginCmd = &cobra.Command{
 	Short: "Authenticate via AWS SSO",
 	Long:  "Opens your browser to complete AWS SSO login. Credentials are cached for future commands.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("To authenticate, run:")
-		fmt.Println()
-		profile := flagProfile
+		profile := resolveProfile()
 		if profile == "" {
 			profile = "cruxclaw"
 		}
+		fmt.Println("To authenticate, run:")
+		fmt.Println()
 		fmt.Printf("  aws configure sso --profile %s\n", profile)
 		fmt.Println()
 		fmt.Println("Use the following settings:")
@@ -43,7 +43,8 @@ var authLoginCmd = &cobra.Command{
 		fmt.Println("Then run:")
 		fmt.Printf("  aws sso login --profile %s\n", profile)
 		fmt.Println()
-		fmt.Printf("After that, use: cruxclaw --profile %s <command>\n", profile)
+		fmt.Println("Tip: set AWS_PROFILE to skip --profile on subsequent commands:")
+		fmt.Printf("  export AWS_PROFILE=%s\n", profile)
 		return nil
 	},
 }

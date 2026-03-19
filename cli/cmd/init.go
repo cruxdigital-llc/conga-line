@@ -31,6 +31,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("==============")
 	fmt.Println()
 
+	profile := existing.Profile
+	if promptAll {
+		var err error
+		profile, err = ui.TextPromptWithDefault("AWS CLI profile name (leave blank to use AWS_PROFILE or active SSO session)", existing.Profile)
+		if err != nil {
+			return err
+		}
+	}
+
 	region := existing.Region
 	if promptAll || missing["region"] {
 		var err error
@@ -78,6 +87,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	newCfg := &config.Config{
 		Region:        region,
+		Profile:       profile,
 		SSOStartURL:   ssoURL,
 		SSOAccountID:  accountID,
 		SSORoleName:   roleName,
