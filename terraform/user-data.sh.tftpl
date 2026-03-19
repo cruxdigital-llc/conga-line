@@ -74,7 +74,7 @@ get_secret() {
     --secret-id "$1" \
     --query SecretString \
     --output text \
-    --region "$AWS_REGION"
+    --region "$AWS_REGION" 2>/dev/null || echo ""
 }
 
 SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
