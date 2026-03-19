@@ -85,7 +85,8 @@ func ensureClients(ctx context.Context) error {
 //  1. --profile flag
 //  2. AWS_PROFILE env var (handled by SDK when we pass "")
 //  3. profile from config file
-//  4. empty → SDK default chain (active SSO session, default profile, etc.)
+//  4. auto-detect from active SSO session in ~/.aws/config
+//  5. empty → SDK default chain
 func resolveProfile() string {
 	if flagProfile != "" {
 		return flagProfile
@@ -93,7 +94,10 @@ func resolveProfile() string {
 	if os.Getenv("AWS_PROFILE") != "" {
 		return "" // let the SDK read AWS_PROFILE directly
 	}
-	return cfg.Profile
+	if cfg.Profile != "" {
+		return cfg.Profile
+	}
+	return awsutil.DetectSSOProfile()
 }
 
 func validateMemberID(id string) error {
