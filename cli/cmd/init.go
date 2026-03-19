@@ -77,12 +77,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	newCfg := &config.Config{
-		Region:      region,
-		Profile:     profile,
-		SSOStartURL: ssoURL,
+		Region:       region,
+		Profile:      profile,
+		SSOStartURL:  ssoURL,
 		SSOAccountID: accountID,
-		SSORoleName: roleName,
-		InstanceTag: defaultOrVal(existing.InstanceTag, "openclaw-host"),
+		SSORoleName:  roleName,
+		InstanceTag:  defaultOrVal(existing.InstanceTag, "openclaw-host"),
 	}
 
 	if err := newCfg.Save(); err != nil {

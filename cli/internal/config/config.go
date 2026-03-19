@@ -8,12 +8,12 @@ import (
 )
 
 type Config struct {
-	Region        string `toml:"region"`
-	Profile       string `toml:"profile"`
-	SSOStartURL   string `toml:"sso_start_url"`
-	SSOAccountID  string `toml:"sso_account_id"`
-	SSORoleName   string `toml:"sso_role_name"`
-	InstanceTag string `toml:"instance_tag"`
+	Region       string `toml:"region"`
+	Profile      string `toml:"profile"`
+	SSOStartURL  string `toml:"sso_start_url"`
+	SSOAccountID string `toml:"sso_account_id"`
+	SSORoleName  string `toml:"sso_role_name"`
+	InstanceTag  string `toml:"instance_tag"`
 }
 
 func Defaults() *Config {
