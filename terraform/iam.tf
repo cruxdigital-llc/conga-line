@@ -47,7 +47,7 @@ resource "aws_iam_role_policy" "secrets_read" {
         ]
         Resource = concat(
           ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/shared/*"],
-          [for uid in keys(var.users) : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/${uid}/*"]
+          [for k, v in local.user_agents : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/${v.member_id}/*"]
         )
       },
       {

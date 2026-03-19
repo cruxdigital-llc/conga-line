@@ -74,9 +74,9 @@ output "ecr_repository_url" {
 }
 
 output "ssm_port_forward_commands" {
-  description = "SSM port forwarding commands per user (local port always 18789 for OAuth redirects)"
+  description = "SSM port forwarding commands per agent (local port always 18789 for OAuth redirects)"
   value = {
-    for uid, cfg in var.users : uid => join(" ", [
+    for name, cfg in var.agents : name => join(" ", [
       "aws ssm start-session",
       "--target ${aws_instance.openclaw.id}",
       "--region ${var.aws_region}",

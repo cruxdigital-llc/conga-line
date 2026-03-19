@@ -24,10 +24,22 @@ alert_email = ""  # Set to receive alert emails
 #   "openclaw/shared/google-client-secret" = "Google OAuth client secret"
 # }
 
-# Users — add entries to onboard new users
-# Keys are Slack Member IDs, found in Slack profile > "..." > "Copy member ID"
-users = {
-  # UXXXXXXXXXX = {
+# Agents — add entries to onboard new agents
+# type="user": DM-only individual agents, keyed by human-readable name
+# type="team": Channel-based team agents, keyed by team name
+agents = {
+  # Individual agent (DM-only):
+  # myname = {
+  #   type         = "user"
+  #   member_id    = "UXXXXXXXXXX"
+  #   gateway_port = 18789
+  #   iam_identity = "myname"
+  # }
+  #
+  # Team agent (channel-based):
+  # devops = {
+  #   type          = "team"
   #   slack_channel = "CXXXXXXXXXX"
+  #   gateway_port  = 18800
   # }
 }

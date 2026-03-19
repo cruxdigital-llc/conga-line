@@ -70,9 +70,9 @@ resource "aws_cloudwatch_dashboard" "openclaw" {
           stacked = false
           region  = var.aws_region
           metrics = [
-            for uid in keys(var.users) : [
-              "OpenClaw", "SessionSizeKB", "UserId", uid,
-              { label = uid, stat = "Maximum", period = 300 }
+            for name, cfg in var.agents : [
+              "OpenClaw", "SessionSizeKB", "UserId", local.agent_container_id[name],
+              { label = name, stat = "Maximum", period = 300 }
             ]
           ]
           yAxis = {
@@ -92,9 +92,9 @@ resource "aws_cloudwatch_dashboard" "openclaw" {
           stacked = false
           region  = var.aws_region
           metrics = [
-            for uid in keys(var.users) : [
-              "OpenClaw", "SessionMessageCount", "UserId", uid,
-              { label = uid, stat = "Maximum", period = 300 }
+            for name, cfg in var.agents : [
+              "OpenClaw", "SessionMessageCount", "UserId", local.agent_container_id[name],
+              { label = name, stat = "Maximum", period = 300 }
             ]
           ]
           yAxis = {

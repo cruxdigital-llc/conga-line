@@ -1,11 +1,11 @@
-# Clean up per-user secrets when a user is removed from var.users.
+# Clean up per-user secrets when a user agent is removed from var.agents.
 # These secrets are created out-of-band by the CLI (cruxclaw secrets set),
 # so Terraform doesn't track them as resources — only handles deletion.
 resource "terraform_data" "user_secrets_cleanup" {
-  for_each = var.users
+  for_each = local.user_agents
 
   input = {
-    member_id = each.key
+    member_id = each.value.member_id
     region    = var.aws_region
     profile   = var.aws_profile
   }

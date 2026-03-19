@@ -1,0 +1,12 @@
+set -euxo pipefail
+CONTAINER_ID="{{.ContainerID}}"
+
+echo "=== Removing agent: $CONTAINER_ID ==="
+
+systemctl stop openclaw-$CONTAINER_ID || true
+systemctl disable openclaw-$CONTAINER_ID || true
+rm -f /etc/systemd/system/openclaw-$CONTAINER_ID.service
+systemctl daemon-reload
+docker network rm openclaw-$CONTAINER_ID || true
+
+echo "=== Agent $CONTAINER_ID removed from instance ==="
