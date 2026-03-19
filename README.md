@@ -10,23 +10,61 @@ Hardened, per-user-isolated AWS deployment of [OpenClaw](https://github.com/open
 - **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway), ~$10/mo total for 2 users
 - **Slack event router** — single Socket Mode connection fans out to per-user containers via HTTP
 
-## Prerequisites
+---
 
-- **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
+## Install the CLI
+
+This is all you need to use OpenClaw as an end user. No Terraform, Go, or repo clone required.
+
+### Prerequisites
+
 - **AWS CLI v2** — [Install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - **session-manager-plugin** — required for `cruxclaw connect`
   - macOS: `brew install --cask session-manager-plugin`
   - Linux/Windows: [AWS install guide](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
-- **Terraform** >= 1.5
-- **Go** >= 1.21 (to build the CLI)
-- **A patched OpenClaw Docker image** — see [Docker Image](#docker-image) below
+- **AWS SSO access** — your admin will provide the SSO URL and account ID
 
-## Quick Start
+### Install
+
+```bash
+gh release download --repo cruxdigital-llc/crux-claw --pattern "cruxclaw_*_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" --output - | tar xz -C /usr/local/bin cruxclaw
+```
+
+### First-time setup
+
+```bash
+# 1. Configure AWS SSO (one time)
+aws configure sso --profile your-profile
+export AWS_PROFILE=your-profile
+aws sso login
+
+# 2. First run — triggers interactive CLI setup
+cruxclaw auth status
+
+# 3. Add your API key and connect
+cruxclaw secrets set anthropic-api-key
+cruxclaw refresh
+cruxclaw connect
+```
+
+Open http://localhost:18789 in your browser.
+
+---
+
+## Deploy the Infrastructure
+
+This section is for operators deploying or managing the AWS infrastructure. You'll need Terraform and access to the AWS account.
+
+### Prerequisites
+
+- Everything from [Install the CLI](#install-the-cli) above
+- **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
+- **Terraform** >= 1.5
+- **A patched OpenClaw Docker image** — see [Docker Image](#docker-image) below
 
 ### 1. Bootstrap Terraform state backend
 
 ```bash
-# Set your AWS profile and region (or pass as env vars)
 export AWS_PROFILE=your-aws-profile
 export AWS_REGION=us-east-2
 
@@ -39,11 +77,9 @@ This creates the S3 bucket and DynamoDB table for Terraform state.
 ### 2. Configure Terraform
 
 ```bash
-# Create backend config
 cp backend.tf.example backend.tf
 # Edit backend.tf with your account ID, region, profile
 
-# Create variables file
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars — set openclaw_image, add users, etc.
 ```
@@ -61,29 +97,7 @@ terraform plan
 terraform apply
 ```
 
-### 5. Build and configure the CLI
-
-```bash
-cd cli
-go build -o cruxclaw .
-
-# First run triggers interactive setup
-./cruxclaw auth status
-```
-
-The CLI will prompt you for your AWS region, SSO URL, account ID, and Docker image on first run.
-
-### 6. Set up your API key and connect
-
-```bash
-cruxclaw secrets set anthropic-api-key
-cruxclaw refresh
-cruxclaw connect
-```
-
-Open http://localhost:18789 in your browser.
-
-## Docker Image
+### Docker Image
 
 The upstream `ghcr.io/openclaw/openclaw:latest` does **not** work with Slack in HTTP webhook mode without a bugfix from [PR #49514](https://github.com/openclaw/openclaw/pull/49514). Until that PR is merged, you need to build your own image with the fix applied:
 
@@ -103,6 +117,39 @@ Set the image in `terraform.tfvars`:
 ```hcl
 openclaw_image = "<account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest"
 ```
+
+---
+
+## Develop the CLI
+
+This section is for developers building and testing the `cruxclaw` CLI locally.
+
+### Prerequisites
+
+- **Go** >= 1.21
+- Everything from [Install the CLI](#install-the-cli) above (for AWS access during testing)
+
+### Build and run
+
+```bash
+cd cli
+go build -o cruxclaw .
+./cruxclaw auth status
+```
+
+### Project structure
+
+```
+cli/
+├── cmd/           # Cobra command definitions
+├── internal/      # Internal packages (config, AWS clients, etc.)
+├── scripts/       # Embedded shell script templates for remote execution
+├── main.go        # Entrypoint
+├── go.mod
+└── go.sum
+```
+
+---
 
 ## CLI Commands
 
@@ -139,36 +186,6 @@ openclaw_image = "<account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest"
 | `--region` | AWS region (default: from config) |
 | `--user` | Override auto-detected user |
 | `--verbose` | Verbose output |
-
-## Onboarding a New User
-
-### Admin does:
-
-```bash
-cruxclaw admin add-user UXXXXXXXXXX CXXXXXXXXXX
-# Auto-assigns gateway port, prompts for IAM identity
-```
-
-### User does:
-
-```bash
-# 1. Set up AWS SSO (one time)
-aws configure sso --profile your-profile
-export AWS_PROFILE=your-profile
-
-# 2. Log in
-aws sso login
-
-# 3. First run — configures CLI
-cruxclaw auth status
-
-# 4. Add API key
-cruxclaw secrets set anthropic-api-key
-
-# 5. Refresh and connect
-cruxclaw refresh
-cruxclaw connect
-```
 
 ## How It Works
 
