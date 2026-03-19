@@ -3,43 +3,22 @@ aws_region   = "us-east-2"
 aws_profile  = "your-aws-profile"
 project_name = "openclaw"
 
-# OpenClaw Docker image — REQUIRED
-# The upstream ghcr.io/openclaw/openclaw:latest does not work with Slack
-# without the fix from PR https://github.com/openclaw/openclaw/pull/49514.
-# Build your own image with that fix applied and push to ECR or another registry.
-# Example: openclaw_image = "123456789012.dkr.ecr.us-east-2.amazonaws.com/openclaw:latest"
-openclaw_image = ""
-
 # Monitoring
 config_check_interval_minutes = 5
 alert_email = ""  # Set to receive alert emails
 
-# Shared secrets — created in Secrets Manager with REPLACE_ME placeholders.
-# Override to add/remove shared secrets. Run populate-secrets.sh after first apply.
-# shared_secrets = {
-#   "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
-#   "openclaw/shared/slack-app-token"      = "Slack app token (xapp-)"
-#   "openclaw/shared/slack-signing-secret" = "Slack signing secret"
-#   "openclaw/shared/google-client-id"     = "Google OAuth client ID"
-#   "openclaw/shared/google-client-secret" = "Google OAuth client secret"
+# Setup manifest — defines what config and secrets `cruxclaw admin setup` prompts for.
+# The defaults cover a standard Slack deployment. Override to add/remove items.
+#
+# setup_manifest = {
+#   config = {
+#     "openclaw-image" = "Docker image for OpenClaw (ECR, GHCR, or Docker Hub)"
+#   }
+#   secrets = {
+#     "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
+#     "openclaw/shared/slack-app-token"      = "Slack app token (xapp-)"
+#     "openclaw/shared/slack-signing-secret" = "Slack signing secret"
+#     "openclaw/shared/google-client-id"     = "Google OAuth client ID"
+#     "openclaw/shared/google-client-secret" = "Google OAuth client secret"
+#   }
 # }
-
-# Agents — add entries to onboard new agents
-# type="user": DM-only individual agents, keyed by human-readable name
-# type="team": Channel-based team agents, keyed by team name
-agents = {
-  # Individual agent (DM-only):
-  # myname = {
-  #   type         = "user"
-  #   member_id    = "UXXXXXXXXXX"
-  #   gateway_port = 18789
-  #   iam_identity = "myname"
-  # }
-  #
-  # Team agent (channel-based):
-  # devops = {
-  #   type          = "team"
-  #   slack_channel = "CXXXXXXXXXX"
-  #   gateway_port  = 18800
-  # }
-}

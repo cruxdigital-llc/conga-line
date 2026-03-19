@@ -1,14 +1,24 @@
 # OpenClaw on AWS
 
-Hardened, per-user-isolated AWS deployment of [OpenClaw](https://github.com/openclaw/openclaw) (autonomous AI assistant) via Slack. Single EC2 host with per-user Docker containers in a zero-ingress VPC. Infrastructure-as-code — the deliverable is Terraform configuration + bootstrap scripts.
+Hardened, per-agent-isolated AWS deployment of [OpenClaw](https://github.com/openclaw/openclaw) (autonomous AI assistant) via Slack. Single EC2 host with per-agent Docker containers in a zero-ingress VPC. Terraform manages infrastructure, the CLI manages agents.
 
 ## Architecture
 
-- **Single EC2 host** (t4g.medium, AL2023) with per-user Docker containers
+- **Single EC2 host** (t4g.medium, AL2023) with per-agent Docker containers
 - **Zero ingress** — no SSH, no public ports. Access via AWS SSM only
-- **Per-user isolation** — separate Docker networks, secrets, and config per user
-- **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway), ~$10/mo total for 2 users
-- **Slack event router** — single Socket Mode connection fans out to per-user containers via HTTP
+- **Per-agent isolation** — separate Docker networks, secrets, and config per agent
+- **Two agent types** — user agents (DM-only) and team agents (channel-based)
+- **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway), ~$10/mo total
+- **Slack event router** — single Socket Mode connection fans out to per-agent containers via HTTP
+- **SSM-driven bootstrap** — the instance discovers agents from SSM Parameter Store at boot, so CLI-added agents survive instance restarts without Terraform changes
+
+### Separation of Concerns
+
+| Layer | Managed by | What it does |
+|-------|-----------|-------------|
+| **Infrastructure** | Terraform | VPC, EC2, IAM, router, SNS alerts, setup manifest |
+| **Configuration** | CLI (`cruxclaw admin setup`) | Shared secrets, Docker image, deployment settings |
+| **Agents** | CLI (`cruxclaw admin add-user/add-team`) | Per-agent containers, configs, routing, secrets |
 
 ---
 
@@ -30,7 +40,7 @@ This is all you need to use OpenClaw as an end user. No Terraform, Go, or repo c
 gh release download --repo cruxdigital-llc/crux-claw --pattern "cruxclaw_*_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" --output - | tar xz -C /usr/local/bin cruxclaw
 ```
 
-### First-time setup
+### First-time setup (end users)
 
 ```bash
 # 1. Configure AWS SSO (one time)
@@ -53,7 +63,7 @@ Open http://localhost:18789 in your browser.
 
 ## Deploy the Infrastructure
 
-This section is for operators deploying or managing the AWS infrastructure. You'll need Terraform and access to the AWS account.
+This section is for operators deploying or managing the AWS infrastructure.
 
 ### Prerequisites
 
@@ -74,28 +84,56 @@ cd terraform
 
 This creates the S3 bucket and DynamoDB table for Terraform state.
 
-### 2. Configure Terraform
+### 2. Configure and deploy infrastructure
 
 ```bash
 cp backend.tf.example backend.tf
 # Edit backend.tf with your account ID, region, profile
 
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — set openclaw_image, add users, etc.
-```
+# Edit terraform.tfvars — set region, profile, project name
 
-### 3. Build and push the Docker image
-
-See [Docker Image](#docker-image) for why this is needed. Once you have your image pushed to ECR (or another registry), set `openclaw_image` in `terraform.tfvars`.
-
-### 4. Deploy
-
-```bash
-cd terraform
 terraform init
 terraform plan
 terraform apply
 ```
+
+Terraform creates the VPC, EC2 instance, IAM roles, router, and a **setup manifest** in SSM that describes what configuration the deployment needs.
+
+### 3. Configure the deployment
+
+```bash
+cruxclaw admin setup
+```
+
+This reads the setup manifest from SSM and interactively prompts for:
+- **Config values** (stored in SSM) — Docker image URL
+- **Shared secrets** (stored in Secrets Manager) — Slack tokens, signing secret, Google OAuth credentials
+
+### 4. Build and push the Docker image
+
+See [Docker Image](#docker-image) for why a custom image is needed. Once pushed, set it via `cruxclaw admin setup` when prompted for the `openclaw-image` config value.
+
+### 5. Add agents
+
+```bash
+# Add a user agent (DM-only, restricted to one Slack user)
+cruxclaw admin add-user myagent UEXAMPLE01
+
+# Add a team agent (channel-based, accessible to anyone in the channel)
+cruxclaw admin add-team leadership CEXAMPLE01
+
+# Verify
+cruxclaw admin list-agents
+```
+
+### 6. Start everything
+
+```bash
+cruxclaw admin cycle-host
+```
+
+This restarts the EC2 instance. The bootstrap script discovers all agents from SSM and provisions them automatically.
 
 ### Docker Image
 
@@ -111,11 +149,6 @@ cd openclaw
 docker build -t <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest .
 aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
 docker push <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest
-```
-
-Set the image in `terraform.tfvars`:
-```hcl
-openclaw_image = "<account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest"
 ```
 
 ---
@@ -142,7 +175,7 @@ go build -o cruxclaw .
 ```
 cli/
 ├── cmd/           # Cobra command definitions
-├── internal/      # Internal packages (config, AWS clients, etc.)
+├── internal/      # Internal packages (config, AWS clients, discovery)
 ├── scripts/       # Embedded shell script templates for remote execution
 ├── main.go        # Entrypoint
 ├── go.mod
@@ -159,7 +192,7 @@ cli/
 |---------|-------------|
 | `cruxclaw init` | Configure CruxClaw for first use |
 | `cruxclaw auth login` | Show SSO setup instructions |
-| `cruxclaw auth status` | Show your AWS identity and OpenClaw user |
+| `cruxclaw auth status` | Show your AWS identity and agent mapping |
 | `cruxclaw secrets set <name>` | Create or update a secret |
 | `cruxclaw secrets list` | List your secrets |
 | `cruxclaw secrets delete <name>` | Delete a secret |
@@ -172,10 +205,11 @@ cli/
 
 | Command | Description |
 |---------|-------------|
-| `cruxclaw admin add-user <id> <channel>` | Provision a new user |
-| `cruxclaw admin list-users` | Show all provisioned users |
-| `cruxclaw admin remove-user <id>` | Remove a user |
-| `cruxclaw admin map-user <id> <iam>` | Map IAM identity to Slack member ID |
+| `cruxclaw admin setup` | Configure shared secrets and settings from the deployment manifest |
+| `cruxclaw admin add-user <name> <slack_member_id>` | Provision a user agent (DM-only) |
+| `cruxclaw admin add-team <name> <slack_channel>` | Provision a team agent (channel-based) |
+| `cruxclaw admin list-agents` | List all provisioned agents |
+| `cruxclaw admin remove-agent <name>` | Remove an agent |
 | `cruxclaw admin cycle-host` | Stop/start the EC2 instance |
 
 ### Global Flags
@@ -184,7 +218,7 @@ cli/
 |------|-------------|
 | `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var) |
 | `--region` | AWS region (default: from config) |
-| `--user` | Override auto-detected user |
+| `--user` | Override auto-detected agent name |
 | `--verbose` | Verbose output |
 
 ## How It Works
@@ -192,7 +226,9 @@ cli/
 The CLI discovers infrastructure via AWS APIs — no Terraform access or repo clone needed:
 
 - **Instance**: Found by EC2 tag `Name=openclaw-host`
-- **User config**: Stored in SSM Parameter Store at `/openclaw/users/{member_id}`
-- **Identity mapping**: Your SSO username maps to your member ID via `/openclaw/users/by-iam/{sso_name}`
-- **Secrets**: Managed in AWS Secrets Manager under `openclaw/{member_id}/`
+- **Agent config**: Stored in SSM Parameter Store at `/openclaw/agents/{name}`
+- **Identity mapping**: Your SSO username matches the `iam_identity` field in your agent's SSM config
+- **Secrets**: Managed in AWS Secrets Manager under `openclaw/agents/{name}/`
+- **Shared config**: Setup manifest at `/openclaw/config/setup-manifest`, image at `/openclaw/config/openclaw-image`
 - **Remote operations**: Executed via SSM RunCommand (no SSH, no ingress)
+- **Bootstrap discovery**: On instance boot, the bootstrap script reads all agents from `/openclaw/agents/` in SSM and provisions them — no Terraform template loops

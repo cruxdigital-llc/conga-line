@@ -26,7 +26,7 @@ var refreshCmd = &cobra.Command{
 			return err
 		}
 
-		memberID, err := resolveUserID(ctx)
+		agentName, err := resolveAgentName(ctx)
 		if err != nil {
 			return err
 		}
@@ -43,19 +43,17 @@ var refreshCmd = &cobra.Command{
 
 		var buf bytes.Buffer
 		err = tmpl.Execute(&buf, struct {
-			MemberID      string
-			AWSRegion     string
-			OpenClawImage string
+			AgentName string
+			AWSRegion string
 		}{
-			MemberID:      memberID,
-			AWSRegion:     cfg.Region,
-			OpenClawImage: cfg.OpenClawImage,
+			AgentName: agentName,
+			AWSRegion: cfg.Region,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to render refresh script: %w", err)
 		}
 
-		spin := ui.NewSpinner(fmt.Sprintf("Refreshing secrets for %s...", memberID))
+		spin := ui.NewSpinner(fmt.Sprintf("Refreshing secrets for %s...", agentName))
 		result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, buf.String(), 120*time.Second)
 		spin.Stop()
 		if err != nil {
@@ -63,7 +61,7 @@ var refreshCmd = &cobra.Command{
 		}
 
 		if result.Status == "Success" {
-			fmt.Printf("Secrets refreshed and container restarted for %s.\n", memberID)
+			fmt.Printf("Secrets refreshed and container restarted for %s.\n", agentName)
 		} else {
 			fmt.Printf("Command failed:\n%s\n%s\n", result.Stdout, result.Stderr)
 		}

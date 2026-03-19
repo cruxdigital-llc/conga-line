@@ -66,7 +66,7 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	memberID, err := resolveUserID(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("secret value cannot be empty")
 	}
 
-	secretPath := fmt.Sprintf("openclaw/%s/%s", memberID, name)
+	secretPath := fmt.Sprintf("openclaw/agents/%s/%s", agentName, name)
 	if err := awsutil.SetSecret(ctx, clients.SecretsManager, secretPath, value); err != nil {
 		return err
 	}
@@ -112,12 +112,12 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	memberID, err := resolveUserID(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
 
-	prefix := fmt.Sprintf("openclaw/%s/", memberID)
+	prefix := fmt.Sprintf("openclaw/agents/%s/", agentName)
 	entries, err := awsutil.ListSecrets(ctx, clients.SecretsManager, prefix)
 	if err != nil {
 		return err
@@ -143,19 +143,19 @@ func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	memberID, err := resolveUserID(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
 
 	if !secretForce {
-		if !ui.Confirm(fmt.Sprintf("Delete secret '%s' for %s?", args[0], memberID)) {
+		if !ui.Confirm(fmt.Sprintf("Delete secret '%s' for %s?", args[0], agentName)) {
 			fmt.Println("Cancelled.")
 			return nil
 		}
 	}
 
-	secretPath := fmt.Sprintf("openclaw/%s/%s", memberID, args[0])
+	secretPath := fmt.Sprintf("openclaw/agents/%s/%s", agentName, args[0])
 	if err := awsutil.DeleteSecret(ctx, clients.SecretsManager, secretPath); err != nil {
 		return err
 	}

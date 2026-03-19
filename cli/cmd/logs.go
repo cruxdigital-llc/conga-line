@@ -28,7 +28,7 @@ func logsRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	memberID, err := resolveUserID(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func logsRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	script := fmt.Sprintf("docker logs openclaw-%s --tail %d 2>&1", memberID, logLines)
+	script := fmt.Sprintf("docker logs openclaw-%s --tail %d 2>&1", agentName, logLines)
 
 	spin := ui.NewSpinner("Fetching logs...")
 	result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, script, 30*time.Second)
