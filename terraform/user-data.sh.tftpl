@@ -402,12 +402,31 @@ UNIT
   echo "  Agent $AGENT_NAME configured"
 }
 
+# --- Stop any existing agent containers from prior bootstraps ---
+# Prevents port conflicts when agent names change (e.g. migration from member_id to name)
+
+for OLD_UNIT in /etc/systemd/system/openclaw-*.service; do
+  [ -f "$OLD_UNIT" ] || continue
+  UNIT_NAME=$(basename "$OLD_UNIT" .service)
+  [ "$UNIT_NAME" = "openclaw-router" ] && continue
+  echo "Stopping previous agent: $UNIT_NAME"
+  systemctl stop "$UNIT_NAME" 2>/dev/null || true
+  docker rm -f "$UNIT_NAME" 2>/dev/null || true
+  systemctl disable "$UNIT_NAME" 2>/dev/null || true
+  rm -f "$OLD_UNIT"
+done
+systemctl daemon-reload
+
 # --- Discover all agents from SSM ---
 
 AGENT_PARAMS=$(aws ssm get-parameters-by-path \
   --path "/openclaw/agents/" \
   --query "Parameters" \
-  --output json --region "$AWS_REGION" 2>/dev/null || echo '[]')
+  --output json --region "$AWS_REGION" 2>&1) || {
+  echo "FATAL: Failed to query agents from SSM: $AGENT_PARAMS"
+  echo "Check IAM permissions for ssm:GetParametersByPath on /openclaw/agents/"
+  exit 1
+}
 
 ROUTING_CHANNELS="{}"
 ROUTING_MEMBERS="{}"
