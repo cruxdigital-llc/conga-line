@@ -19,7 +19,7 @@ var validChannelPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
 var (
 	flagRegion  string
 	flagProfile string
-	flagUser    string
+	flagAgent   string
 	flagVerbose bool
 
 	cfg     *config.Config
@@ -58,7 +58,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagRegion, "region", "", "AWS region (default: from config)")
 	rootCmd.PersistentFlags().StringVar(&flagProfile, "profile", "", "AWS CLI profile name")
-	rootCmd.PersistentFlags().StringVar(&flagUser, "user", "", "Slack Member ID (auto-detected from IAM if omitted)")
+	rootCmd.PersistentFlags().StringVar(&flagAgent, "agent", "", "Agent name (auto-detected from IAM if omitted)")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 }
 
@@ -114,38 +114,35 @@ func validateChannelID(id string) error {
 	return nil
 }
 
-// resolveUserID returns the caller's member ID. If allowOverride is true,
-// the --user flag can specify a different user (for admin commands).
+// resolveAgentName returns the caller's agent name. If allowOverride is true,
+// the --agent flag can specify a different agent (for admin commands).
 // User-facing commands should pass allowOverride=false to prevent
 // cross-user operations.
-func resolveUserID(ctx context.Context) (string, error) {
-	return resolveUserIDWithOverride(ctx, false)
+func resolveAgentName(ctx context.Context) (string, error) {
+	return resolveAgentNameWithOverride(ctx, false)
 }
 
-func resolveUserIDAdmin(ctx context.Context) (string, error) {
-	return resolveUserIDWithOverride(ctx, true)
+func resolveAgentNameAdmin(ctx context.Context) (string, error) {
+	return resolveAgentNameWithOverride(ctx, true)
 }
 
-func resolveUserIDWithOverride(ctx context.Context, allowOverride bool) (string, error) {
+func resolveAgentNameWithOverride(ctx context.Context, allowOverride bool) (string, error) {
 	identity, err := discovery.ResolveIdentity(ctx, clients.STS, clients.SSM)
 	if err != nil {
 		return "", err
 	}
 
-	if flagUser != "" {
-		if err := validateMemberID(flagUser); err != nil {
-			return "", err
+	if flagAgent != "" {
+		if !allowOverride && identity.AgentName != "" && flagAgent != identity.AgentName {
+			return "", fmt.Errorf("cannot operate on another user's resources. Your agent name is %s", identity.AgentName)
 		}
-		if !allowOverride && identity.MemberID != "" && flagUser != identity.MemberID {
-			return "", fmt.Errorf("cannot operate on another user's resources. Your Slack Member ID is %s", identity.MemberID)
-		}
-		return flagUser, nil
+		return flagAgent, nil
 	}
 
-	if identity.MemberID == "" {
-		return "", fmt.Errorf("your IAM identity (%s) is not mapped to a Slack Member ID.\nUse --user <SLACK_MEMBER_ID> or ask admin to update the mapping", identity.SessionName)
+	if identity.AgentName == "" {
+		return "", fmt.Errorf("your IAM identity (%s) is not mapped to an agent.\nUse --agent <name> or ask admin to run `cruxclaw admin add-user`", identity.SessionName)
 	}
-	return identity.MemberID, nil
+	return identity.AgentName, nil
 }
 
 func findInstance(ctx context.Context) (string, error) {

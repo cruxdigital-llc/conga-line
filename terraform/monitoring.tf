@@ -51,57 +51,6 @@ resource "aws_cloudwatch_metric_alarm" "config_violation" {
   }
 }
 
-# --- CloudWatch Dashboard ---
-
-resource "aws_cloudwatch_dashboard" "openclaw" {
-  dashboard_name = var.project_name
-
-  dashboard_body = jsonencode({
-    widgets = [
-      {
-        type   = "metric"
-        x      = 0
-        y      = 0
-        width  = 12
-        height = 6
-        properties = {
-          title   = "Session Context Size (KB)"
-          view    = "timeSeries"
-          stacked = false
-          region  = var.aws_region
-          metrics = [
-            for name, cfg in var.agents : [
-              "OpenClaw", "SessionSizeKB", "UserId", local.agent_container_id[name],
-              { label = name, stat = "Maximum", period = 300 }
-            ]
-          ]
-          yAxis = {
-            left = { label = "KB", showUnits = false }
-          }
-        }
-      },
-      {
-        type   = "metric"
-        x      = 12
-        y      = 0
-        width  = 12
-        height = 6
-        properties = {
-          title   = "Session Message Count"
-          view    = "timeSeries"
-          stacked = false
-          region  = var.aws_region
-          metrics = [
-            for name, cfg in var.agents : [
-              "OpenClaw", "SessionMessageCount", "UserId", local.agent_container_id[name],
-              { label = name, stat = "Maximum", period = 300 }
-            ]
-          ]
-          yAxis = {
-            left = { label = "Messages", showUnits = false }
-          }
-        }
-      }
-    ]
-  })
-}
+# CloudWatch dashboard is created by the bootstrap script at boot time,
+# using the agents discovered from SSM. This ensures it always reflects
+# the actual agent list without requiring Terraform changes.

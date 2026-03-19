@@ -36,7 +36,19 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 2. CruxClaw CLI — ✅ Complete
 - [x] All 11 phases implemented and verified. See `specs/2026-03-18_feature_cruxclaw-cli/`
 
-### 3. Backlog / Upcoming
+### 3. SSM-Driven Bootstrap Discovery — Specified, Ready for Implementation
+*Lead: Architect + QA*
+- [x] Requirements defined: `specs/2026-03-19_feature_ssm-driven-bootstrap-discovery/requirements.md`
+- [x] Plan defined: `specs/2026-03-19_feature_ssm-driven-bootstrap-discovery/plan.md`
+- [x] Spec defined: `specs/2026-03-19_feature_ssm-driven-bootstrap-discovery/spec.md`
+- [x] Persona review passed (Architect + QA)
+- [x] Standards gate passed (1 warning: IAM widening, accepted)
+- [ ] Step 1: Unified SSM namespace (`/openclaw/agents/`) + config params
+- [ ] Step 2: Widen IAM secrets policy for dynamic agents
+- [ ] Step 3: Rewrite bootstrap for SSM discovery + update router.tf + CLI changes
+- [ ] Step 4: Verify CLI compatibility + migration
+
+### 4. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 

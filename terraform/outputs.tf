@@ -73,15 +73,5 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.openclaw.repository_url
 }
 
-output "ssm_port_forward_commands" {
-  description = "SSM port forwarding commands per agent (local port always 18789 for OAuth redirects)"
-  value = {
-    for name, cfg in var.agents : name => join(" ", [
-      "aws ssm start-session",
-      "--target ${aws_instance.openclaw.id}",
-      "--region ${var.aws_region}",
-      "--document-name AWS-StartPortForwardingSession",
-      "--parameters '{\"portNumber\":[\"${cfg.gateway_port}\"],\"localPortNumber\":[\"18789\"]}'"
-    ])
-  }
-}
+# Port forwarding commands are available via `cruxclaw connect`,
+# which reads agent config from SSM dynamically.

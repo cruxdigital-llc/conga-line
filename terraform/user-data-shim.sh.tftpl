@@ -1,3 +1,18 @@
+Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+MIME-Version: 1.0
+
+--==BOUNDARY==
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+
+#cloud-config
+cloud_final_modules:
+  - [scripts-user, always]
+
+--==BOUNDARY==
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+
 #!/bin/bash
 set -euxo pipefail
 exec > >(tee /var/log/openclaw-bootstrap.log) 2>&1
@@ -6,3 +21,5 @@ exec > >(tee /var/log/openclaw-bootstrap.log) 2>&1
 aws s3 cp s3://${state_bucket}/openclaw/bootstrap/bootstrap.sh /tmp/bootstrap.sh --region ${aws_region}
 chmod +x /tmp/bootstrap.sh
 /tmp/bootstrap.sh
+
+--==BOUNDARY==--
