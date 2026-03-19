@@ -1,11 +1,12 @@
 #!/bin/bash
-set -euxo pipefail
+set -euo pipefail
 
 exec > >(tee /var/log/openclaw-bootstrap.log) 2>&1
 echo "=== OpenClaw Bootstrap Start: $(date -u) ==="
 
 AWS_REGION="${aws_region}"
 PROJECT_NAME="${project_name}"
+umask 077
 
 # ============================================================
 # 1. OS HARDENING

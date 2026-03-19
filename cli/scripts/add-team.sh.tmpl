@@ -1,4 +1,5 @@
-set -euxo pipefail
+set -euo pipefail
+umask 077
 AGENT_NAME="{{.AgentName}}"
 SLACK_CHANNEL="{{.SlackChannel}}"
 AWS_REGION="{{.AWSRegion}}"
@@ -141,6 +142,8 @@ systemctl enable openclaw-$AGENT_NAME.service
 systemctl start openclaw-$AGENT_NAME.service
 
 # Update routing config with the team's channel entry (channel routing only)
+# Initialize routing.json if it does not exist (first agent on fresh host)
+[ -f /opt/openclaw/config/routing.json ] || echo '{"channels":{},"members":{}}' > /opt/openclaw/config/routing.json
 node -e "
   const fs = require('fs');
   const cfg = JSON.parse(fs.readFileSync('/opt/openclaw/config/routing.json', 'utf-8'));

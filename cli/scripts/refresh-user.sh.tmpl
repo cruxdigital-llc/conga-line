@@ -1,4 +1,5 @@
-set -euxo pipefail
+set -euo pipefail
+umask 077
 AWS_REGION="{{.AWSRegion}}"
 AGENT_NAME="{{.AgentName}}"
 
@@ -41,10 +42,14 @@ while IFS="=" read -r key value; do
 done < /opt/openclaw/config/$AGENT_NAME.env
 
 # Extract existing port mapping from current systemd unit
-PORT_FLAG=$(grep -oP '\-p 127\.0\.0\.1:\d+:18789' /etc/systemd/system/openclaw-$AGENT_NAME.service || echo "")
+PORT_FLAG=$(grep -oE '\-p 127\.0\.0\.1:[0-9]+:18789' /etc/systemd/system/openclaw-$AGENT_NAME.service || echo "")
 
 sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE|" /etc/systemd/system/openclaw-$AGENT_NAME.service
 
 systemctl daemon-reload
 systemctl restart openclaw-$AGENT_NAME
+
+# Reconnect router to agent network (lost on container restart)
+docker network connect "openclaw-$AGENT_NAME" openclaw-router 2>/dev/null || true
+
 echo "Secrets refreshed and container restarted for $AGENT_NAME"
