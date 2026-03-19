@@ -122,6 +122,10 @@ func resolveAgentName(ctx context.Context) (string, error) {
 	return resolveAgentNameWithOverride(ctx, false)
 }
 
+func resolveAgentNameAdmin(ctx context.Context) (string, error) {
+	return resolveAgentNameWithOverride(ctx, true)
+}
+
 func resolveAgentNameWithOverride(ctx context.Context, allowOverride bool) (string, error) {
 	identity, err := discovery.ResolveIdentity(ctx, clients.STS, clients.SSM)
 	if err != nil {

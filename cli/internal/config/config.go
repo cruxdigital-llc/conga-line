@@ -13,8 +13,7 @@ type Config struct {
 	SSOStartURL   string `toml:"sso_start_url"`
 	SSOAccountID  string `toml:"sso_account_id"`
 	SSORoleName   string `toml:"sso_role_name"`
-	InstanceTag   string `toml:"instance_tag"`
-	OpenClawImage string `toml:"openclaw_image"`
+	InstanceTag string `toml:"instance_tag"`
 }
 
 func Defaults() *Config {
@@ -33,9 +32,6 @@ func (c *Config) RequiredFieldsMissing() []string {
 	}
 	if c.SSOAccountID == "" {
 		missing = append(missing, "sso_account_id")
-	}
-	if c.OpenClawImage == "" {
-		missing = append(missing, "openclaw_image")
 	}
 	return missing
 }

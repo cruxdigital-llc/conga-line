@@ -76,23 +76,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	image := existing.OpenClawImage
-	if promptAll || missing["openclaw_image"] {
-		var err error
-		image, err = ui.TextPromptWithDefault("OpenClaw Docker image (must include PR #49514 fix)", existing.OpenClawImage)
-		if err != nil {
-			return err
-		}
-	}
-
 	newCfg := &config.Config{
-		Region:        region,
-		Profile:       profile,
-		SSOStartURL:   ssoURL,
-		SSOAccountID:  accountID,
-		SSORoleName:   roleName,
-		InstanceTag:   defaultOrVal(existing.InstanceTag, "openclaw-host"),
-		OpenClawImage: image,
+		Region:      region,
+		Profile:     profile,
+		SSOStartURL: ssoURL,
+		SSOAccountID: accountID,
+		SSORoleName: roleName,
+		InstanceTag: defaultOrVal(existing.InstanceTag, "openclaw-host"),
 	}
 
 	if err := newCfg.Save(); err != nil {

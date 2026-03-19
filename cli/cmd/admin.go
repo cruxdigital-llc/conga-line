@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"text/template"
 	"time"
@@ -101,8 +102,14 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 	fmt.Println("Reading setup manifest...")
 	changed := 0
 
-	// Process config values (stored in SSM)
-	for key, description := range manifest.Config {
+	// Process config values (stored in SSM) — sorted for deterministic prompt order
+	configKeys := make([]string, 0, len(manifest.Config))
+	for key := range manifest.Config {
+		configKeys = append(configKeys, key)
+	}
+	sort.Strings(configKeys)
+	for _, key := range configKeys {
+		description := manifest.Config[key]
 		paramName := fmt.Sprintf("/openclaw/config/%s", key)
 		current, _ := awsutil.GetParameter(ctx, clients.SSM, paramName)
 
@@ -134,8 +141,14 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 		changed++
 	}
 
-	// Process secrets (stored in Secrets Manager)
-	for path, description := range manifest.Secrets {
+	// Process secrets (stored in Secrets Manager) — sorted for deterministic prompt order
+	secretPaths := make([]string, 0, len(manifest.Secrets))
+	for path := range manifest.Secrets {
+		secretPaths = append(secretPaths, path)
+	}
+	sort.Strings(secretPaths)
+	for _, path := range secretPaths {
+		description := manifest.Secrets[path]
 		current, _ := awsutil.GetSecretValue(ctx, clients.SecretsManager, path)
 
 		status := "set"
