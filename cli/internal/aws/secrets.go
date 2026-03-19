@@ -75,6 +75,19 @@ func SetSecret(ctx context.Context, client *secretsmanager.Client, name, value s
 	return nil
 }
 
+func GetSecretValue(ctx context.Context, client *secretsmanager.Client, name string) (string, error) {
+	out, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(name),
+	})
+	if err != nil {
+		if isResourceNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get secret: %w", err)
+	}
+	return aws.ToString(out.SecretString), nil
+}
+
 func DeleteSecret(ctx context.Context, client *secretsmanager.Client, name string) error {
 	_, err := client.DeleteSecret(ctx, &secretsmanager.DeleteSecretInput{
 		SecretId:                   aws.String(name),

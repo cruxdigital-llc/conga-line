@@ -5,15 +5,8 @@ locals {
   bootstrap_content = templatefile("${path.module}/user-data.sh.tftpl", {
     aws_region                    = var.aws_region
     project_name                  = var.project_name
-    agents                        = var.agents
-    agent_container_id            = local.agent_container_id
     config_check_interval_minutes = var.config_check_interval_minutes
-    openclaw_image                = var.openclaw_image
     state_bucket                  = local.state_bucket
-    routing_json = jsonencode({
-      channels = { for k, v in local.team_agents : v.slack_channel => "http://openclaw-${k}:18789/slack/events" }
-      members  = { for k, v in local.user_agents : v.member_id => "http://openclaw-${v.member_id}:18789/slack/events" }
-    })
   })
 }
 

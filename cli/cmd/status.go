@@ -42,7 +42,7 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		memberID, err := resolveUserID(ctx)
+		agentName, err := resolveAgentName(ctx)
 		if err != nil {
 			return err
 		}
@@ -77,7 +77,7 @@ if docker inspect $SVC >/dev/null 2>&1; then
 else
   echo "CONTAINER_STATUS=not found"
 fi
-`, memberID)
+`, agentName)
 
 		spin := ui.NewSpinner("Checking status...")
 		result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, script, 30*time.Second)

@@ -1,5 +1,6 @@
-set -euxo pipefail
-TEAM_NAME="{{.TeamName}}"
+set -euo pipefail
+umask 077
+AGENT_NAME="{{.AgentName}}"
 SLACK_CHANNEL="{{.SlackChannel}}"
 AWS_REGION="{{.AWSRegion}}"
 GATEWAY_PORT="{{.GatewayPort}}"
@@ -9,36 +10,39 @@ get_secret() {
     --secret-id "$1" --query SecretString --output text --region "$AWS_REGION"
 }
 
-echo "=== Setting up team agent: $TEAM_NAME ==="
+OPENCLAW_IMAGE=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" \
+  --query "Parameter.Value" --output text --region "$AWS_REGION")
+
+echo "=== Setting up team agent: $AGENT_NAME ==="
 
 SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
 SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
 GOOGLE_CLIENT_ID=$(get_secret "openclaw/shared/google-client-id")
 GOOGLE_CLIENT_SECRET=$(get_secret "openclaw/shared/google-client-secret")
 
-# Discover per-team secrets (e.g. openclaw/teams/<team_name>/anthropic-api-key)
-TEAM_SECRET_NAMES=$(aws secretsmanager list-secrets \
-  --filter Key=name,Values="openclaw/teams/$TEAM_NAME/" \
+# Discover per-agent secrets
+AGENT_SECRET_NAMES=$(aws secretsmanager list-secrets \
+  --filter Key=name,Values="openclaw/agents/$AGENT_NAME/" \
   --query 'SecretList[].Name' --output text \
   --region "$AWS_REGION" 2>/dev/null || echo "")
 
-cat > /opt/openclaw/config/$TEAM_NAME.env << ENVFILE
+cat > /opt/openclaw/config/$AGENT_NAME.env << ENVFILE
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
 SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
 GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
 ENVFILE
 
-if [ -n "$TEAM_SECRET_NAMES" ]; then
-  for SECRET_PATH in $TEAM_SECRET_NAMES; do
+if [ -n "$AGENT_SECRET_NAMES" ]; then
+  for SECRET_PATH in $AGENT_SECRET_NAMES; do
     SECRET_VALUE=$(get_secret "$SECRET_PATH")
-    SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|openclaw/teams/$TEAM_NAME/||" | tr '[:lower:]-' '[:upper:]_')
-    echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/openclaw/config/$TEAM_NAME.env
+    SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|openclaw/agents/$AGENT_NAME/||" | tr '[:lower:]-' '[:upper:]_')
+    echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/openclaw/config/$AGENT_NAME.env
   done
 fi
-chmod 0400 /opt/openclaw/config/$TEAM_NAME.env
+chmod 0400 /opt/openclaw/config/$AGENT_NAME.env
 
-cat > /opt/openclaw/config/$TEAM_NAME-openclaw.json << OCCONFIG
+cat > /opt/openclaw/config/$AGENT_NAME-openclaw.json << OCCONFIG
 {
   "agents": {
     "defaults": {
@@ -93,37 +97,37 @@ cat > /opt/openclaw/config/$TEAM_NAME-openclaw.json << OCCONFIG
 }
 OCCONFIG
 
-if [ ! -d /opt/openclaw/data/$TEAM_NAME ]; then
-  mkdir -p /opt/openclaw/data/$TEAM_NAME/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
-  chown -R 1000:1000 /opt/openclaw/data/$TEAM_NAME
+if [ ! -d /opt/openclaw/data/$AGENT_NAME ]; then
+  mkdir -p /opt/openclaw/data/$AGENT_NAME/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
+  chown -R 1000:1000 /opt/openclaw/data/$AGENT_NAME
 fi
-cp /opt/openclaw/config/$TEAM_NAME-openclaw.json /opt/openclaw/data/$TEAM_NAME/openclaw.json
-chown 1000:1000 /opt/openclaw/data/$TEAM_NAME/openclaw.json
+cp /opt/openclaw/config/$AGENT_NAME-openclaw.json /opt/openclaw/data/$AGENT_NAME/openclaw.json
+chown 1000:1000 /opt/openclaw/data/$AGENT_NAME/openclaw.json
 
-sha256sum /opt/openclaw/config/$TEAM_NAME-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$TEAM_NAME-openclaw.json.sha256
-chmod 0444 /opt/openclaw/config/$TEAM_NAME-openclaw.json.sha256
+sha256sum /opt/openclaw/config/$AGENT_NAME-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$AGENT_NAME-openclaw.json.sha256
+chmod 0444 /opt/openclaw/config/$AGENT_NAME-openclaw.json.sha256
 
-docker network create --driver bridge "openclaw-$TEAM_NAME" || true
+docker network create --driver bridge "openclaw-$AGENT_NAME" || true
 
 ENV_FLAGS=""
 while IFS="=" read -r key value; do
   [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
-done < /opt/openclaw/config/$TEAM_NAME.env
+done < /opt/openclaw/config/$AGENT_NAME.env
 
-cat > /etc/systemd/system/openclaw-$TEAM_NAME.service << UNIT
+cat > /etc/systemd/system/openclaw-$AGENT_NAME.service << UNIT
 [Unit]
-Description=OpenClaw Gateway ($TEAM_NAME)
+Description=OpenClaw Gateway ($AGENT_NAME)
 After=docker.service openclaw-router.service
 Requires=docker.service
 
 [Service]
 Type=simple
-EnvironmentFile=/opt/openclaw/config/$TEAM_NAME.env
-ExecStartPre=-/usr/bin/docker rm -f openclaw-$TEAM_NAME
-ExecStart=/usr/bin/docker run --name openclaw-$TEAM_NAME --network openclaw-$TEAM_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$TEAM_NAME:/home/node/.openclaw:rw $ENV_FLAGS {{.OpenClawImage}}
-ExecStop=/usr/bin/docker stop openclaw-$TEAM_NAME
-StandardOutput=append:/var/log/openclaw-$TEAM_NAME.log
-StandardError=append:/var/log/openclaw-$TEAM_NAME.log
+EnvironmentFile=/opt/openclaw/config/$AGENT_NAME.env
+ExecStartPre=-/usr/bin/docker rm -f openclaw-$AGENT_NAME
+ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStop=/usr/bin/docker stop openclaw-$AGENT_NAME
+StandardOutput=append:/var/log/openclaw-$AGENT_NAME.log
+StandardError=append:/var/log/openclaw-$AGENT_NAME.log
 Restart=always
 RestartSec=10
 TimeoutStartSec=120
@@ -134,18 +138,23 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable openclaw-$TEAM_NAME.service
-systemctl start openclaw-$TEAM_NAME.service
+systemctl enable openclaw-$AGENT_NAME.service
+systemctl start openclaw-$AGENT_NAME.service
 
 # Update routing config with the team's channel entry (channel routing only)
+# Initialize routing.json if it does not exist (first agent on fresh host)
+[ -f /opt/openclaw/config/routing.json ] || echo '{"channels":{},"members":{}}' > /opt/openclaw/config/routing.json
 node -e "
   const fs = require('fs');
   const cfg = JSON.parse(fs.readFileSync('/opt/openclaw/config/routing.json', 'utf-8'));
-  cfg.channels['$SLACK_CHANNEL'] = 'http://openclaw-$TEAM_NAME:18789/slack/events';
+  cfg.channels['$SLACK_CHANNEL'] = 'http://openclaw-$AGENT_NAME:18789/slack/events';
   fs.writeFileSync('/opt/openclaw/config/routing.json', JSON.stringify(cfg, null, 2));
 "
 
-# Connect router to the team's network so it can reach the container
-docker network connect "openclaw-$TEAM_NAME" openclaw-router 2>/dev/null || true
+# Connect router to the agent's network
+docker network connect "openclaw-$AGENT_NAME" openclaw-router 2>/dev/null || true
 
-echo "=== Team agent $TEAM_NAME setup complete ==="
+# Update CloudWatch dashboard with all agents
+/opt/openclaw/bin/update-dashboard.sh || echo "WARNING: Dashboard update failed"
+
+echo "=== Team agent $AGENT_NAME setup complete ==="

@@ -45,15 +45,25 @@ resource "aws_iam_role_policy" "secrets_read" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = concat(
-          ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/shared/*"],
-          [for k, v in local.user_agents : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/${v.member_id}/*"]
-        )
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/shared/*",
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/agents/*"
+        ]
       },
       {
         Effect   = "Allow"
         Action   = ["secretsmanager:ListSecrets"]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/openclaw/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -80,6 +90,13 @@ resource "aws_iam_role_policy" "secrets_read" {
             "cloudwatch:namespace" = "OpenClaw"
           }
         }
+      },
+      {
+        Effect = "Allow"
+        Action = ["cloudwatch:PutDashboard"]
+        Resource = [
+          "arn:aws:cloudwatch::${data.aws_caller_identity.current.account_id}:dashboard/${var.project_name}"
+        ]
       }
     ]
   })

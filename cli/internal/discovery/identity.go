@@ -8,14 +8,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
 )
 
 type ResolvedIdentity struct {
 	ARN         string
 	AccountID   string
 	SessionName string
-	MemberID    string
+	AgentName   string
 }
 
 func ResolveIdentity(ctx context.Context, stsClient *sts.Client, ssmClient *ssm.Client) (*ResolvedIdentity, error) {
@@ -41,12 +40,11 @@ func ResolveIdentity(ctx context.Context, stsClient *sts.Client, ssmClient *ssm.
 		SessionName: sessionName,
 	}
 
-	// Try to resolve member ID from SSM parameter
+	// Try to resolve agent by IAM identity
 	if sessionName != "" {
-		paramName := fmt.Sprintf("/openclaw/users/by-iam/%s", sessionName)
-		memberID, err := awsutil.GetParameter(ctx, ssmClient, paramName)
+		agent, err := ResolveAgentByIAM(ctx, ssmClient, sessionName)
 		if err == nil {
-			identity.MemberID = strings.TrimSpace(memberID)
+			identity.AgentName = agent.Name
 		}
 	}
 

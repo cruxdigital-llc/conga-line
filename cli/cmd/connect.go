@@ -44,12 +44,12 @@ func connectRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	memberID, err := resolveUserID(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
 
-	userCfg, err := discovery.ResolveUser(ctx, clients.SSM, memberID)
+	agentCfg, err := discovery.ResolveAgent(ctx, clients.SSM, agentName)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fetch gateway token
-	tokenScript := fmt.Sprintf(`python3 -c "import json; c=json.load(open('/opt/openclaw/data/%s/openclaw.json')); print(c.get('gateway',{}).get('auth',{}).get('token','NOT_FOUND'))"`, memberID)
+	tokenScript := fmt.Sprintf(`python3 -c "import json; c=json.load(open('/opt/openclaw/data/%s/openclaw.json')); print(c.get('gateway',{}).get('auth',{}).get('token','NOT_FOUND'))"`, agentName)
 
 	spin := ui.NewSpinner("Fetching gateway token...")
 	result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, tokenScript, 30*time.Second)
@@ -83,9 +83,9 @@ func connectRun(cmd *cobra.Command, args []string) error {
 
 	// Start tunnel
 	profile := resolveProfile()
-	fmt.Printf("Starting tunnel: localhost:%d → instance:%d\n", connectLocalPort, userCfg.GatewayPort)
+	fmt.Printf("Starting tunnel: localhost:%d → instance:%d\n", connectLocalPort, agentCfg.GatewayPort)
 
-	tun, err := tunnel.StartTunnel(ctx, clients.SSM, instanceID, userCfg.GatewayPort, connectLocalPort, cfg.Region, profile)
+	tun, err := tunnel.StartTunnel(ctx, clients.SSM, instanceID, agentCfg.GatewayPort, connectLocalPort, cfg.Region, profile)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 
 	// Device pairing poll (background)
 	if !connectNoPairing {
-		go pollDevicePairing(ctx, instanceID, memberID)
+		go pollDevicePairing(ctx, instanceID, agentName)
 	}
 
 	// Wait for tunnel exit or signal
@@ -120,7 +120,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func pollDevicePairing(ctx context.Context, instanceID, memberID string) {
+func pollDevicePairing(ctx context.Context, instanceID, agentName string) {
 	fmt.Println("Watching for device pairing requests...")
 
 	for i := 0; i < 30; i++ {
@@ -130,7 +130,7 @@ func pollDevicePairing(ctx context.Context, instanceID, memberID string) {
 			return
 		}
 
-		listScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices list --json 2>&1", memberID)
+		listScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices list --json 2>&1", agentName)
 		result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, listScript, 30*time.Second)
 		if err != nil {
 			continue
@@ -140,7 +140,7 @@ func pollDevicePairing(ctx context.Context, instanceID, memberID string) {
 			continue
 		}
 
-		approveScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices approve --latest 2>&1", memberID)
+		approveScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices approve --latest 2>&1", agentName)
 		result, err = awsutil.RunCommand(ctx, clients.SSM, instanceID, approveScript, 30*time.Second)
 		if err != nil {
 			continue
