@@ -2,28 +2,14 @@
 #   cruxclaw admin setup              — creates shared secrets from manifest
 #   cruxclaw secrets set <name>       — creates per-agent secrets
 #   cruxclaw admin remove-agent --delete-secrets — cleans up on removal
-
-# State migration: these resources were previously managed by Terraform.
-# The `removed` blocks tell Terraform to forget them without destroying
-# the actual secrets in AWS, so the CLI can take over management.
-
-removed {
-  from = aws_secretsmanager_secret.shared
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_secretsmanager_secret_version.shared
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = terraform_data.user_secrets_cleanup
-  lifecycle {
-    destroy = false
-  }
-}
+#
+# STATE MIGRATION (run once before first `terraform apply` on this branch):
+#   These resources were previously managed by Terraform. Remove them from
+#   state so Terraform doesn't destroy the live secrets:
+#
+#   terraform state rm 'aws_secretsmanager_secret.shared'
+#   terraform state rm 'aws_secretsmanager_secret_version.shared'
+#   terraform state rm 'terraform_data.user_secrets_cleanup'
+#
+#   If any of these return "No matching objects found", that's fine — it
+#   means the resource was never in state (e.g., fresh deployment).
