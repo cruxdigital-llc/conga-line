@@ -102,7 +102,7 @@ variable "agents" {
   }
 
   validation {
-    condition = length([for k, v in var.agents : v.member_id if v.type == "user"]) == length(distinct([for k, v in var.agents : v.member_id if v.type == "user"]))
+    condition     = length([for k, v in var.agents : v.member_id if v.type == "user"]) == length(distinct([for k, v in var.agents : v.member_id if v.type == "user"]))
     error_message = "All user agent member_id values must be unique."
   }
 }
