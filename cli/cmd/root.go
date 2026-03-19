@@ -19,7 +19,7 @@ var validChannelPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
 var (
 	flagRegion  string
 	flagProfile string
-	flagAgent    string
+	flagAgent   string
 	flagVerbose bool
 
 	cfg     *config.Config
