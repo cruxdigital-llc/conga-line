@@ -47,7 +47,7 @@ var refreshCmd = &cobra.Command{
 			AWSRegion string
 		}{
 			AgentName: agentName,
-			AWSRegion: cfg.Region,
+			AWSRegion: resolvedRegion,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to render refresh script: %w", err)

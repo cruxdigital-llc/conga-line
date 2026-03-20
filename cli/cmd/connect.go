@@ -82,10 +82,9 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Start tunnel
-	profile := resolveProfile()
 	fmt.Printf("Starting tunnel: localhost:%d → instance:%d\n", connectLocalPort, agentCfg.GatewayPort)
 
-	tun, err := tunnel.StartTunnel(ctx, clients.SSM, instanceID, agentCfg.GatewayPort, connectLocalPort, cfg.Region, profile)
+	tun, err := tunnel.StartTunnel(ctx, clients.SSM, instanceID, agentCfg.GatewayPort, connectLocalPort, resolvedRegion, resolvedProfile)
 	if err != nil {
 		return err
 	}
