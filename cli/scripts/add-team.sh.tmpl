@@ -107,6 +107,16 @@ chown 1000:1000 /opt/openclaw/data/$AGENT_NAME/openclaw.json
 sha256sum /opt/openclaw/config/$AGENT_NAME-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$AGENT_NAME-openclaw.json.sha256
 chmod 0444 /opt/openclaw/config/$AGENT_NAME-openclaw.json.sha256
 
+# Store agent metadata for behavior deployment
+echo "team" > /opt/openclaw/config/$AGENT_NAME.type
+echo "$SLACK_CHANNEL" > /opt/openclaw/config/$AGENT_NAME.slack-id
+
+# Sync and deploy behavior files
+aws s3 sync "s3://{{.StateBucket}}/openclaw/behavior/" /opt/openclaw/behavior/ --region "$AWS_REGION" 2>/dev/null || true
+if [ -x /opt/openclaw/bin/deploy-behavior.sh ]; then
+  /opt/openclaw/bin/deploy-behavior.sh "$AGENT_NAME" "team"
+fi
+
 docker network create --driver bridge "openclaw-$AGENT_NAME" || true
 
 ENV_FLAGS=""

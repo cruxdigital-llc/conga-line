@@ -71,7 +71,9 @@ Add to the `aws_iam_role_policy.s3_read` resource's `Resource` array:
 "arn:aws:s3:::${local.state_bucket}/openclaw/behavior/*"
 ```
 
-This allows the EC2 instance to read behavior files from S3 (same permission level as router and bootstrap artifacts).
+Also adds `s3:ListBucket` on the bucket itself (required by `aws s3 sync`) and the bucket-level ARN.
+
+This allows the EC2 instance to read and list behavior files from S3 (same permission level as router and bootstrap artifacts).
 
 ## 3. Deploy Helper Script
 
@@ -308,27 +310,19 @@ For `adminAddTeamRun`, same addition of `StateBucket`.
 
 ## 6. State Bucket SSM Parameter
 
-### 6.1 Store during `admin setup`
+### 6.1 Auto-populated by Terraform
 
-Add to the setup flow: after the setup manifest is processed, write the state bucket name to SSM:
+The state bucket name is written to SSM automatically by Terraform in `ssm-parameters.tf`:
 
 ```
-/openclaw/config/state-bucket = <project_name>-terraform-state-<account_id>
+/openclaw/config/state-bucket = local.state_bucket
 ```
 
-The account ID is available from `sts:GetCallerIdentity` (already used by the CLI). The project name comes from the setup manifest or is hardcoded as the SSM namespace prefix.
+No interactive setup needed — the value is deterministic and Terraform owns it.
 
 ### 6.2 Read in provisioning commands
 
-Add a helper in the CLI (e.g. in `cli/internal/aws/params.go` or similar):
-
-```go
-func GetStateBucket(ctx context.Context, ssmClient SSMClient) (string, error) {
-    return GetParameter(ctx, ssmClient, "/openclaw/config/state-bucket")
-}
-```
-
-Call this in `adminAddUserRun` and `adminAddTeamRun` before template rendering.
+Called directly via `awsutil.GetParameter()` in `adminAddUserRun` and `adminAddTeamRun` before template rendering. Non-fatal if missing — behavior files won't sync but provisioning continues.
 
 ## 7. CLI Command: `admin refresh-all`
 

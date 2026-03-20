@@ -52,14 +52,8 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 *See `specs/2026-03-19_feature_cli-hardening/` for full trace*
 - Remaining deferred items: CLIContext struct migration, params_test.go, agent_test.go, executor command handler migration
 
-### 5. Behavior Management — Specified, Ready for Implementation
-*Lead: Architect + Product Manager + QA*
-- [x] Requirements defined: `specs/2026-03-20_feature_behavior-management/requirements.md`
-- [x] Plan defined: `specs/2026-03-20_feature_behavior-management/plan.md`
-- [x] Spec defined: `specs/2026-03-20_feature_behavior-management/spec.md`
-- [x] Persona review passed (Architect + PM + QA)
-- [x] Standards gate passed (1 note: no integrity monitoring for workspace files)
-- [ ] Implementation
+### 5. Behavior Management — Verified Complete
+*See `specs/2026-03-20_feature_behavior-management/` for full trace*
 
 ### 6. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
@@ -71,8 +65,10 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Per-user API keys: each employee brings their own credentials and plugins
 - Open question: egress domain allowlisting needed or port-443-only sufficient
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements
+- Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-03-20: Behavior Management — version-controlled behavior markdown (SOUL.md, AGENTS.md, USER.md) with base + type-specific composition, S3 deployment pipeline, systemd ExecStartPre auto-sync, `admin refresh-all` CLI command. Supports user vs team agent behavioral differentiation and per-agent overrides. See `specs/2026-03-20_feature_behavior-management/`.
 - 2026-03-19: CLI Hardening — fixed 3 silent failure bugs, tightened Slack ID validation, added --timeout flag, AWS service interfaces for testability, HostExecutor interface for future local mode, 28 unit tests (7 test files), split admin.go into 4 files, human-readable uptime display, CI test/coverage steps. See `specs/2026-03-19_feature_cli-hardening/`.
 - 2026-03-18: Open-source sanitization — removed all hardcoded environment-specific values (account IDs, Slack IDs, SSO URLs, usernames). Gitignored `backend.tf` + `terraform.tfvars` with `.example` files. Added `openclaw_image` variable. New `cruxclaw init` command for first-run config. Consolidated README. See `specs/2026-03-18_feature_open-source-sanitization/`.
 - 2026-03-18: CruxClaw CLI — implemented. Go CLI with 13 commands (auth, secrets, connect, refresh, status, logs, admin). Terraform SSM parameters for discovery. GoReleaser + GitHub Actions for releases. See `specs/2026-03-18_feature_cruxclaw-cli/`.
