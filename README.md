@@ -1,16 +1,40 @@
 # OpenClaw on AWS
 
-Hardened, per-agent-isolated AWS deployment of [OpenClaw](https://github.com/openclaw/openclaw) (autonomous AI assistant) via Slack. Single EC2 host with per-agent Docker containers in a zero-ingress VPC. Terraform manages infrastructure, the CLI manages agents.
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-%3E%3D1.21-00ADD8.svg)](cli/)
+[![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
+
+Deploy and manage clusters of autonomous AI agents on hardened AWS infrastructure. Each agent runs in its own isolated Docker container with dedicated secrets, networking, and access controls — giving teams and enterprises granular permission management over their AI workforce.
+
+## Key Features
+
+- **Zero-ingress networking** — no SSH, no public ports; all access through AWS SSM
+- **Per-agent isolation** — separate Docker containers, networks, secrets, and config
+- **Two agent types** — user agents (DM-only) for individuals, team agents (channel-based) for groups
+- **SSM-driven discovery** — agents are registered in Parameter Store and provisioned automatically at boot, no Terraform changes needed to add or remove agents
+- **Slack event router** — single Socket Mode connection fans out to per-agent containers via HTTP webhook
+- **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway) on a single t4g.medium host; ~$10/mo total
+- **CLI for everything** — operators and end users manage agents, secrets, and infrastructure through the `cruxclaw` CLI
 
 ## Architecture
 
-- **Single EC2 host** (t4g.medium, AL2023) with per-agent Docker containers
-- **Zero ingress** — no SSH, no public ports. Access via AWS SSM only
-- **Per-agent isolation** — separate Docker networks, secrets, and config per agent
-- **Two agent types** — user agents (DM-only) and team agents (channel-based)
-- **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway), ~$10/mo total
-- **Slack event router** — single Socket Mode connection fans out to per-agent containers via HTTP
-- **SSM-driven bootstrap** — the instance discovers agents from SSM Parameter Store at boot, so CLI-added agents survive instance restarts without Terraform changes
+```
+                        +---------------------+
+                        |     AWS Cloud        |
+                        |  (zero-ingress VPC)  |
+                        |                      |
+  Slack API <-----------+----> Router          |
+  (Socket Mode)         |       |              |
+                        |       +-> Agent A    |
+                        |       |   (container)|
+                        |       +-> Agent B    |
+                        |       |   (container)|
+                        |       +-> Agent N    |
+                        |           (container)|
+                        |                      |
+  Operator/User <--SSM--+----> EC2 Host        |
+                        +---------------------+
+```
 
 ### Separation of Concerns
 
@@ -20,59 +44,16 @@ Hardened, per-agent-isolated AWS deployment of [OpenClaw](https://github.com/ope
 | **Configuration** | CLI (`cruxclaw admin setup`) | Shared secrets, Docker image, deployment settings |
 | **Agents** | CLI (`cruxclaw admin add-user/add-team`) | Per-agent containers, configs, routing, secrets |
 
----
-
-## Install the CLI
-
-This is all you need to use OpenClaw as an end user. No Terraform, Go, or repo clone required.
+## Quick Start (Operators)
 
 ### Prerequisites
 
-- **AWS CLI v2** — [Install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- **session-manager-plugin** — required for `cruxclaw connect`
-  - macOS: `brew install --cask session-manager-plugin`
-  - Linux/Windows: [AWS install guide](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
-- **AWS SSO access** — your admin will provide the SSO URL and account ID
-
-### Install
-
-```bash
-gh release download --repo cruxdigital-llc/crux-claw --pattern "cruxclaw_*_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" --output - | tar xz -C /usr/local/bin cruxclaw
-```
-
-### First-time setup (end users)
-
-```bash
-# 1. Configure AWS SSO (one time)
-aws configure sso --profile your-profile
-export AWS_PROFILE=your-profile
-aws sso login
-
-# 2. First run — triggers interactive CLI setup
-cruxclaw auth status
-
-# 3. Add your API key and connect
-cruxclaw secrets set anthropic-api-key
-cruxclaw refresh
-cruxclaw connect
-```
-
-Open http://localhost:18789 in your browser.
-
----
-
-## Deploy the Infrastructure
-
-This section is for operators deploying or managing the AWS infrastructure.
-
-### Prerequisites
-
-- Everything from [Install the CLI](#install-the-cli) above
 - **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
+- **AWS CLI v2** with **session-manager-plugin** installed
 - **Terraform** >= 1.5
-- **A patched OpenClaw Docker image** — see [Docker Image](#docker-image) below
+- **A patched OpenClaw Docker image** (see [Docker Image](#docker-image))
 
-### 1. Bootstrap Terraform state backend
+### 1. Bootstrap Terraform state
 
 ```bash
 export AWS_PROFILE=your-aws-profile
@@ -82,23 +63,16 @@ cd terraform
 ./bootstrap.sh
 ```
 
-This creates the S3 bucket and DynamoDB table for Terraform state.
-
-### 2. Configure and deploy infrastructure
+### 2. Deploy infrastructure
 
 ```bash
-cp backend.tf.example backend.tf
-# Edit backend.tf with your account ID, region, profile
-
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — set region, profile, project name
+cp backend.tf.example backend.tf    # edit with your account ID, region, profile
+cp terraform.tfvars.example terraform.tfvars  # edit with your settings
 
 terraform init
 terraform plan
 terraform apply
 ```
-
-Terraform creates the VPC, EC2 instance, IAM roles, router, and a **setup manifest** in SSM that describes what configuration the deployment needs.
 
 ### 3. Configure the deployment
 
@@ -106,85 +80,54 @@ Terraform creates the VPC, EC2 instance, IAM roles, router, and a **setup manife
 cruxclaw admin setup
 ```
 
-This reads the setup manifest from SSM and interactively prompts for:
-- **Config values** (stored in SSM) — Docker image URL
-- **Shared secrets** (stored in Secrets Manager) — Slack tokens, signing secret, Google OAuth credentials
+This reads the setup manifest from SSM and prompts for shared secrets (Slack tokens, signing secret, Google OAuth) and config values (Docker image URL).
 
 ### 4. Build and push the Docker image
 
-See [Docker Image](#docker-image) for why a custom image is needed. Once pushed, set it via `cruxclaw admin setup` when prompted for the `openclaw-image` config value.
+See [Docker Image](#docker-image) for details. Set the image URL when prompted by `cruxclaw admin setup`.
 
-### 5. Add agents
+### 5. Add agents and start
 
 ```bash
-# Add a user agent (DM-only, restricted to one Slack user)
 cruxclaw admin add-user myagent UEXAMPLE01
-
-# Add a team agent (channel-based, accessible to anyone in the channel)
 cruxclaw admin add-team leadership CEXAMPLE01
-
-# Verify
 cruxclaw admin list-agents
+
+cruxclaw admin cycle-host   # restarts EC2; bootstrap discovers and provisions all agents
 ```
 
-### 6. Start everything
+## Install the CLI (End Users)
 
-```bash
-cruxclaw admin cycle-host
-```
-
-This restarts the EC2 instance. The bootstrap script discovers all agents from SSM and provisions them automatically.
-
-### Docker Image
-
-The upstream `ghcr.io/openclaw/openclaw:latest` does **not** work with Slack in HTTP webhook mode without a bugfix from [PR #49514](https://github.com/openclaw/openclaw/pull/49514). Until that PR is merged, you need to build your own image with the fix applied:
-
-```bash
-# Clone OpenClaw and apply the fix
-git clone https://github.com/openclaw/openclaw.git
-cd openclaw
-# Cherry-pick or apply the fix from PR #49514
-
-# Build and push to your ECR
-docker build -t <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest .
-aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
-docker push <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest
-```
-
----
-
-## Develop the CLI
-
-This section is for developers building and testing the `cruxclaw` CLI locally.
+No Terraform, Go, or repo clone required.
 
 ### Prerequisites
 
-- **Go** >= 1.21
-- Everything from [Install the CLI](#install-the-cli) above (for AWS access during testing)
+- **AWS CLI v2** — [Install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+- **session-manager-plugin** — macOS: `brew install --cask session-manager-plugin` | [Other platforms](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
+- **AWS SSO access** — your admin will provide the SSO URL and account ID
 
-### Build and run
+### Install
 
 ```bash
-cd cli
-go build -o cruxclaw .
-./cruxclaw auth status
+gh release download --repo cruxdigital-llc/openclaw --pattern "cruxclaw_*_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" --output - | tar xz -C /usr/local/bin cruxclaw
 ```
 
-### Project structure
+### First-time setup
 
+```bash
+aws configure sso --profile your-profile
+export AWS_PROFILE=your-profile
+aws sso login
+
+cruxclaw auth status        # triggers interactive CLI setup
+cruxclaw secrets set anthropic-api-key
+cruxclaw refresh
+cruxclaw connect            # opens SSM tunnel to web UI
 ```
-cli/
-├── cmd/           # Cobra command definitions
-├── internal/      # Internal packages (config, AWS clients, discovery)
-├── scripts/       # Embedded shell script templates for remote execution
-├── main.go        # Entrypoint
-├── go.mod
-└── go.sum
-```
 
----
+Open http://localhost:18789 in your browser.
 
-## CLI Commands
+## CLI Reference
 
 ### User Commands
 
@@ -232,4 +175,61 @@ The CLI discovers infrastructure via AWS APIs — no Terraform access or repo cl
 - **Secrets**: Managed in AWS Secrets Manager under `openclaw/agents/{name}/`
 - **Shared config**: Setup manifest at `/openclaw/config/setup-manifest`, image at `/openclaw/config/openclaw-image`
 - **Remote operations**: Executed via SSM RunCommand (no SSH, no ingress)
-- **Bootstrap discovery**: On instance boot, the bootstrap script reads all agents from `/openclaw/agents/` in SSM and provisions them — no Terraform template loops
+- **Bootstrap discovery**: On instance boot, the bootstrap script reads all agents from `/openclaw/agents/` in SSM and provisions them automatically
+
+## Docker Image
+
+The upstream OpenClaw image does not support Slack HTTP webhook mode without the fix from [PR #49514](https://github.com/openclaw/openclaw/pull/49514). Until merged upstream, build a custom image:
+
+```bash
+git clone https://github.com/openclaw/openclaw.git
+cd openclaw
+# Cherry-pick or apply the fix from PR #49514
+
+docker build -t <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest .
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
+docker push <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest
+```
+
+## Development
+
+For developers building and testing the `cruxclaw` CLI locally.
+
+### Prerequisites
+
+- **Go** >= 1.21
+- AWS access configured (see [Install the CLI](#install-the-cli-end-users))
+
+### Build and run
+
+```bash
+cd cli
+go build -o cruxclaw .
+./cruxclaw auth status
+```
+
+### Project structure
+
+```
+cli/
+├── cmd/           # Cobra command definitions
+├── internal/      # Internal packages (config, AWS clients, discovery)
+├── scripts/       # Embedded shell script templates for remote execution
+├── main.go        # Entrypoint
+├── go.mod
+└── go.sum
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, testing, and PR guidelines.
+
+## License
+
+This project is licensed under the Apache License 2.0 — see [LICENSE](LICENSE) for details.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get involved.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
