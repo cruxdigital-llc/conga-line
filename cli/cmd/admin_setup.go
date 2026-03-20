@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 
 	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
@@ -43,7 +44,13 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 	for _, key := range configKeys {
 		description := manifest.Config[key]
 		paramName := fmt.Sprintf("/openclaw/config/%s", key)
-		current, _ := awsutil.GetParameter(ctx, clients.SSM, paramName)
+		current, err := awsutil.GetParameter(ctx, clients.SSM, paramName)
+		if err != nil {
+			// GetParameter wraps "not found" errors; any error means we couldn't read it.
+			// Warn the user but treat as unset so they can provide a value.
+			fmt.Fprintf(os.Stderr, "  Warning: could not read %s: %v\n", paramName, err)
+			current = ""
+		}
 
 		status := "set"
 		if current == "" {
@@ -81,7 +88,11 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 	sort.Strings(secretPaths)
 	for _, path := range secretPaths {
 		description := manifest.Secrets[path]
-		current, _ := awsutil.GetSecretValue(ctx, clients.SecretsManager, path)
+		current, err := awsutil.GetSecretValue(ctx, clients.SecretsManager, path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: could not read secret %s: %v\n", path, err)
+			current = ""
+		}
 
 		status := "set"
 		if current == "" || current == "REPLACE_ME" {

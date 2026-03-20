@@ -53,17 +53,24 @@ func StartInstance(ctx context.Context, client EC2Client, instanceID string) err
 }
 
 func WaitForState(ctx context.Context, client EC2Client, instanceID, state string) error {
+	maxWait := 10 * time.Minute
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < maxWait {
+			maxWait = remaining
+		}
+	}
+
+	input := &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}
+
 	switch state {
 	case "stopped":
 		waiter := ec2.NewInstanceStoppedWaiter(client)
-		return waiter.Wait(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: []string{instanceID},
-		}, 10*time.Minute)
+		return waiter.Wait(ctx, input, maxWait)
 	case "running":
 		waiter := ec2.NewInstanceRunningWaiter(client)
-		return waiter.Wait(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: []string{instanceID},
-		}, 10*time.Minute)
+		return waiter.Wait(ctx, input, maxWait)
 	default:
 		return fmt.Errorf("unsupported state: %s", state)
 	}

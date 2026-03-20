@@ -165,6 +165,71 @@ func TestListSecrets_Empty(t *testing.T) {
 	}
 }
 
+func TestGetSecretValue_Success(t *testing.T) {
+	mock := &mockSecretsClient{
+		getSecretValueFn: func(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+			return &secretsmanager.GetSecretValueOutput{
+				SecretString: awslib.String("my-secret-value"),
+			}, nil
+		},
+	}
+
+	val, err := GetSecretValue(context.Background(), mock, "test/secret")
+	if err != nil {
+		t.Fatalf("GetSecretValue returned error: %v", err)
+	}
+	if val != "my-secret-value" {
+		t.Errorf("expected %q, got %q", "my-secret-value", val)
+	}
+}
+
+func TestGetSecretValue_NotFound(t *testing.T) {
+	mock := &mockSecretsClient{
+		getSecretValueFn: func(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+			return nil, &smtypes.ResourceNotFoundException{Message: awslib.String("not found")}
+		},
+	}
+
+	val, err := GetSecretValue(context.Background(), mock, "test/secret")
+	if err != nil {
+		t.Fatalf("GetSecretValue returned error for not-found: %v", err)
+	}
+	if val != "" {
+		t.Errorf("expected empty string for not-found, got %q", val)
+	}
+}
+
+func TestGetSecretValue_OtherError(t *testing.T) {
+	mock := &mockSecretsClient{
+		getSecretValueFn: func(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+			return nil, fmt.Errorf("access denied")
+		},
+	}
+
+	_, err := GetSecretValue(context.Background(), mock, "test/secret")
+	if err == nil {
+		t.Fatal("expected error from GetSecretValue")
+	}
+}
+
+func TestDeleteSecret_Success(t *testing.T) {
+	var gotForceDelete bool
+	mock := &mockSecretsClient{
+		deleteSecretFn: func(ctx context.Context, params *secretsmanager.DeleteSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.DeleteSecretOutput, error) {
+			gotForceDelete = awslib.ToBool(params.ForceDeleteWithoutRecovery)
+			return &secretsmanager.DeleteSecretOutput{}, nil
+		},
+	}
+
+	err := DeleteSecret(context.Background(), mock, "test/secret")
+	if err != nil {
+		t.Fatalf("DeleteSecret returned error: %v", err)
+	}
+	if !gotForceDelete {
+		t.Error("expected ForceDeleteWithoutRecovery to be true")
+	}
+}
+
 func TestDeleteSecret_WrapsError(t *testing.T) {
 	mock := &mockSecretsClient{
 		deleteSecretFn: func(ctx context.Context, params *secretsmanager.DeleteSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.DeleteSecretOutput, error) {

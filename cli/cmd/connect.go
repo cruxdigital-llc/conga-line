@@ -33,28 +33,30 @@ func init() {
 }
 
 func connectRun(cmd *cobra.Command, args []string) error {
-	ctx, cancel := commandContext()
-	defer cancel()
+	// Use a bounded context for setup (client init, agent resolution, token fetch),
+	// then switch to an unbounded context for the long-lived tunnel session.
+	setupCtx, setupCancel := commandContext()
+	defer setupCancel()
 
 	if err := tunnel.CheckPlugin(); err != nil {
 		return err
 	}
 
-	if err := ensureClients(ctx); err != nil {
+	if err := ensureClients(setupCtx); err != nil {
 		return err
 	}
 
-	agentName, err := resolveAgentName(ctx)
+	agentName, err := resolveAgentName(setupCtx)
 	if err != nil {
 		return err
 	}
 
-	agentCfg, err := discovery.ResolveAgent(ctx, clients.SSM, agentName)
+	agentCfg, err := discovery.ResolveAgent(setupCtx, clients.SSM, agentName)
 	if err != nil {
 		return err
 	}
 
-	instanceID, err := findInstance(ctx)
+	instanceID, err := findInstance(setupCtx)
 	if err != nil {
 		return err
 	}
@@ -63,7 +65,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	tokenScript := fmt.Sprintf(`python3 -c "import json; c=json.load(open('/opt/openclaw/data/%s/openclaw.json')); print(c.get('gateway',{}).get('auth',{}).get('token','NOT_FOUND'))"`, agentName)
 
 	spin := ui.NewSpinner("Fetching gateway token...")
-	result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, tokenScript, 30*time.Second)
+	result, err := awsutil.RunCommand(setupCtx, clients.SSM, instanceID, tokenScript, 30*time.Second)
 	spin.Stop()
 	if err != nil {
 		return fmt.Errorf("failed to fetch gateway token: %w", err)
@@ -81,10 +83,14 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	fmt.Println("════════════════════════════════════════")
 	fmt.Println()
 
+	// Switch to unbounded context for long-lived tunnel
+	tunnelCtx, tunnelCancel := context.WithCancel(context.Background())
+	defer tunnelCancel()
+
 	// Start tunnel
 	fmt.Printf("Starting tunnel: localhost:%d → instance:%d\n", connectLocalPort, agentCfg.GatewayPort)
 
-	tun, err := tunnel.StartTunnel(ctx, clients.SSM, instanceID, agentCfg.GatewayPort, connectLocalPort, resolvedRegion, resolvedProfile)
+	tun, err := tunnel.StartTunnel(tunnelCtx, clients.SSM, instanceID, agentCfg.GatewayPort, connectLocalPort, resolvedRegion, resolvedProfile)
 	if err != nil {
 		return err
 	}
@@ -97,7 +103,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 
 	// Device pairing poll (background)
 	if !connectNoPairing {
-		go pollDevicePairing(ctx, instanceID, agentName, flagVerbose)
+		go pollDevicePairing(tunnelCtx, instanceID, agentName, flagVerbose)
 	}
 
 	// Wait for tunnel exit or signal
@@ -109,6 +115,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	select {
 	case <-sigCh:
 		fmt.Println("\nClosing tunnel...")
+		tunnelCancel()
 		tun.Stop()
 	case err := <-doneCh:
 		if err != nil {

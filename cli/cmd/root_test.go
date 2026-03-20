@@ -21,7 +21,7 @@ func TestValidateAgentName(t *testing.T) {
 }
 
 func TestValidateMemberID(t *testing.T) {
-	valid := []string{"U0123456789", "UABCDEFGHIJ", "UA13HEGTS01"}
+	valid := []string{"U0123456789", "UABCDEFGHIJ", "UA13HEGTS01", "UXXXXXXXXXX"}
 	for _, id := range valid {
 		if err := validateMemberID(id); err != nil {
 			t.Errorf("validateMemberID(%q) returned error: %v", id, err)
@@ -34,19 +34,9 @@ func TestValidateMemberID(t *testing.T) {
 		"U01234567890", // too long (12 chars total)
 		"C0123456789",  // wrong prefix
 		"",             // empty
-		"UXXXXXXXXXX",  // 11 chars starting with U — valid
 		"0123456789A",  // no U prefix
 	}
-	// Fix: UXXXXXXXXXX is actually valid (U + 10 alphanum)
-	validExtra := "UXXXXXXXXXX"
-	if err := validateMemberID(validExtra); err != nil {
-		t.Errorf("validateMemberID(%q) returned error: %v", validExtra, err)
-	}
-
-	for _, id := range invalid[:len(invalid)-1] { // exclude last, it's tested separately
-		if id == "UXXXXXXXXXX" {
-			continue
-		}
+	for _, id := range invalid {
 		if err := validateMemberID(id); err == nil {
 			t.Errorf("validateMemberID(%q) should have returned error", id)
 		}

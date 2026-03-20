@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -98,7 +97,7 @@ func TestFormatUptime_InvalidInput(t *testing.T) {
 func TestFormatUptime_RFC3339(t *testing.T) {
 	started := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
 	result := formatUptime(started)
-	expected := fmt.Sprintf("1h 0m")
+	expected := "1h 0m"
 	if result != expected {
 		t.Errorf("formatUptime(RFC3339) = %q, want %q", result, expected)
 	}

@@ -27,14 +27,20 @@ func PutParameter(ctx context.Context, client SSMClient, name, value string) err
 		Type:      ssmtypes.ParameterTypeString,
 		Overwrite: aws.Bool(true),
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to put parameter %s: %w", name, err)
+	}
+	return nil
 }
 
 func DeleteParameter(ctx context.Context, client SSMClient, name string) error {
 	_, err := client.DeleteParameter(ctx, &ssm.DeleteParameterInput{
 		Name: aws.String(name),
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delete parameter %s: %w", name, err)
+	}
+	return nil
 }
 
 type ParameterEntry struct {
