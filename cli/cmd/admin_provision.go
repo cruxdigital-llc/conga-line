@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"text/template"
 	"time"
 
@@ -102,15 +103,16 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if result.Status == "Success" {
-		fmt.Printf("\nAgent %s provisioned successfully!\n\n", agentName)
-		fmt.Println("Next steps for the user:")
-		fmt.Printf("  1. cruxclaw secrets set anthropic-api-key --agent %s\n", agentName)
-		fmt.Printf("  2. cruxclaw refresh --agent %s\n", agentName)
-		fmt.Printf("  3. cruxclaw connect --agent %s\n", agentName)
-	} else {
-		fmt.Printf("Setup failed:\n%s\n%s\n", result.Stdout, result.Stderr)
+	if result.Status != "Success" {
+		fmt.Fprintf(os.Stderr, "Setup output:\n%s\n%s\n", result.Stdout, result.Stderr)
+		return fmt.Errorf("provisioning agent %s failed on instance", agentName)
 	}
+
+	fmt.Printf("\nAgent %s provisioned successfully!\n\n", agentName)
+	fmt.Println("Next steps for the user:")
+	fmt.Printf("  1. cruxclaw secrets set anthropic-api-key --agent %s\n", agentName)
+	fmt.Printf("  2. cruxclaw refresh --agent %s\n", agentName)
+	fmt.Printf("  3. cruxclaw connect --agent %s\n", agentName)
 	return nil
 }
 
@@ -186,13 +188,14 @@ func adminAddTeamRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if result.Status == "Success" {
-		fmt.Printf("\nTeam agent %s provisioned successfully!\n", agentName)
-		fmt.Printf("Channel: %s\n", slackChannel)
-		fmt.Printf("Gateway port: %d\n", gatewayPort)
-	} else {
-		fmt.Printf("Setup failed:\n%s\n%s\n", result.Stdout, result.Stderr)
+	if result.Status != "Success" {
+		fmt.Fprintf(os.Stderr, "Setup output:\n%s\n%s\n", result.Stdout, result.Stderr)
+		return fmt.Errorf("provisioning team agent %s failed on instance", agentName)
 	}
+
+	fmt.Printf("\nTeam agent %s provisioned successfully!\n", agentName)
+	fmt.Printf("Channel: %s\n", slackChannel)
+	fmt.Printf("Gateway port: %d\n", gatewayPort)
 	return nil
 }
 

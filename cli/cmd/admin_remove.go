@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"text/template"
 	"time"
 
@@ -91,12 +92,13 @@ func adminRemoveAgentRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(cleanupErrs) > 0 {
-		fmt.Printf("Agent %s removed, but %d cleanup operation(s) failed:\n", agentName, len(cleanupErrs))
+		fmt.Fprintf(os.Stderr, "Agent %s removed, but %d cleanup operation(s) failed:\n", agentName, len(cleanupErrs))
 		for _, e := range cleanupErrs {
-			fmt.Printf("  - %s\n", e)
+			fmt.Fprintf(os.Stderr, "  - %s\n", e)
 		}
-	} else {
-		fmt.Printf("Agent %s removed.\n", agentName)
+		return fmt.Errorf("agent removed but %d cleanup step(s) failed", len(cleanupErrs))
 	}
+
+	fmt.Printf("Agent %s removed.\n", agentName)
 	return nil
 }

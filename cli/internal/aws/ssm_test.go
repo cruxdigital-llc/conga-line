@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +193,131 @@ func TestRunCommand_ConsecutiveErrors_Exceeded(t *testing.T) {
 	_, err := RunCommand(context.Background(), mock, "i-12345", "echo test", 60*time.Second)
 	if err == nil {
 		t.Fatal("expected error after consecutive failures, got nil")
+	}
+}
+
+func TestGetParameter_Success(t *testing.T) {
+	mock := &mockSSMClient{
+		getParameterFn: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+			return &ssm.GetParameterOutput{
+				Parameter: &ssmtypes.Parameter{Value: aws.String("test-value")},
+			}, nil
+		},
+	}
+
+	val, err := GetParameter(context.Background(), mock, "/test/param")
+	if err != nil {
+		t.Fatalf("GetParameter returned error: %v", err)
+	}
+	if val != "test-value" {
+		t.Errorf("expected %q, got %q", "test-value", val)
+	}
+}
+
+func TestGetParameter_NotFound(t *testing.T) {
+	mock := &mockSSMClient{
+		getParameterFn: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+			return nil, fmt.Errorf("ParameterNotFound")
+		},
+	}
+
+	_, err := GetParameter(context.Background(), mock, "/test/missing")
+	if err == nil {
+		t.Fatal("expected error from GetParameter")
+	}
+	if !strings.Contains(err.Error(), "parameter") {
+		t.Errorf("expected wrapped error with parameter context, got: %v", err)
+	}
+}
+
+func TestPutParameter_WrapsError(t *testing.T) {
+	mock := &mockSSMClient{
+		putParameterFn: func(ctx context.Context, params *ssm.PutParameterInput, optFns ...func(*ssm.Options)) (*ssm.PutParameterOutput, error) {
+			return nil, fmt.Errorf("access denied")
+		},
+	}
+
+	err := PutParameter(context.Background(), mock, "/test/param", "value")
+	if err == nil {
+		t.Fatal("expected error from PutParameter")
+	}
+	expected := "failed to put parameter /test/param: access denied"
+	if err.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestDeleteParameter_WrapsError(t *testing.T) {
+	mock := &mockSSMClient{
+		deleteParameterFn: func(ctx context.Context, params *ssm.DeleteParameterInput, optFns ...func(*ssm.Options)) (*ssm.DeleteParameterOutput, error) {
+			return nil, fmt.Errorf("access denied")
+		},
+	}
+
+	err := DeleteParameter(context.Background(), mock, "/test/param")
+	if err == nil {
+		t.Fatal("expected error from DeleteParameter")
+	}
+	expected := "failed to delete parameter /test/param: access denied"
+	if err.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestGetParametersByPath_Pagination(t *testing.T) {
+	callCount := 0
+	mock := &mockSSMClient{
+		getParametersByPathFn: func(ctx context.Context, params *ssm.GetParametersByPathInput, optFns ...func(*ssm.Options)) (*ssm.GetParametersByPathOutput, error) {
+			callCount++
+			if callCount == 1 {
+				return &ssm.GetParametersByPathOutput{
+					Parameters: []ssmtypes.Parameter{
+						{Name: aws.String("/openclaw/agents/myagent"), Value: aws.String(`{"type":"user"}`)},
+					},
+					NextToken: aws.String("page2"),
+				}, nil
+			}
+			return &ssm.GetParametersByPathOutput{
+				Parameters: []ssmtypes.Parameter{
+					{Name: aws.String("/openclaw/agents/leadership"), Value: aws.String(`{"type":"team"}`)},
+				},
+			}, nil
+		},
+	}
+
+	entries, err := GetParametersByPath(context.Background(), mock, "/openclaw/agents/")
+	if err != nil {
+		t.Fatalf("GetParametersByPath returned error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls, got %d", callCount)
+	}
+}
+
+func TestGetParametersByPath_FiltersByIAM(t *testing.T) {
+	mock := &mockSSMClient{
+		getParametersByPathFn: func(ctx context.Context, params *ssm.GetParametersByPathInput, optFns ...func(*ssm.Options)) (*ssm.GetParametersByPathOutput, error) {
+			return &ssm.GetParametersByPathOutput{
+				Parameters: []ssmtypes.Parameter{
+					{Name: aws.String("/openclaw/agents/myagent"), Value: aws.String(`{"type":"user"}`)},
+					{Name: aws.String("/openclaw/agents/by-iam/user@example.com"), Value: aws.String("myagent")},
+				},
+			}, nil
+		},
+	}
+
+	entries, err := GetParametersByPath(context.Background(), mock, "/openclaw/agents/")
+	if err != nil {
+		t.Fatalf("GetParametersByPath returned error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (by-iam filtered), got %d", len(entries))
+	}
+	if entries[0].Name != "/openclaw/agents/myagent" {
+		t.Errorf("expected agent entry, got %q", entries[0].Name)
 	}
 }
 

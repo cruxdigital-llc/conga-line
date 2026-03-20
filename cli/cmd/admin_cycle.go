@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
@@ -9,9 +10,12 @@ import (
 )
 
 func adminCycleHostRun(cmd *cobra.Command, args []string) error {
-	ctx, cancel := commandContext()
-	defer cancel()
-	if err := ensureClients(ctx); err != nil {
+	// Use commandContext for setup, then an unbounded context for the
+	// stop/wait/start/wait cycle which routinely takes 3-8 minutes.
+	setupCtx, setupCancel := commandContext()
+	defer setupCancel()
+
+	if err := ensureClients(setupCtx); err != nil {
 		return err
 	}
 
@@ -22,19 +26,23 @@ func adminCycleHostRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	instanceID, err := findInstance(ctx)
+	instanceID, err := findInstance(setupCtx)
 	if err != nil {
 		return err
 	}
 
+	// Switch to unbounded context for the long-running cycle operation
+	cycleCtx, cycleCancel := context.WithCancel(context.Background())
+	defer cycleCancel()
+
 	// Stop
 	fmt.Printf("Stopping instance %s...\n", instanceID)
-	if err := awsutil.StopInstance(ctx, clients.EC2, instanceID); err != nil {
+	if err := awsutil.StopInstance(cycleCtx, clients.EC2, instanceID); err != nil {
 		return fmt.Errorf("failed to stop instance: %w", err)
 	}
 
 	spin := ui.NewSpinner("Waiting for instance to stop...")
-	err = awsutil.WaitForState(ctx, clients.EC2, instanceID, "stopped")
+	err = awsutil.WaitForState(cycleCtx, clients.EC2, instanceID, "stopped")
 	spin.Stop()
 	if err != nil {
 		return fmt.Errorf("instance failed to stop: %w", err)
@@ -43,12 +51,12 @@ func adminCycleHostRun(cmd *cobra.Command, args []string) error {
 
 	// Start
 	fmt.Printf("Starting instance %s...\n", instanceID)
-	if err := awsutil.StartInstance(ctx, clients.EC2, instanceID); err != nil {
+	if err := awsutil.StartInstance(cycleCtx, clients.EC2, instanceID); err != nil {
 		return fmt.Errorf("failed to start instance: %w", err)
 	}
 
 	spin = ui.NewSpinner("Waiting for instance to start...")
-	err = awsutil.WaitForState(ctx, clients.EC2, instanceID, "running")
+	err = awsutil.WaitForState(cycleCtx, clients.EC2, instanceID, "running")
 	spin.Stop()
 	if err != nil {
 		return fmt.Errorf("instance failed to start: %w", err)
