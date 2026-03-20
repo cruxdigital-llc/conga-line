@@ -15,7 +15,7 @@ type RunCommandResult struct {
 	Stderr string
 }
 
-func RunCommand(ctx context.Context, client *ssm.Client, instanceID, script string, timeout time.Duration) (*RunCommandResult, error) {
+func RunCommand(ctx context.Context, client SSMClient, instanceID, script string, timeout time.Duration) (*RunCommandResult, error) {
 	out, err := client.SendCommand(ctx, &ssm.SendCommandInput{
 		InstanceIds:  []string{instanceID},
 		DocumentName: aws.String("AWS-RunShellScript"),

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
 )
 
 func CheckPlugin() error {
@@ -41,7 +42,7 @@ type Tunnel struct {
 	SessionID string
 }
 
-func StartTunnel(ctx context.Context, ssmClient *ssm.Client, instanceID string, remotePort, localPort int, region, profile string) (*Tunnel, error) {
+func StartTunnel(ctx context.Context, ssmClient awsutil.SSMClient, instanceID string, remotePort, localPort int, region, profile string) (*Tunnel, error) {
 	input := &ssm.StartSessionInput{
 		Target:       aws.String(instanceID),
 		DocumentName: aws.String("AWS-StartPortForwardingSession"),

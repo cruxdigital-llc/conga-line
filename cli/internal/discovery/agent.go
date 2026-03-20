@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
 )
 
@@ -19,43 +19,53 @@ type AgentConfig struct {
 	IAMIdentity   string `json:"iam_identity,omitempty"`
 }
 
-func ResolveAgent(ctx context.Context, ssmClient *ssm.Client, name string) (*AgentConfig, error) {
+// parseAgentConfig parses an agent config from its SSM parameter name and JSON value.
+// The agent name is derived from the last segment of the parameter path.
+func parseAgentConfig(paramName, jsonValue string) (*AgentConfig, error) {
+	var cfg AgentConfig
+	if err := json.Unmarshal([]byte(jsonValue), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse agent config for %q: %w", paramName, err)
+	}
+	parts := strings.Split(paramName, "/")
+	cfg.Name = parts[len(parts)-1]
+	return &cfg, nil
+}
+
+func ResolveAgent(ctx context.Context, ssmClient awsutil.SSMClient, name string) (*AgentConfig, error) {
 	paramName := fmt.Sprintf("/openclaw/agents/%s", name)
 	value, err := awsutil.GetParameter(ctx, ssmClient, paramName)
 	if err != nil {
 		return nil, fmt.Errorf("agent %q not found. Use `cruxclaw admin add-user` or `add-team` to provision", name)
 	}
 
-	var cfg AgentConfig
-	if err := json.Unmarshal([]byte(value), &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse agent config for %q: %w", name, err)
+	cfg, err := parseAgentConfig(paramName, value)
+	if err != nil {
+		return nil, err
 	}
-	cfg.Name = name
-	return &cfg, nil
+	return cfg, nil
 }
 
-func ResolveAgentByIAM(ctx context.Context, ssmClient *ssm.Client, iamIdentity string) (*AgentConfig, error) {
+func ResolveAgentByIAM(ctx context.Context, ssmClient awsutil.SSMClient, iamIdentity string) (*AgentConfig, error) {
 	entries, err := awsutil.GetParametersByPath(ctx, ssmClient, "/openclaw/agents/")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agents: %w", err)
 	}
 
 	for _, e := range entries {
-		var cfg AgentConfig
-		if json.Unmarshal([]byte(e.Value), &cfg) != nil {
+		cfg, err := parseAgentConfig(e.Name, e.Value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping agent parameter %s: %v\n", e.Name, err)
 			continue
 		}
 		if cfg.IAMIdentity != "" && cfg.IAMIdentity == iamIdentity {
-			parts := strings.Split(e.Name, "/")
-			cfg.Name = parts[len(parts)-1]
-			return &cfg, nil
+			return cfg, nil
 		}
 	}
 
 	return nil, fmt.Errorf("no agent found with iam_identity %q", iamIdentity)
 }
 
-func ListAgents(ctx context.Context, ssmClient *ssm.Client) ([]AgentConfig, error) {
+func ListAgents(ctx context.Context, ssmClient awsutil.SSMClient) ([]AgentConfig, error) {
 	entries, err := awsutil.GetParametersByPath(ctx, ssmClient, "/openclaw/agents/")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agents: %w", err)
@@ -63,13 +73,12 @@ func ListAgents(ctx context.Context, ssmClient *ssm.Client) ([]AgentConfig, erro
 
 	var agents []AgentConfig
 	for _, e := range entries {
-		var cfg AgentConfig
-		if json.Unmarshal([]byte(e.Value), &cfg) != nil {
+		cfg, err := parseAgentConfig(e.Name, e.Value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping agent parameter %s: %v\n", e.Name, err)
 			continue
 		}
-		parts := strings.Split(e.Name, "/")
-		cfg.Name = parts[len(parts)-1]
-		agents = append(agents, cfg)
+		agents = append(agents, *cfg)
 	}
 	return agents, nil
 }

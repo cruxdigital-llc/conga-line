@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"text/template"
 	"time"
@@ -21,12 +20,13 @@ var refreshCmd = &cobra.Command{
 	Use:   "refresh",
 	Short: "Restart your container with fresh secrets",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
+		ctx, cancel := commandContext()
+		defer cancel()
 		if err := ensureClients(ctx); err != nil {
 			return err
 		}
 
-		agentName, err := resolveAgentNameAdmin(ctx)
+		agentName, err := resolveAgentName(ctx)
 		if err != nil {
 			return err
 		}
@@ -47,7 +47,7 @@ var refreshCmd = &cobra.Command{
 			AWSRegion string
 		}{
 			AgentName: agentName,
-			AWSRegion: cfg.Region,
+			AWSRegion: resolvedRegion,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to render refresh script: %w", err)

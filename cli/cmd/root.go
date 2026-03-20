@@ -5,25 +5,31 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"strings"
+	"time"
 
 	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/config"
 	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
 	"github.com/spf13/cobra"
 )
 
-var validIDPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
-var validChannelPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
+const defaultInstanceTag = "openclaw-host"
+
+var validMemberIDPattern = regexp.MustCompile(`^U[A-Z0-9]{10}$`)
+var validChannelIDPattern = regexp.MustCompile(`^C[A-Z0-9]{10}$`)
 
 var (
 	flagRegion  string
 	flagProfile string
 	flagAgent   string
 	flagVerbose bool
+	flagTimeout time.Duration
 
-	cfg     *config.Config
 	clients *awsutil.Clients
+
+	// Resolved at startup from AWS profile auto-detection.
+	resolvedProfile     string
+	resolvedProfileInfo *awsutil.AWSProfileInfo
+	resolvedRegion      string
 )
 
 var rootCmd = &cobra.Command{
@@ -31,35 +37,30 @@ var rootCmd = &cobra.Command{
 	Short: "CruxClaw — manage your OpenClaw deployment",
 	Long:  "Cross-platform CLI for managing OpenClaw containers on AWS via SSM.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		cfg = config.Load()
+		resolvedProfile, resolvedProfileInfo = resolveProfile()
+
+		// Region priority: --region flag > AWS profile > empty (SDK default)
 		if flagRegion != "" {
-			cfg.Region = flagRegion
+			resolvedRegion = flagRegion
+		} else if resolvedProfileInfo != nil && resolvedProfileInfo.Region != "" {
+			resolvedRegion = resolvedProfileInfo.Region
 		}
 
-		// Auto-trigger init if required config is missing.
-		// NOTE: If a subcommand adds its own PersistentPreRun, Cobra will skip
-		// this one — use PersistentPreRunE on the subcommand and call the parent.
-		cmdName := cmd.Name()
-		if cmdName != "init" && cmdName != "help" && cmdName != "completion" && cmdName != "login" {
-			if missing := cfg.RequiredFieldsMissing(); len(missing) > 0 {
-				fmt.Printf("Missing configuration: %s\n", strings.Join(missing, ", "))
-				fmt.Println("Running first-time setup...")
-				fmt.Println()
-				if err := runInit(cmd, nil); err != nil {
-					return err
-				}
-				cfg = config.Load()
-			}
-		}
 		return nil
 	},
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&flagRegion, "region", "", "AWS region (default: from config)")
-	rootCmd.PersistentFlags().StringVar(&flagProfile, "profile", "", "AWS CLI profile name")
+	rootCmd.PersistentFlags().StringVar(&flagRegion, "region", "", "AWS region (default: from AWS profile)")
+	rootCmd.PersistentFlags().StringVar(&flagProfile, "profile", "", "AWS CLI profile name (default: auto-detect from active SSO session)")
 	rootCmd.PersistentFlags().StringVar(&flagAgent, "agent", "", "Agent name (auto-detected from IAM if omitted)")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
+	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Global timeout for AWS operations")
+}
+
+// commandContext returns a context with the global timeout applied.
+func commandContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), flagTimeout)
 }
 
 func Execute() {
@@ -72,71 +73,62 @@ func ensureClients(ctx context.Context) error {
 	if clients != nil {
 		return nil
 	}
-	region := cfg.Region
-	c, err := awsutil.NewClients(ctx, region, resolveProfile())
+	c, err := awsutil.NewClients(ctx, resolvedRegion, resolvedProfile)
 	if err != nil {
-		return fmt.Errorf("failed to initialize AWS session: %w\nRun `cruxclaw auth login` to authenticate", err)
+		if resolvedProfile != "" {
+			return fmt.Errorf("failed to initialize AWS session (profile=%q): %w\nRun `aws sso login --profile %s` to authenticate", resolvedProfile, err, resolvedProfile)
+		}
+		return fmt.Errorf("failed to initialize AWS session: %w\nRun `aws sso login --profile <your-profile>` to authenticate", err)
 	}
 	clients = c
 	return nil
 }
 
-// resolveProfile returns the AWS profile to use. Priority:
+// resolveProfile returns the AWS profile to use and its parsed info. Priority:
 //  1. --profile flag
-//  2. AWS_PROFILE env var (handled by SDK when we pass "")
-//  3. profile from config file
-//  4. auto-detect from active SSO session in ~/.aws/config
-//  5. empty → SDK default chain
-func resolveProfile() string {
+//  2. AWS_PROFILE env var (we return "" to let the SDK read it, but still parse info)
+//  3. auto-detect from active SSO session in ~/.aws/config
+//  4. empty → SDK default chain
+func resolveProfile() (string, *awsutil.AWSProfileInfo) {
 	if flagProfile != "" {
-		return flagProfile
+		info := awsutil.GetProfileInfo(flagProfile)
+		return flagProfile, info
 	}
-	if os.Getenv("AWS_PROFILE") != "" {
-		return "" // let the SDK read AWS_PROFILE directly
+	if envProfile := os.Getenv("AWS_PROFILE"); envProfile != "" {
+		info := awsutil.GetProfileInfo(envProfile)
+		return "", info // let the SDK read AWS_PROFILE directly
 	}
-	if cfg.Profile != "" {
-		return cfg.Profile
+	if info := awsutil.DetectSSOProfileInfo(); info != nil {
+		return info.Name, info
 	}
-	return awsutil.DetectSSOProfile()
+	return "", nil
 }
 
 func validateMemberID(id string) error {
-	if !validIDPattern.MatchString(id) {
-		return fmt.Errorf("invalid member ID %q: must be uppercase alphanumeric (e.g., UXXXXXXXXXX)", id)
+	if !validMemberIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid Slack member ID %q: must start with 'U' followed by 10 alphanumeric characters (e.g., U0123456789)", id)
 	}
 	return nil
 }
 
 func validateChannelID(id string) error {
-	if !validChannelPattern.MatchString(id) {
-		return fmt.Errorf("invalid channel ID %q: must be uppercase alphanumeric (e.g., CXXXXXXXXXX)", id)
+	if !validChannelIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid Slack channel ID %q: must start with 'C' followed by 10 alphanumeric characters (e.g., C0123456789)", id)
 	}
 	return nil
 }
 
-// resolveAgentName returns the caller's agent name. If allowOverride is true,
-// the --agent flag can specify a different agent (for admin commands).
-// User-facing commands should pass allowOverride=false to prevent
-// cross-user operations.
+// resolveAgentName returns the agent name to operate on.
+// Uses --agent flag if provided, otherwise auto-detects from IAM identity.
+// Access control is enforced by IAM, not the CLI.
 func resolveAgentName(ctx context.Context) (string, error) {
-	return resolveAgentNameWithOverride(ctx, false)
-}
+	if flagAgent != "" {
+		return flagAgent, nil
+	}
 
-func resolveAgentNameAdmin(ctx context.Context) (string, error) {
-	return resolveAgentNameWithOverride(ctx, true)
-}
-
-func resolveAgentNameWithOverride(ctx context.Context, allowOverride bool) (string, error) {
 	identity, err := discovery.ResolveIdentity(ctx, clients.STS, clients.SSM)
 	if err != nil {
 		return "", err
-	}
-
-	if flagAgent != "" {
-		if !allowOverride && identity.AgentName != "" && flagAgent != identity.AgentName {
-			return "", fmt.Errorf("cannot operate on another user's resources. Your agent name is %s", identity.AgentName)
-		}
-		return flagAgent, nil
 	}
 
 	if identity.AgentName == "" {
@@ -146,5 +138,5 @@ func resolveAgentNameWithOverride(ctx context.Context, allowOverride bool) (stri
 }
 
 func findInstance(ctx context.Context) (string, error) {
-	return discovery.FindInstance(ctx, clients.EC2, cfg.InstanceTag)
+	return discovery.FindInstance(ctx, clients.EC2, defaultInstanceTag)
 }

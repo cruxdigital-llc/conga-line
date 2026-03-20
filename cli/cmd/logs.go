@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -23,7 +22,8 @@ func init() {
 }
 
 func logsRun(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx, cancel := commandContext()
+	defer cancel()
 	if err := ensureClients(ctx); err != nil {
 		return err
 	}

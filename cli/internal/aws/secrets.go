@@ -16,7 +16,7 @@ type SecretEntry struct {
 	LastChanged string
 }
 
-func ListSecrets(ctx context.Context, client *secretsmanager.Client, prefix string) ([]SecretEntry, error) {
+func ListSecrets(ctx context.Context, client SecretsManagerClient, prefix string) ([]SecretEntry, error) {
 	var entries []SecretEntry
 	var nextToken *string
 
@@ -53,7 +53,7 @@ func ListSecrets(ctx context.Context, client *secretsmanager.Client, prefix stri
 	return entries, nil
 }
 
-func SetSecret(ctx context.Context, client *secretsmanager.Client, name, value string) error {
+func SetSecret(ctx context.Context, client SecretsManagerClient, name, value string) error {
 	_, err := client.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
 		SecretId:     aws.String(name),
 		SecretString: aws.String(value),
@@ -75,7 +75,7 @@ func SetSecret(ctx context.Context, client *secretsmanager.Client, name, value s
 	return nil
 }
 
-func GetSecretValue(ctx context.Context, client *secretsmanager.Client, name string) (string, error) {
+func GetSecretValue(ctx context.Context, client SecretsManagerClient, name string) (string, error) {
 	out, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
 		SecretId: aws.String(name),
 	})
@@ -88,12 +88,15 @@ func GetSecretValue(ctx context.Context, client *secretsmanager.Client, name str
 	return aws.ToString(out.SecretString), nil
 }
 
-func DeleteSecret(ctx context.Context, client *secretsmanager.Client, name string) error {
+func DeleteSecret(ctx context.Context, client SecretsManagerClient, name string) error {
 	_, err := client.DeleteSecret(ctx, &secretsmanager.DeleteSecretInput{
 		SecretId:                   aws.String(name),
 		ForceDeleteWithoutRecovery: aws.Bool(true),
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delete secret %s: %w", name, err)
+	}
+	return nil
 }
 
 func isResourceNotFound(err error) bool {

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
 )
 
 type ResolvedIdentity struct {
@@ -17,7 +17,7 @@ type ResolvedIdentity struct {
 	AgentName   string
 }
 
-func ResolveIdentity(ctx context.Context, stsClient *sts.Client, ssmClient *ssm.Client) (*ResolvedIdentity, error) {
+func ResolveIdentity(ctx context.Context, stsClient awsutil.STSClient, ssmClient awsutil.SSMClient) (*ResolvedIdentity, error) {
 	out, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get caller identity (is your session valid?): %w", err)

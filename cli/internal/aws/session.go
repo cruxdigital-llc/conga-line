@@ -12,12 +12,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
+// Compile-time assertions that concrete SDK clients satisfy our interfaces.
+var (
+	_ SSMClient            = (*ssm.Client)(nil)
+	_ SecretsManagerClient = (*secretsmanager.Client)(nil)
+	_ EC2Client            = (*ec2.Client)(nil)
+	_ STSClient            = (*sts.Client)(nil)
+)
+
 type Clients struct {
 	Config         aws.Config
-	EC2            *ec2.Client
-	SSM            *ssm.Client
-	STS            *sts.Client
-	SecretsManager *secretsmanager.Client
+	EC2            EC2Client
+	SSM            SSMClient
+	STS            STSClient
+	SecretsManager SecretsManagerClient
 }
 
 func NewClients(ctx context.Context, region, profile string) (*Clients, error) {

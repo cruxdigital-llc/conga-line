@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -29,6 +28,32 @@ func splitStats(s string) []string {
 	return parts
 }
 
+// formatUptime parses an ISO timestamp and returns a human-readable duration.
+// Returns empty string if parsing fails.
+func formatUptime(started string) string {
+	t, err := time.Parse(time.RFC3339Nano, started)
+	if err != nil {
+		// Try without nanoseconds
+		t, err = time.Parse(time.RFC3339, started)
+		if err != nil {
+			return ""
+		}
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		days := int(d.Hours()) / 24
+		hours := int(d.Hours()) % 24
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(statusCmd)
 }
@@ -37,7 +62,8 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show your container status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
+		ctx, cancel := commandContext()
+		defer cancel()
 		if err := ensureClients(ctx); err != nil {
 			return err
 		}
@@ -119,7 +145,11 @@ fi
 		fmt.Printf("Service:    %s\n", svcState)
 		fmt.Printf("Readiness:  %s\n", phase)
 		if started := kv["CONTAINER_STARTED"]; started != "" {
-			fmt.Printf("Started:    %s\n", started)
+			if up := formatUptime(started); up != "" {
+				fmt.Printf("Started:    %s (up %s)\n", started, up)
+			} else {
+				fmt.Printf("Started:    %s\n", started)
+			}
 		}
 		if restarts := kv["CONTAINER_RESTARTS"]; restarts != "" && restarts != "0" {
 			fmt.Printf("Restarts:   %s\n", restarts)

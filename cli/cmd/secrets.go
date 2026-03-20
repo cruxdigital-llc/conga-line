@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -61,12 +60,13 @@ After setting a secret, run 'cruxclaw refresh' to inject it into your container.
 }
 
 func secretsSetRun(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx, cancel := commandContext()
+	defer cancel()
 	if err := ensureClients(ctx); err != nil {
 		return err
 	}
 
-	agentName, err := resolveAgentNameAdmin(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
@@ -74,6 +74,7 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 	var name string
 	if len(args) > 0 {
 		name = args[0]
+		fmt.Printf("  -> will be injected as: %s\n", secretNameToEnvVar(name))
 	} else {
 		fmt.Println("Secret names are injected as env vars in SCREAMING_SNAKE_CASE (e.g. anthropic-api-key → ANTHROPIC_API_KEY).")
 		name, err = ui.TextPrompt("Secret name (e.g. anthropic-api-key)")
@@ -107,12 +108,13 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 }
 
 func secretsListRun(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx, cancel := commandContext()
+	defer cancel()
 	if err := ensureClients(ctx); err != nil {
 		return err
 	}
 
-	agentName, err := resolveAgentNameAdmin(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
@@ -138,12 +140,13 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 }
 
 func secretsDeleteRun(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx, cancel := commandContext()
+	defer cancel()
 	if err := ensureClients(ctx); err != nil {
 		return err
 	}
 
-	agentName, err := resolveAgentNameAdmin(ctx)
+	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
