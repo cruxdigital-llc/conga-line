@@ -52,7 +52,16 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 *See `specs/2026-03-19_feature_cli-hardening/` for full trace*
 - Remaining deferred items: CLIContext struct migration, params_test.go, agent_test.go, executor command handler migration
 
-### 5. Backlog / Upcoming
+### 5. Behavior Management — Specified, Ready for Implementation
+*Lead: Architect + Product Manager + QA*
+- [x] Requirements defined: `specs/2026-03-20_feature_behavior-management/requirements.md`
+- [x] Plan defined: `specs/2026-03-20_feature_behavior-management/plan.md`
+- [x] Spec defined: `specs/2026-03-20_feature_behavior-management/spec.md`
+- [x] Persona review passed (Architect + PM + QA)
+- [x] Standards gate passed (1 note: no integrity monitoring for workspace files)
+- [ ] Implementation
+
+### 6. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 
