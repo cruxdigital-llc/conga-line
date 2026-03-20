@@ -256,7 +256,7 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 	}{
 		AgentName:     agentName,
 		SlackMemberID: slackMemberID,
-		AWSRegion:     cfg.Region,
+		AWSRegion:     resolvedRegion,
 		GatewayPort:   gatewayPort,
 	})
 	if err != nil {
@@ -336,7 +336,7 @@ func adminAddTeamRun(cmd *cobra.Command, args []string) error {
 	}{
 		AgentName:    agentName,
 		SlackChannel: slackChannel,
-		AWSRegion:    cfg.Region,
+		AWSRegion:    resolvedRegion,
 		GatewayPort:  gatewayPort,
 	})
 	if err != nil {

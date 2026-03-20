@@ -26,25 +26,37 @@ var authLoginCmd = &cobra.Command{
 	Short: "Authenticate via AWS SSO",
 	Long:  "Opens your browser to complete AWS SSO login. Credentials are cached for future commands.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		profile := resolveProfile()
-		if profile == "" {
-			profile = "your-profile"
+		profileName := resolvedProfile
+		if profileName == "" {
+			profileName = "your-profile"
 		}
 		fmt.Println("To authenticate, run:")
 		fmt.Println()
-		fmt.Printf("  aws configure sso --profile %s\n", profile)
+		fmt.Printf("  aws sso login --profile %s\n", profileName)
+
+		if resolvedProfileInfo != nil {
+			fmt.Println()
+			fmt.Println("Your profile is configured with:")
+			if resolvedProfileInfo.SSOStartURL != "" {
+				fmt.Printf("  SSO start URL:  %s\n", resolvedProfileInfo.SSOStartURL)
+			}
+			if resolvedProfileInfo.SSORegion != "" {
+				fmt.Printf("  SSO region:     %s\n", resolvedProfileInfo.SSORegion)
+			}
+			if resolvedProfileInfo.SSOAccountID != "" {
+				fmt.Printf("  Account ID:     %s\n", resolvedProfileInfo.SSOAccountID)
+			}
+			if resolvedProfileInfo.SSORoleName != "" {
+				fmt.Printf("  Role name:      %s\n", resolvedProfileInfo.SSORoleName)
+			}
+		}
+
 		fmt.Println()
-		fmt.Println("Use the following settings:")
-		fmt.Printf("  SSO start URL:  %s\n", cfg.SSOStartURL)
-		fmt.Printf("  SSO region:     %s\n", cfg.Region)
-		fmt.Printf("  Account ID:     %s\n", cfg.SSOAccountID)
-		fmt.Printf("  Role name:      %s\n", cfg.SSORoleName)
-		fmt.Println()
-		fmt.Println("Then run:")
-		fmt.Printf("  aws sso login --profile %s\n", profile)
+		fmt.Println("If you haven't configured an SSO profile yet, run:")
+		fmt.Printf("  aws configure sso --profile %s\n", profileName)
 		fmt.Println()
 		fmt.Println("Tip: set AWS_PROFILE to skip --profile on subsequent commands:")
-		fmt.Printf("  export AWS_PROFILE=%s\n", profile)
+		fmt.Printf("  export AWS_PROFILE=%s\n", profileName)
 		return nil
 	},
 }
