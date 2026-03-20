@@ -180,7 +180,7 @@ set -euo pipefail
 AGENT_NAME="$1"
 AGENT_TYPE="$2"
 STAGING="/opt/openclaw/behavior"
-WORKSPACE="/opt/openclaw/data/$AGENT_NAME/workspace"
+WORKSPACE="/opt/openclaw/data/$AGENT_NAME/data/workspace"
 
 # Read Slack identifier for template substitution
 SLACK_ID=$(cat "/opt/openclaw/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
