@@ -129,6 +129,9 @@ mkdir -p /opt/openclaw/{bin,config,scripts,router/src}
 aws s3 cp s3://${state_bucket}/openclaw/router/package.json /opt/openclaw/router/package.json --region "$AWS_REGION"
 aws s3 cp s3://${state_bucket}/openclaw/router/src/index.js /opt/openclaw/router/src/index.js --region "$AWS_REGION"
 
+# Download behavior files from S3
+aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --region "$AWS_REGION"
+
 # Install router dependencies
 cd /opt/openclaw/router && npm install --production
 cd /
@@ -168,6 +171,58 @@ WantedBy=multi-user.target
 ROUTERUNIT
 
 echo "Router configured"
+
+# Install behavior deployment helper
+cat > /opt/openclaw/bin/deploy-behavior.sh << 'DEPLOY_BEHAVIOR'
+#!/bin/bash
+set -euo pipefail
+
+AGENT_NAME="$1"
+AGENT_TYPE="$2"
+STAGING="/opt/openclaw/behavior"
+WORKSPACE="/opt/openclaw/data/$AGENT_NAME/workspace"
+
+# Read Slack identifier for template substitution
+SLACK_ID=$(cat "/opt/openclaw/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
+
+# Compose SOUL.md: override > concat(base + type)
+if [ -f "$STAGING/overrides/$AGENT_NAME/SOUL.md" ]; then
+  cp "$STAGING/overrides/$AGENT_NAME/SOUL.md" "$WORKSPACE/SOUL.md"
+elif [ -f "$STAGING/base/SOUL.md" ]; then
+  cp "$STAGING/base/SOUL.md" "$WORKSPACE/SOUL.md"
+  if [ -f "$STAGING/$AGENT_TYPE/SOUL.md" ]; then
+    echo "" >> "$WORKSPACE/SOUL.md"
+    cat "$STAGING/$AGENT_TYPE/SOUL.md" >> "$WORKSPACE/SOUL.md"
+  fi
+fi
+
+# Compose AGENTS.md: override > concat(base + type)
+if [ -f "$STAGING/overrides/$AGENT_NAME/AGENTS.md" ]; then
+  cp "$STAGING/overrides/$AGENT_NAME/AGENTS.md" "$WORKSPACE/AGENTS.md"
+elif [ -f "$STAGING/base/AGENTS.md" ]; then
+  cp "$STAGING/base/AGENTS.md" "$WORKSPACE/AGENTS.md"
+  if [ -f "$STAGING/$AGENT_TYPE/AGENTS.md" ]; then
+    echo "" >> "$WORKSPACE/AGENTS.md"
+    cat "$STAGING/$AGENT_TYPE/AGENTS.md" >> "$WORKSPACE/AGENTS.md"
+  fi
+fi
+
+# Compose USER.md: override > render template
+if [ -f "$STAGING/overrides/$AGENT_NAME/USER.md" ]; then
+  cp "$STAGING/overrides/$AGENT_NAME/USER.md" "$WORKSPACE/USER.md"
+elif [ -f "$STAGING/$AGENT_TYPE/USER.md.tmpl" ]; then
+  sed -e "s/{{.AgentName}}/$AGENT_NAME/g" \
+      -e "s/{{.SlackChannel}}/$SLACK_ID/g" \
+      -e "s/{{.SlackMemberID}}/$SLACK_ID/g" \
+      "$STAGING/$AGENT_TYPE/USER.md.tmpl" > "$WORKSPACE/USER.md"
+fi
+
+# Fix ownership — container runs as uid 1000 (node)
+chown 1000:1000 "$WORKSPACE/SOUL.md" "$WORKSPACE/AGENTS.md" "$WORKSPACE/USER.md" 2>/dev/null || true
+
+echo "Behavior files deployed for $AGENT_NAME ($AGENT_TYPE)"
+DEPLOY_BEHAVIOR
+chmod +x /opt/openclaw/bin/deploy-behavior.sh
 
 # ============================================================
 # 6. DISCOVER AND SETUP AGENTS FROM SSM
@@ -260,7 +315,8 @@ ENVFILE
 }
 OCCONFIG
 
-  setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT"
+  echo "$SLACK_MEMBER_ID" > /opt/openclaw/config/$AGENT_NAME.slack-id
+  setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT" "user"
 }
 
 setup_team_agent() {
@@ -347,12 +403,16 @@ ENVFILE
 }
 OCCONFIG
 
-  setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT"
+  echo "$SLACK_CHANNEL" > /opt/openclaw/config/$AGENT_NAME.slack-id
+  setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT" "team"
 }
 
 # Shared setup logic for both agent types
 setup_agent_common() {
-  local AGENT_NAME="$1" GATEWAY_PORT="$2"
+  local AGENT_NAME="$1" GATEWAY_PORT="$2" AGENT_TYPE="$3"
+
+  # Store agent type for ExecStartPre behavior deployment
+  echo "$AGENT_TYPE" > /opt/openclaw/config/$AGENT_NAME.type
 
   # Create persistent storage
   if [ ! -d /opt/openclaw/data/$AGENT_NAME ]; then
@@ -362,6 +422,9 @@ setup_agent_common() {
   fi
   cp /opt/openclaw/config/$AGENT_NAME-openclaw.json /opt/openclaw/data/$AGENT_NAME/openclaw.json
   chown 1000:1000 /opt/openclaw/data/$AGENT_NAME/openclaw.json
+
+  # Deploy behavior files (SOUL.md, AGENTS.md, USER.md) to workspace
+  /opt/openclaw/bin/deploy-behavior.sh "$AGENT_NAME" "$AGENT_TYPE"
 
   # Config hash baseline
   sha256sum /opt/openclaw/config/$AGENT_NAME-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$AGENT_NAME-openclaw.json.sha256
@@ -386,6 +449,7 @@ Requires=docker.service
 [Service]
 Type=simple
 EnvironmentFile=/opt/openclaw/config/$AGENT_NAME.env
+ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/openclaw/bin/deploy-behavior.sh $AGENT_NAME \$(cat /opt/openclaw/config/$AGENT_NAME.type 2>/dev/null || echo user) 2>/dev/null || true'
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$AGENT_NAME
 ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME -p 127.0.0.1:$GATEWAY_PORT:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
 ExecStop=/usr/bin/docker stop openclaw-$AGENT_NAME

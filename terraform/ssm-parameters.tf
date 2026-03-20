@@ -12,3 +12,12 @@ resource "aws_ssm_parameter" "setup_manifest" {
     Project = var.project_name
   }
 }
+
+resource "aws_ssm_parameter" "state_bucket" {
+  name  = "/openclaw/config/state-bucket"
+  type  = "String"
+  value = local.state_bucket
+  tags = {
+    Project = var.project_name
+  }
+}

@@ -1,0 +1,10 @@
+set -euo pipefail
+
+{{range .Agents}}
+echo "Restarting openclaw-{{.Name}}..."
+systemctl restart openclaw-{{.Name}}
+sleep 2
+docker network connect "openclaw-{{.Name}}" openclaw-router 2>/dev/null || true
+{{end}}
+
+echo "All agents restarted"

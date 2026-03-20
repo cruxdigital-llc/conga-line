@@ -67,7 +67,14 @@ func init() {
 		RunE:  adminSetupRun,
 	}
 
-	adminCmd.AddCommand(setupCmd, addUserCmd, addTeamCmd, listAgentsCmd, removeAgentCmd, cycleHostCmd)
+	refreshAllCmd := &cobra.Command{
+		Use:   "refresh-all",
+		Short: "Restart all agent containers (picks up latest behavior, config, secrets)",
+		RunE:  adminRefreshAllRun,
+	}
+	refreshAllCmd.Flags().BoolVar(&adminForce, "force", false, "Skip confirmation")
+
+	adminCmd.AddCommand(setupCmd, addUserCmd, addTeamCmd, listAgentsCmd, removeAgentCmd, cycleHostCmd, refreshAllCmd)
 	rootCmd.AddCommand(adminCmd)
 }
 
