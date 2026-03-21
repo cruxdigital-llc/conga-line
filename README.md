@@ -211,6 +211,7 @@ cli/
 | `cruxclaw admin list-agents` | List all provisioned agents |
 | `cruxclaw admin remove-agent <name>` | Remove an agent |
 | `cruxclaw admin cycle-host` | Stop/start the EC2 instance |
+| `cruxclaw admin refresh-all` | Restart all agent containers (picks up latest behavior, config, secrets) |
 
 ### Global Flags
 
