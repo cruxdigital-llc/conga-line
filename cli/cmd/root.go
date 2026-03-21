@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultInstanceTag = "conga-host"
+const defaultInstanceTag = "conga-line-host"
 
 var validMemberIDPattern = regexp.MustCompile(`^U[A-Z0-9]{10}$`)
 var validChannelIDPattern = regexp.MustCompile(`^C[A-Z0-9]{10}$`)
