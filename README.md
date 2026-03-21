@@ -108,8 +108,24 @@ No Terraform, Go, or repo clone required.
 
 ### Install
 
+**macOS (Apple Silicon)** — tested:
 ```bash
-gh release download --repo cruxdigital-llc/crux-claw --pattern "cruxclaw_*_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" --output - | tar xz -C /usr/local/bin cruxclaw
+curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_darwin_arm64.tar.gz | tar xz -C /usr/local/bin cruxclaw
+```
+
+**macOS (Intel)**:
+```bash
+curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_darwin_amd64.tar.gz | tar xz -C /usr/local/bin cruxclaw
+```
+
+**Linux (amd64)** — untested:
+```bash
+curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_linux_amd64.tar.gz | tar xz -C /usr/local/bin cruxclaw
+```
+
+**Linux (arm64)** — untested:
+```bash
+curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_linux_arm64.tar.gz | tar xz -C /usr/local/bin cruxclaw
 ```
 
 ### First-time setup

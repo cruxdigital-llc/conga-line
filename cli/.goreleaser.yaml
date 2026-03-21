@@ -21,6 +21,7 @@ builds:
 
 archives:
   - format: tar.gz
+    name_template: "cruxclaw_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         format: zip
