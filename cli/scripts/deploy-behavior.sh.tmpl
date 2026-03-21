@@ -35,9 +35,9 @@ fi
 if [ -f "$STAGING/overrides/$AGENT_NAME/USER.md" ]; then
   cp "$STAGING/overrides/$AGENT_NAME/USER.md" "$WORKSPACE/USER.md"
 elif [ -f "$STAGING/$AGENT_TYPE/USER.md.tmpl" ]; then
-  sed -e "s/{{.AgentName}}/$AGENT_NAME/g" \
-      -e "s/{{.SlackChannel}}/$SLACK_ID/g" \
-      -e "s/{{.SlackMemberID}}/$SLACK_ID/g" \
+  sed -e "s|{{.AgentName}}|$AGENT_NAME|g" \
+      -e "s|{{.SlackChannel}}|$SLACK_ID|g" \
+      -e "s|{{.SlackMemberID}}|$SLACK_ID|g" \
       "$STAGING/$AGENT_TYPE/USER.md.tmpl" > "$WORKSPACE/USER.md"
 fi
 

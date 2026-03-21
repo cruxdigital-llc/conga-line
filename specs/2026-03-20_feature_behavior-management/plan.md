@@ -31,7 +31,7 @@ S3: <bucket>/openclaw/behavior/**
 
     ↓ deploy-behavior.sh (composition)
 
-/opt/openclaw/data/<agent>/workspace/SOUL.md  (container-visible)
+/opt/openclaw/data/<agent>/data/workspace/SOUL.md  (container-visible)
 ```
 
 **Composition**: For each file, check `overrides/<agent>/` first. If no override, concatenate `base/<file>` + `<type>/<file>`. For USER.md, render the `.tmpl` with sed substitution.

@@ -172,56 +172,8 @@ ROUTERUNIT
 
 echo "Router configured"
 
-# Install behavior deployment helper
-cat > /opt/openclaw/bin/deploy-behavior.sh << 'DEPLOY_BEHAVIOR'
-#!/bin/bash
-set -euo pipefail
-
-AGENT_NAME="$1"
-AGENT_TYPE="$2"
-STAGING="/opt/openclaw/behavior"
-WORKSPACE="/opt/openclaw/data/$AGENT_NAME/data/workspace"
-
-# Read Slack identifier for template substitution
-SLACK_ID=$(cat "/opt/openclaw/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
-
-# Compose SOUL.md: override > concat(base + type)
-if [ -f "$STAGING/overrides/$AGENT_NAME/SOUL.md" ]; then
-  cp "$STAGING/overrides/$AGENT_NAME/SOUL.md" "$WORKSPACE/SOUL.md"
-elif [ -f "$STAGING/base/SOUL.md" ]; then
-  cp "$STAGING/base/SOUL.md" "$WORKSPACE/SOUL.md"
-  if [ -f "$STAGING/$AGENT_TYPE/SOUL.md" ]; then
-    echo "" >> "$WORKSPACE/SOUL.md"
-    cat "$STAGING/$AGENT_TYPE/SOUL.md" >> "$WORKSPACE/SOUL.md"
-  fi
-fi
-
-# Compose AGENTS.md: override > concat(base + type)
-if [ -f "$STAGING/overrides/$AGENT_NAME/AGENTS.md" ]; then
-  cp "$STAGING/overrides/$AGENT_NAME/AGENTS.md" "$WORKSPACE/AGENTS.md"
-elif [ -f "$STAGING/base/AGENTS.md" ]; then
-  cp "$STAGING/base/AGENTS.md" "$WORKSPACE/AGENTS.md"
-  if [ -f "$STAGING/$AGENT_TYPE/AGENTS.md" ]; then
-    echo "" >> "$WORKSPACE/AGENTS.md"
-    cat "$STAGING/$AGENT_TYPE/AGENTS.md" >> "$WORKSPACE/AGENTS.md"
-  fi
-fi
-
-# Compose USER.md: override > render template
-if [ -f "$STAGING/overrides/$AGENT_NAME/USER.md" ]; then
-  cp "$STAGING/overrides/$AGENT_NAME/USER.md" "$WORKSPACE/USER.md"
-elif [ -f "$STAGING/$AGENT_TYPE/USER.md.tmpl" ]; then
-  sed -e "s/{{.AgentName}}/$AGENT_NAME/g" \
-      -e "s/{{.SlackChannel}}/$SLACK_ID/g" \
-      -e "s/{{.SlackMemberID}}/$SLACK_ID/g" \
-      "$STAGING/$AGENT_TYPE/USER.md.tmpl" > "$WORKSPACE/USER.md"
-fi
-
-# Fix ownership — container runs as uid 1000 (node)
-chown 1000:1000 "$WORKSPACE/SOUL.md" "$WORKSPACE/AGENTS.md" "$WORKSPACE/USER.md" 2>/dev/null || true
-
-echo "Behavior files deployed for $AGENT_NAME ($AGENT_TYPE)"
-DEPLOY_BEHAVIOR
+# Download behavior deployment helper from S3 (canonical source: cli/scripts/deploy-behavior.sh.tmpl)
+aws s3 cp s3://${state_bucket}/openclaw/scripts/deploy-behavior.sh /opt/openclaw/bin/deploy-behavior.sh --region "$AWS_REGION"
 chmod +x /opt/openclaw/bin/deploy-behavior.sh
 
 # ============================================================

@@ -72,6 +72,7 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 	// Resolve state bucket for behavior file sync
 	stateBucket, err := awsutil.GetParameter(ctx, clients.SSM, "/openclaw/config/state-bucket")
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve state bucket — behavior files will not sync. Run 'terraform apply' first.\n")
 		stateBucket = "" // Non-fatal: behavior files won't sync but provisioning continues
 	}
 
@@ -165,6 +166,7 @@ func adminAddTeamRun(cmd *cobra.Command, args []string) error {
 	// Resolve state bucket for behavior file sync
 	stateBucket, err := awsutil.GetParameter(ctx, clients.SSM, "/openclaw/config/state-bucket")
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve state bucket — behavior files will not sync. Run 'terraform apply' first.\n")
 		stateBucket = "" // Non-fatal: behavior files won't sync but provisioning continues
 	}
 

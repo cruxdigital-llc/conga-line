@@ -1,10 +1,27 @@
-set -euo pipefail
+set -uo pipefail
+
+FAILED=""
 
 {{range .Agents}}
 echo "Restarting openclaw-{{.Name}}..."
-systemctl restart openclaw-{{.Name}}
-sleep 2
-docker network connect "openclaw-{{.Name}}" openclaw-router 2>/dev/null || true
+if systemctl restart openclaw-{{.Name}}; then
+  # Wait for container to be running (up to 30s)
+  for i in $(seq 1 15); do
+    if docker inspect -f '{{`{{.State.Running}}`}}' openclaw-{{.Name}} 2>/dev/null | grep -q true; then
+      break
+    fi
+    sleep 2
+  done
+  docker network connect "openclaw-{{.Name}}" openclaw-router 2>/dev/null || true
+else
+  echo "FAILED: openclaw-{{.Name}}"
+  FAILED="$FAILED {{.Name}}"
+fi
 {{end}}
+
+if [ -n "$FAILED" ]; then
+  echo "Failed agents:$FAILED"
+  exit 1
+fi
 
 echo "All agents restarted"

@@ -14,8 +14,5 @@ var RefreshUserScript string
 //go:embed remove-agent.sh.tmpl
 var RemoveAgentScript string
 
-//go:embed deploy-behavior.sh.tmpl
-var DeployBehaviorScript string
-
 //go:embed refresh-all.sh.tmpl
 var RefreshAllScript string

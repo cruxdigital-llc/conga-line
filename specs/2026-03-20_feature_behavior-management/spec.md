@@ -71,7 +71,7 @@ Add to the `aws_iam_role_policy.s3_read` resource's `Resource` array:
 "arn:aws:s3:::${local.state_bucket}/openclaw/behavior/*"
 ```
 
-Also adds `s3:ListBucket` on the bucket itself (required by `aws s3 sync`) and the bucket-level ARN.
+Also adds `s3:ListBucket` on the bucket itself (required by `aws s3 sync`), scoped to the `openclaw/*` prefix via a `Condition` block to prevent listing unrelated keys (e.g. Terraform state).
 
 This allows the EC2 instance to read and list behavior files from S3 (same permission level as router and bootstrap artifacts).
 
@@ -87,7 +87,7 @@ Where `agent_type` is `user` or `team`.
 
 **Preconditions**:
 - `/opt/openclaw/behavior/` staging area is populated (caller's responsibility)
-- `/opt/openclaw/data/<agent_name>/workspace/` directory exists
+- `/opt/openclaw/data/<agent_name>/data/workspace/` directory exists
 
 **Behavior**:
 
@@ -98,7 +98,7 @@ set -euo pipefail
 AGENT_NAME="$1"
 AGENT_TYPE="$2"
 STAGING="/opt/openclaw/behavior"
-WORKSPACE="/opt/openclaw/data/$AGENT_NAME/workspace"
+WORKSPACE="/opt/openclaw/data/$AGENT_NAME/data/workspace"
 
 # Compose SOUL.md
 if [ -f "$STAGING/overrides/$AGENT_NAME/SOUL.md" ]; then
@@ -163,10 +163,10 @@ aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --re
 
 ### 4.2 Install deploy helper (after bin directory setup)
 
+Downloaded from S3 (canonical source: `cli/scripts/deploy-behavior.sh.tmpl`, uploaded by Terraform):
+
 ```bash
-cat > /opt/openclaw/bin/deploy-behavior.sh << 'DEPLOY_BEHAVIOR'
-<contents of deploy-behavior.sh>
-DEPLOY_BEHAVIOR
+aws s3 cp s3://${state_bucket}/openclaw/scripts/deploy-behavior.sh /opt/openclaw/bin/deploy-behavior.sh --region "$AWS_REGION"
 chmod +x /opt/openclaw/bin/deploy-behavior.sh
 ```
 
@@ -419,12 +419,11 @@ adminCmd.AddCommand(setupCmd, addUserCmd, addTeamCmd, listAgentsCmd, removeAgent
 ### 7.4 Embed updates in `cli/scripts/embed.go`
 
 ```go
-//go:embed deploy-behavior.sh.tmpl
-var DeployBehaviorScript string
-
 //go:embed refresh-all.sh.tmpl
 var RefreshAllScript string
 ```
+
+Note: `deploy-behavior.sh.tmpl` is NOT embedded in the Go binary — it is uploaded to S3 by Terraform and downloaded by bootstrap. The Go embed was removed to avoid a dead-code/duplication issue.
 
 ## 8. Edge Cases & Error Handling
 
@@ -442,7 +441,7 @@ var RefreshAllScript string
 ## 9. Security Considerations
 
 - **No secrets in behavior files**: Behavior files contain only markdown text (identity, guidelines, philosophy). No API keys, tokens, or credentials. Enforced by code review — no automated check needed.
-- **S3 read-only from host**: The IAM policy grants only `s3:GetObject` — the host cannot modify behavior files in S3.
+- **S3 read-only from host**: The IAM policy grants only `s3:GetObject` and prefix-scoped `s3:ListBucket` — the host cannot modify behavior files in S3, and cannot list keys outside `openclaw/*`.
 - **File ownership**: Behavior files are owned by uid 1000 (node user) so the container can read them. They are not executable.
 - **ExecStartPre runs as root**: The systemd unit runs ExecStartPre as root (before dropping to the container user). This is necessary for `chown 1000:1000` and consistent with how openclaw.json is already deployed.
 - **No new network access**: S3 access uses the existing VPC endpoint or HTTPS egress — no new network paths.

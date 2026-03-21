@@ -110,16 +110,28 @@ resource "aws_iam_role_policy" "s3_read" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["s3:GetObject", "s3:ListBucket"]
-      Resource = [
-        "arn:aws:s3:::${local.state_bucket}",
-        "arn:aws:s3:::${local.state_bucket}/openclaw/router/*",
-        "arn:aws:s3:::${local.state_bucket}/openclaw/bootstrap/*",
-        "arn:aws:s3:::${local.state_bucket}/openclaw/behavior/*"
-      ]
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "arn:aws:s3:::${local.state_bucket}/openclaw/router/*",
+          "arn:aws:s3:::${local.state_bucket}/openclaw/bootstrap/*",
+          "arn:aws:s3:::${local.state_bucket}/openclaw/behavior/*",
+          "arn:aws:s3:::${local.state_bucket}/openclaw/scripts/*"
+        ]
+      },
+      {
+        Effect    = "Allow"
+        Action    = ["s3:ListBucket"]
+        Resource  = ["arn:aws:s3:::${local.state_bucket}"]
+        Condition = {
+          StringLike = {
+            "s3:prefix" = ["openclaw/*"]
+          }
+        }
+      }
+    ]
   })
 }
 
