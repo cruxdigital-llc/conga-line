@@ -1,10 +1,13 @@
-# OpenClaw on AWS
-
+# Crux Claw - Run an OpenClaw "cluster" on AWS
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.25-00ADD8.svg)](cli/)
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
 
-Deploy and manage clusters of autonomous AI agents on hardened AWS infrastructure. Each agent runs in its own isolated Docker container with dedicated secrets, networking, and access controls — giving teams and enterprises granular permission management over their AI workforce.
+<p align="center">
+  <img src="assets/congaline.png" alt="OpenClaw agents" width="300">
+</p>
+
+Deploy and manage "clusters" of OpenClaw instances on hardened AWS infrastructure behind a single Slack App. Each agent runs in its own isolated Docker container with dedicated secrets, networking, and access controls — giving teams and enterprises granular permission management over their AI workforce.
 
 ## Key Features
 
@@ -51,6 +54,7 @@ Deploy and manage clusters of autonomous AI agents on hardened AWS infrastructur
 - **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
 - **AWS CLI v2** with **session-manager-plugin** installed
 - **Terraform** >= 1.5
+- **Slack app** configured for OpenClaw — follow the [OpenClaw Slack setup guide](https://github.com/openclaw/openclaw/blob/main/docs/slack.md) to create an app with Socket Mode enabled and the required bot scopes. You'll need the bot token, app token, and signing secret for `cruxclaw admin setup`
 - **OpenClaw Docker image** — pinned to `v2026.3.11` (see [Docker Image](#docker-image))
 
 ### 1. Bootstrap Terraform state
@@ -82,15 +86,11 @@ cruxclaw admin setup
 
 This reads the setup manifest from SSM and prompts for shared secrets (Slack tokens, signing secret, Google OAuth) and config values (Docker image URL).
 
-### 4. Build and push the Docker image
-
-See [Docker Image](#docker-image) for details. Set the image URL when prompted by `cruxclaw admin setup`.
-
-### 5. Add agents and start
+### 4. Add agents and start
 
 ```bash
-cruxclaw admin add-user aaron UA13HEGTS
-cruxclaw admin add-team leadership C0ALL272SV8
+cruxclaw admin add-user boblobclaw UA13HEGTS
+cruxclaw admin add-team bluthcompany C0ALL272SV8
 cruxclaw admin list-agents
 
 cruxclaw admin cycle-host   # restarts EC2; bootstrap discovers and provisions all agents
@@ -98,7 +98,7 @@ cruxclaw admin cycle-host   # restarts EC2; bootstrap discovers and provisions a
 
 ## Install the CLI (End Users)
 
-No Terraform, Go, or repo clone required.
+No Terraform, Go, or repo clone required. This is how users manage their agents and secrets as well as access the web UI securely.
 
 ### Prerequisites
 
@@ -143,6 +143,8 @@ cruxclaw connect            # opens SSM tunnel to web UI
 
 Open http://localhost:18789 in your browser.
 
+> NOTE: For ease of use in the future, you may want to add the `export AWS_PROFILE=your-profile` line to your shell profile (~/.bashrc, ~/.zshrc, etc.) to avoid having to export it or pass `--profile` every time.
+
 ## CLI Reference
 
 ### User Commands
@@ -174,12 +176,12 @@ Open http://localhost:18789 in your browser.
 
 ### Global Flags
 
-| Flag | Description |
-|------|-------------|
-| `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var) |
-| `--region` | AWS region (default: from config) |
-| `--agent` | Override auto-detected agent name |
-| `--verbose` | Verbose output |
+| Flag | Description                                                  |
+|------|--------------------------------------------------------------|
+| `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var)             |
+| `--region` | AWS region (default: from config)                            |
+| `--agent` | Override auto-detected agent name or target a specific agent |
+| `--verbose` | Verbose output                                               |
 
 ## How It Works
 
@@ -202,6 +204,8 @@ ghcr.io/openclaw/openclaw:2026.3.11
 ```
 
 Set this as the image URL when prompted by `cruxclaw admin setup`.
+
+> NOTE: Once the bug introduced in v2026.3.12 is fixed, we'll update this to reference the latest stable release.
 
 ## Development
 
