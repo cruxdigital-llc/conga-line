@@ -187,7 +187,7 @@ Open http://localhost:18789 in your browser.
 
 The CLI discovers infrastructure via AWS APIs — no Terraform access or repo clone needed:
 
-- **Instance**: Found by EC2 tag `Name=conga-host`
+- **Instance**: Found by EC2 tag `Name=conga-line-host`
 - **Agent config**: Stored in SSM Parameter Store at `/conga/agents/{name}`
 - **Identity mapping**: Your SSO username matches the `iam_identity` field in your agent's SSM config
 - **Secrets**: Managed in AWS Secrets Manager under `conga/agents/{name}/`
