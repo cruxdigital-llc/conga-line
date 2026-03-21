@@ -1,6 +1,6 @@
 # Crux Claw - Run an OpenClaw "cluster" on AWS
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-%3E%3D1.25-00ADD8.svg)](cli/)
+[![Go](https://img.shields.io/badge/Go-%3E%3D1.25.0-00ADD8.svg)](cli/)
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
 
 <p align="center">
@@ -213,7 +213,7 @@ For developers building and testing the `cruxclaw` CLI locally.
 
 ### Prerequisites
 
-- **Go** >= 1.21
+- **Go** >= 1.25
 - AWS access configured (see [Install the CLI](#install-the-cli-end-users))
 
 ### Build and run

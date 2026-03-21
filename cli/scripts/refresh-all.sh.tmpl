@@ -1,66 +1,16 @@
 set -uo pipefail
 
-# Install boot-time image refresh service if not present
-if [ ! -f /etc/systemd/system/openclaw-image-refresh.service ]; then
-cat > /opt/openclaw/bin/refresh-image.sh << 'IMGREFRESH'
-#!/bin/bash
-set -euo pipefail
-REGION=$(ec2-metadata --availability-zone 2>/dev/null | awk '{print substr($2,1,length($2)-1)}')
-IMG=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" \
-  --query "Parameter.Value" --output text --region "$REGION" 2>/dev/null) || true
-if [ -n "$IMG" ]; then
-  ECR_DOMAIN=$(echo "$IMG" | cut -d'/' -f1)
-  if [[ "$ECR_DOMAIN" == *".dkr.ecr."* ]]; then
-    aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_DOMAIN" 2>/dev/null || true
-  fi
-  docker pull "$IMG"
-  # Update all agent systemd units with the current image
-  CHANGED=false
-  for UNIT in /etc/systemd/system/openclaw-*.service; do
-    [ -f "$UNIT" ] || continue
-    case "$(basename "$UNIT")" in
-      openclaw-router.service|openclaw-image-refresh.service|openclaw-config-check.service|openclaw-session-metrics.service) continue ;;
-    esac
-    if grep -q "ExecStart=" "$UNIT" && ! grep -q "$IMG" "$UNIT"; then
-      sed -i "s|\(ExecStart=.* \)[^ ]*$|\1$IMG|" "$UNIT"
-      CHANGED=true
-    fi
-  done
-  if [ "$CHANGED" = true ]; then
-    systemctl daemon-reload
-  fi
-fi
-IMGREFRESH
-chmod +x /opt/openclaw/bin/refresh-image.sh
-
-cat > /etc/systemd/system/openclaw-image-refresh.service << 'IMGUNIT'
-[Unit]
-Description=Refresh OpenClaw image from SSM on boot
-After=docker.service
-Requires=docker.service
-Before=openclaw-router.service
-
-[Service]
-Type=oneshot
-ExecStart=/opt/openclaw/bin/refresh-image.sh
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-IMGUNIT
-systemctl enable openclaw-image-refresh.service
+# Run the boot-time image refresh script (installed by bootstrap) to pull latest
+# image from SSM and update all agent systemd units. This is the single source of
+# truth for image refresh logic — see terraform/user-data.sh.tftpl.
+if [ -x /opt/openclaw/bin/refresh-image.sh ]; then
+  /opt/openclaw/bin/refresh-image.sh
+else
+  echo "WARNING: /opt/openclaw/bin/refresh-image.sh not found — image refresh skipped."
+  echo "This script is installed during bootstrap. Re-cycle the host to restore it."
 fi
 
-# Read image from SSM and update units
-OPENCLAW_IMAGE=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" \
-  --query "Parameter.Value" --output text --region "{{.AWSRegion}}")
-ECR_DOMAIN=$(echo "$OPENCLAW_IMAGE" | cut -d'/' -f1)
-if [[ "$ECR_DOMAIN" == *".dkr.ecr."* ]]; then
-  aws ecr get-login-password --region "{{.AWSRegion}}" | docker login --username AWS --password-stdin "$ECR_DOMAIN" 2>/dev/null || true
-fi
-docker pull "$OPENCLAW_IMAGE"
-
-# Update agent systemd units with current image and add router reconnect
+# Patch existing units: remove stale env file refs, add router reconnect
 for UNIT_FILE in /etc/systemd/system/openclaw-*.service; do
   [ -f "$UNIT_FILE" ] || continue
   UNIT_NAME=$(basename "$UNIT_FILE" .service)
@@ -69,14 +19,12 @@ for UNIT_FILE in /etc/systemd/system/openclaw-*.service; do
   esac
   AGENT=$(echo "$UNIT_NAME" | sed 's/^openclaw-//')
 
-  # Replace image in ExecStart (last token on the line)
-  sed -i "s|\(ExecStart=.* \)[^ ]*$|\1$OPENCLAW_IMAGE|" "$UNIT_FILE"
-
   # Remove stale EnvironmentFile for image env if present
   sed -i '/openclaw-image\.env/d' "$UNIT_FILE"
 
-  # Remove stale ${OPENCLAW_IMAGE} references (replace with literal)
-  sed -i "s|\${OPENCLAW_IMAGE}|$OPENCLAW_IMAGE|g" "$UNIT_FILE"
+  # Remove stale ${OPENCLAW_IMAGE} references (replace with literal from current unit)
+  CURRENT_IMG=$(grep '^ExecStart=' "$UNIT_FILE" | grep -oE '[^ ]+$')
+  sed -i "s|\${OPENCLAW_IMAGE}|$CURRENT_IMG|g" "$UNIT_FILE"
 
   # Add ExecStartPost for router network if missing
   if ! grep -q 'ExecStartPost' "$UNIT_FILE"; then
