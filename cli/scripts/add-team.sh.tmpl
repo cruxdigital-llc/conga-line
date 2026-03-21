@@ -42,7 +42,7 @@ if [ -n "$AGENT_SECRET_NAMES" ]; then
 fi
 chmod 0400 /opt/conga/config/$AGENT_NAME.env
 
-cat > /opt/conga/config/$AGENT_NAME-openclaw.json << OCCONFIG
+cat > /opt/conga/config/$AGENT_NAME-config.json << OCCONFIG
 {
   "agents": {
     "defaults": {
@@ -100,11 +100,11 @@ if [ ! -d /opt/conga/data/$AGENT_NAME ]; then
   mkdir -p /opt/conga/data/$AGENT_NAME/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
   chown -R 1000:1000 /opt/conga/data/$AGENT_NAME
 fi
-cp /opt/conga/config/$AGENT_NAME-openclaw.json /opt/conga/data/$AGENT_NAME/openclaw.json
+cp /opt/conga/config/$AGENT_NAME-config.json /opt/conga/data/$AGENT_NAME/openclaw.json
 chown 1000:1000 /opt/conga/data/$AGENT_NAME/openclaw.json
 
-sha256sum /opt/conga/config/$AGENT_NAME-openclaw.json | cut -d' ' -f1 > /opt/conga/config/$AGENT_NAME-openclaw.json.sha256
-chmod 0444 /opt/conga/config/$AGENT_NAME-openclaw.json.sha256
+sha256sum /opt/conga/config/$AGENT_NAME-config.json | cut -d' ' -f1 > /opt/conga/config/$AGENT_NAME-config.json.sha256
+chmod 0444 /opt/conga/config/$AGENT_NAME-config.json.sha256
 
 # Store agent metadata for behavior deployment
 echo "team" > /opt/conga/config/$AGENT_NAME.type
