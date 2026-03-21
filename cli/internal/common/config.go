@@ -66,14 +66,14 @@ func GenerateOpenClawConfig(agent provider.AgentConfig, secrets SharedSecrets, g
 	// Only add Slack channel config when credentials are present
 	if secrets.HasSlack() {
 		slackChannel := map[string]interface{}{
-			"mode":               "http",
-			"enabled":            true,
-			"botToken":           secrets.SlackBotToken,
-			"signingSecret":      secrets.SlackSigningSecret,
-			"webhookPath":        "/slack/events",
-			"userTokenReadOnly":  true,
-			"streaming":          "partial",
-			"nativeStreaming":    true,
+			"mode":              "http",
+			"enabled":           true,
+			"botToken":          secrets.SlackBotToken,
+			"signingSecret":     secrets.SlackSigningSecret,
+			"webhookPath":       "/slack/events",
+			"userTokenReadOnly": true,
+			"streaming":         "partial",
+			"nativeStreaming":   true,
 		}
 
 		switch agent.Type {

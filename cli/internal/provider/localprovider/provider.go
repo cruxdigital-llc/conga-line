@@ -49,12 +49,12 @@ func (p *LocalProvider) Name() string { return "local" }
 // --- paths ---
 
 func (p *LocalProvider) agentsDir() string             { return filepath.Join(p.dataDir, "agents") }
-func (p *LocalProvider) configDir() string              { return filepath.Join(p.dataDir, "config") }
-func (p *LocalProvider) dataSubDir(name string) string  { return filepath.Join(p.dataDir, "data", name) }
-func (p *LocalProvider) routerDir() string              { return filepath.Join(p.dataDir, "router") }
-func (p *LocalProvider) behaviorDir() string            { return filepath.Join(p.dataDir, "behavior") }
-func (p *LocalProvider) logsDir() string                { return filepath.Join(p.dataDir, "logs") }
-func (p *LocalProvider) egressProxyDir() string         { return filepath.Join(p.dataDir, "egress-proxy") }
+func (p *LocalProvider) configDir() string             { return filepath.Join(p.dataDir, "config") }
+func (p *LocalProvider) dataSubDir(name string) string { return filepath.Join(p.dataDir, "data", name) }
+func (p *LocalProvider) routerDir() string             { return filepath.Join(p.dataDir, "router") }
+func (p *LocalProvider) behaviorDir() string           { return filepath.Join(p.dataDir, "behavior") }
+func (p *LocalProvider) logsDir() string               { return filepath.Join(p.dataDir, "logs") }
+func (p *LocalProvider) egressProxyDir() string        { return filepath.Join(p.dataDir, "egress-proxy") }
 
 // --- Identity & Discovery ---
 
@@ -539,8 +539,8 @@ func (p *LocalProvider) Setup(ctx context.Context) error {
 	// --- Shared secrets (all optional — Slack not required for gateway-only mode) ---
 	secretItems := []struct {
 		name, description string
-		isSecret           bool
-		group              string // "slack" or "google"
+		isSecret          bool
+		group             string // "slack" or "google"
 	}{
 		{"slack-bot-token", "Slack bot token (xoxb-...)", true, "slack"},
 		{"slack-signing-secret", "Slack signing secret", true, "slack"},

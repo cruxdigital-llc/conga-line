@@ -147,6 +147,6 @@ func resolveProfile() (string, *awsutil.AWSProfileInfo) {
 }
 
 // Validation helpers delegate to common package.
-func validateMemberID(id string) error  { return common.ValidateMemberID(id) }
-func validateChannelID(id string) error { return common.ValidateChannelID(id) }
+func validateMemberID(id string) error    { return common.ValidateMemberID(id) }
+func validateChannelID(id string) error   { return common.ValidateChannelID(id) }
 func validateAgentName(name string) error { return common.ValidateAgentName(name) }

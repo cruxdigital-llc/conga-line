@@ -111,4 +111,3 @@ func adminListAgentsRun(cmd *cobra.Command, args []string) error {
 	ui.PrintTable(headers, rows)
 	return nil
 }
-

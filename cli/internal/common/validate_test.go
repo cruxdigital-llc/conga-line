@@ -9,10 +9,10 @@ func TestValidateMemberID(t *testing.T) {
 	}{
 		{"U0123456789", true},
 		{"UABCDEFGHIJ", true},
-		{"U012345678", false},  // too short
+		{"U012345678", false},   // too short
 		{"U01234567890", false}, // too long
-		{"C0123456789", false}, // wrong prefix
-		{"u0123456789", false}, // lowercase
+		{"C0123456789", false},  // wrong prefix
+		{"u0123456789", false},  // lowercase
 		{"", false},
 	}
 
@@ -63,9 +63,9 @@ func TestValidateAgentName(t *testing.T) {
 		{"ml-team", true},
 		{"agent1", true},
 		{"a-b-c", true},
-		{"Aaron", false},     // uppercase
-		{"ml_team", false},   // underscore
-		{"", false},          // empty
+		{"Aaron", false},   // uppercase
+		{"ml_team", false}, // underscore
+		{"", false},        // empty
 		{"with space", false},
 	}
 
