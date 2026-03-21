@@ -16,6 +16,12 @@ variable "project_name" {
   default     = "openclaw"
 }
 
+variable "instance_type" {
+  description = "EC2 instance type for the OpenClaw host. Size at ~2GB per agent (e.g. r6g.medium for 3 agents)"
+  type        = string
+  default     = "r6g.medium"
+}
+
 variable "config_check_interval_minutes" {
   description = "Interval in minutes for config integrity hash checks"
   type        = number

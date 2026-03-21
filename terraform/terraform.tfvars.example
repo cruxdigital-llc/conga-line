@@ -3,6 +3,9 @@ aws_region   = "us-east-2"
 aws_profile  = "your-aws-profile"
 project_name = "openclaw"
 
+# Instance — size at ~2GB per agent (r6g.medium = 8GB for up to 3 agents)
+instance_type = "r6g.medium"
+
 # Monitoring
 config_check_interval_minutes = 5
 alert_email = ""  # Set to receive alert emails
