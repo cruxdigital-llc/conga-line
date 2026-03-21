@@ -122,9 +122,9 @@ resource "aws_iam_role_policy" "s3_read" {
         ]
       },
       {
-        Effect    = "Allow"
-        Action    = ["s3:ListBucket"]
-        Resource  = ["arn:aws:s3:::${local.state_bucket}"]
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = ["arn:aws:s3:::${local.state_bucket}"]
         Condition = {
           StringLike = {
             "s3:prefix" = ["openclaw/*"]
