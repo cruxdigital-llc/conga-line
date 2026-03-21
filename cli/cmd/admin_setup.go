@@ -25,8 +25,9 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 	}
 
 	var manifest struct {
-		Config  map[string]string `json:"config"`
-		Secrets map[string]string `json:"secrets"`
+		Config   map[string]string `json:"config"`
+		Defaults map[string]string `json:"defaults"`
+		Secrets  map[string]string `json:"secrets"`
 	}
 	if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
 		return fmt.Errorf("failed to parse setup manifest: %w", err)
@@ -64,7 +65,8 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		value, err := ui.TextPrompt(fmt.Sprintf("  Enter value for %s", key))
+		defaultVal := manifest.Defaults[key]
+		value, err := ui.TextPromptWithDefault(fmt.Sprintf("  Enter value for %s", key), defaultVal)
 		if err != nil {
 			return err
 		}

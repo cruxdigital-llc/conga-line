@@ -52,7 +52,6 @@ cat > /opt/openclaw/config/$AGENT_NAME-openclaw.json << OCCONFIG
       "heartbeat": {
         "every": "55m",
         "lightContext": true,
-        "isolatedSession": true,
         "target": "none"
       },
       "contextPruning": {
@@ -135,7 +134,8 @@ Requires=docker.service
 Type=simple
 EnvironmentFile=/opt/openclaw/config/$AGENT_NAME.env
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$AGENT_NAME
-ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 0.75 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStartPost=-/usr/bin/docker network connect openclaw-$AGENT_NAME openclaw-router
 ExecStop=/usr/bin/docker stop openclaw-$AGENT_NAME
 StandardOutput=append:/var/log/openclaw-$AGENT_NAME.log
 StandardError=append:/var/log/openclaw-$AGENT_NAME.log

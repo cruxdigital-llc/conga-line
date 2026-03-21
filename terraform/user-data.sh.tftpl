@@ -1,7 +1,10 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
+# Log to file and stdout — capture tee PID so we can clean it up on exit
 exec > >(tee /var/log/openclaw-bootstrap.log) 2>&1
+TEE_PID=$!
+trap 'kill $TEE_PID 2>/dev/null; wait $TEE_PID 2>/dev/null' EXIT
 echo "=== OpenClaw Bootstrap Start: $(date -u) ==="
 
 AWS_REGION="${aws_region}"
@@ -117,13 +120,17 @@ fi
 docker pull "$OPENCLAW_IMAGE"
 docker pull node:22-alpine
 
+mkdir -p /opt/openclaw/{bin,config,scripts,router/src}
+
+# Write image to a shared env file so systemd units stay current
+echo "OPENCLAW_IMAGE=$OPENCLAW_IMAGE" > /opt/openclaw/config/openclaw-image.env
+chmod 0444 /opt/openclaw/config/openclaw-image.env
+
 echo "OpenClaw image pulled"
 
 # ============================================================
 # 5. SETUP ROUTER
 # ============================================================
-
-mkdir -p /opt/openclaw/{bin,config,scripts,router/src}
 
 # Download router source from S3
 aws s3 cp s3://${state_bucket}/openclaw/router/package.json /opt/openclaw/router/package.json --region "$AWS_REGION"
@@ -135,6 +142,57 @@ aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --re
 # Install router dependencies
 cd /opt/openclaw/router && npm install --production
 cd /
+
+# --- Boot-time image refresh service ---
+# Runs on every boot to pull the latest image from SSM before agents start
+cat > /opt/openclaw/bin/refresh-image.sh << 'IMGREFRESH'
+#!/bin/bash
+set -euo pipefail
+REGION=$(ec2-metadata --availability-zone 2>/dev/null | awk '{print substr($2,1,length($2)-1)}')
+IMG=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" \
+  --query "Parameter.Value" --output text --region "$REGION" 2>/dev/null) || true
+if [ -n "$IMG" ]; then
+  # Auto-login to ECR if needed
+  ECR_DOMAIN=$(echo "$IMG" | cut -d'/' -f1)
+  if [[ "$ECR_DOMAIN" == *".dkr.ecr."* ]]; then
+    aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_DOMAIN" 2>/dev/null || true
+  fi
+  docker pull "$IMG"
+  # Update all agent systemd units with the current image
+  CHANGED=false
+  for UNIT in /etc/systemd/system/openclaw-*.service; do
+    [ -f "$UNIT" ] || continue
+    case "$(basename "$UNIT")" in
+      openclaw-router.service|openclaw-image-refresh.service|openclaw-config-check.service|openclaw-session-metrics.service) continue ;;
+    esac
+    if grep -q "ExecStart=" "$UNIT" && ! grep -q "$IMG" "$UNIT"; then
+      sed -i "s|\(ExecStart=.* \)[^ ]*$|\1$IMG|" "$UNIT"
+      CHANGED=true
+    fi
+  done
+  if [ "$CHANGED" = true ]; then
+    systemctl daemon-reload
+  fi
+fi
+IMGREFRESH
+chmod +x /opt/openclaw/bin/refresh-image.sh
+
+cat > /etc/systemd/system/openclaw-image-refresh.service << 'IMGUNIT'
+[Unit]
+Description=Refresh OpenClaw image from SSM on boot
+After=docker.service
+Requires=docker.service
+Before=openclaw-router.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/openclaw/bin/refresh-image.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+IMGUNIT
+systemctl enable openclaw-image-refresh.service
 
 # routing.json will be generated after agent discovery (section 6)
 
@@ -221,7 +279,6 @@ ENVFILE
       "heartbeat": {
         "every": "55m",
         "lightContext": true,
-        "isolatedSession": true,
         "target": "none"
       },
       "contextPruning": {
@@ -310,7 +367,6 @@ ENVFILE
       "heartbeat": {
         "every": "55m",
         "lightContext": true,
-        "isolatedSession": true,
         "target": "none"
       },
       "contextPruning": {
@@ -391,11 +447,11 @@ setup_agent_common() {
     [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
   done < /opt/openclaw/config/$AGENT_NAME.env
 
-  # Systemd unit
+  # Systemd unit — image written literally; updated on boot by openclaw-image-refresh.service
   cat > /etc/systemd/system/openclaw-$AGENT_NAME.service << UNIT
 [Unit]
 Description=OpenClaw Gateway ($AGENT_NAME)
-After=docker.service openclaw-router.service
+After=docker.service openclaw-router.service openclaw-image-refresh.service
 Requires=docker.service
 
 [Service]
@@ -403,7 +459,8 @@ Type=simple
 EnvironmentFile=/opt/openclaw/config/$AGENT_NAME.env
 ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/openclaw/bin/deploy-behavior.sh $AGENT_NAME \$(cat /opt/openclaw/config/$AGENT_NAME.type 2>/dev/null || echo user) 2>/dev/null || true'
 ExecStartPre=-/usr/bin/docker rm -f openclaw-$AGENT_NAME
-ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME -p 127.0.0.1:$GATEWAY_PORT:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME -p 127.0.0.1:$GATEWAY_PORT:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 0.75 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStartPost=-/usr/bin/docker network connect openclaw-$AGENT_NAME openclaw-router
 ExecStop=/usr/bin/docker stop openclaw-$AGENT_NAME
 StandardOutput=append:/var/log/openclaw-$AGENT_NAME.log
 StandardError=append:/var/log/openclaw-$AGENT_NAME.log
@@ -425,7 +482,9 @@ UNIT
 for OLD_UNIT in /etc/systemd/system/openclaw-*.service; do
   [ -f "$OLD_UNIT" ] || continue
   UNIT_NAME=$(basename "$OLD_UNIT" .service)
-  [ "$UNIT_NAME" = "openclaw-router" ] && continue
+  case "$UNIT_NAME" in
+    openclaw-router|openclaw-image-refresh|openclaw-config-check|openclaw-session-metrics) continue ;;
+  esac
   echo "Stopping previous agent: $UNIT_NAME"
   systemctl stop "$UNIT_NAME" 2>/dev/null || true
   docker rm -f "$UNIT_NAME" 2>/dev/null || true
@@ -710,10 +769,12 @@ done
 
 echo "Router connected to all agent networks"
 
-# Start agent containers
+# Start agent containers sequentially — stagger to avoid OOM on t4g.medium (4GB)
 for AGENT_NAME in $ALL_AGENT_NAMES; do
   systemctl enable "openclaw-$AGENT_NAME.service"
   systemctl start "openclaw-$AGENT_NAME.service"
+  echo "Waiting for openclaw-$AGENT_NAME to stabilize..."
+  sleep 30
 done
 
 echo "=== OpenClaw Bootstrap Complete: $(date -u) ==="

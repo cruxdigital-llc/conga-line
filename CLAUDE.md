@@ -6,7 +6,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 
 ## Key Context
 
-- **Architecture**: Single EC2 host (t4g.medium, AL2023) with per-agent Docker containers in a zero-ingress VPC
+- **Architecture**: Single EC2 host (AL2023, ARM64) with per-agent Docker containers in a zero-ingress VPC. Instance sized at ~2GB per agent (e.g. r6g.medium for 3 agents)
 - **NAT**: fck-nat via `RaJiska/fck-nat/aws` module v1.4.0 (not AWS NAT Gateway)
 - **Terraform state**: S3 bucket `<project_name>-terraform-state-<account_id>` + DynamoDB `<project_name>-terraform-locks`
 - **Configuration**: Environment-specific values are in gitignored `terraform/terraform.tfvars` and `terraform/backend.tf`. See `.example` files.
@@ -40,7 +40,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 - Env file at `/opt/openclaw/config/{agent_name}.env` — secrets, mode 0400
 - OpenClaw hot-reload writes `.tmp` files next to `openclaw.json` — the config directory must be writable by the container user
 - Container needs `NODE_OPTIONS="--max-old-space-size=1536"` to avoid V8 heap OOM
-- Container memory limit: 2GB (1.5GB was too low)
+- Container memory limit: 2GB per agent (idle ~500MB, spikes to 1-1.5GB during heavy conversations; 1.5GB limit caused V8 OOM). Size the instance at ~2GB per agent plus ~500MB overhead
 - **Agents are keyed by agent name** (e.g. `myagent`, `leadership`), not Slack member ID or username
 - Two agent types: **user agents** (DM-only, `dmPolicy: "allowlist"`) and **team agents** (channel-based, `groupPolicy: "allowlist"`)
 
@@ -59,12 +59,12 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 - `SLACK_APP_TOKEN` is held only by the router (in `router.env`) — containers do not need it
 - Router must be connected to each agent's Docker network (`docker network connect openclaw-<agent_name> openclaw-router`) so it can reach the container's webhook endpoint
 - Routing config at `/opt/openclaw/config/routing.json` maps channels and member IDs to container URLs
-- The deployed image includes the HTTP webhook fix from our fork (PR openclaw/openclaw#49514)
+- The deployed image is pinned to `ghcr.io/openclaw/openclaw:2026.3.11` (`29dc654`), the last stable release before a Slack socket mode regression in v2026.3.12 ([#45311](https://github.com/openclaw/openclaw/issues/45311))
 
 ## OpenClaw Behavioral Issues
 
 - **Billing/rate errors are cached**: When Anthropic returns a billing or rate limit error, OpenClaw's model fallback system caches the rejection. Even after the billing issue is resolved, the container must be restarted to clear the cached error state.
-- **Container restart requires router reconnection**: When an agent container restarts, the router loses its Docker network connection and must be reconnected via `docker network connect`.
+- **Container restart reconnects router automatically**: Agent systemd units include `ExecStartPost` to reconnect the router to the agent's Docker network after every container start.
 
 ## Known Limitations
 

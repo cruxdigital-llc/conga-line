@@ -13,7 +13,7 @@ Deploy and manage clusters of autonomous AI agents on hardened AWS infrastructur
 - **Two agent types** — user agents (DM-only) for individuals, team agents (channel-based) for groups
 - **SSM-driven discovery** — agents are registered in Parameter Store and provisioned automatically at boot, no Terraform changes needed to add or remove agents
 - **Slack event router** — single Socket Mode connection fans out to per-agent containers via HTTP webhook
-- **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway) on a single t4g.medium host; ~$10/mo total
+- **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway); instance sized to ~2GB per agent (e.g. r6g.medium for 3 agents)
 - **CLI for everything** — operators and end users manage agents, secrets, and infrastructure through the `cruxclaw` CLI
 
 ## Architecture
@@ -51,7 +51,7 @@ Deploy and manage clusters of autonomous AI agents on hardened AWS infrastructur
 - **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
 - **AWS CLI v2** with **session-manager-plugin** installed
 - **Terraform** >= 1.5
-- **A patched OpenClaw Docker image** (see [Docker Image](#docker-image))
+- **OpenClaw Docker image** — pinned to `v2026.3.11` (see [Docker Image](#docker-image))
 
 ### 1. Bootstrap Terraform state
 
@@ -195,17 +195,13 @@ The CLI discovers infrastructure via AWS APIs — no Terraform access or repo cl
 
 ## Docker Image
 
-The upstream OpenClaw image does not support Slack HTTP webhook mode without the fix from [PR #49514](https://github.com/openclaw/openclaw/pull/49514). Until merged upstream, build a custom image:
+This project uses the official OpenClaw image pinned to **v2026.3.11** (`29dc654`), the last stable release before a [Slack socket mode regression](https://github.com/openclaw/openclaw/issues/45311) was introduced in v2026.3.12.
 
-```bash
-git clone https://github.com/openclaw/openclaw.git
-cd openclaw
-# Cherry-pick or apply the fix from PR #49514
-
-docker build -t <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest .
-aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
-docker push <account_id>.dkr.ecr.<region>.amazonaws.com/openclaw:latest
 ```
+ghcr.io/openclaw/openclaw:2026.3.11
+```
+
+Set this as the image URL when prompted by `cruxclaw admin setup`.
 
 ## Development
 

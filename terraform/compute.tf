@@ -9,7 +9,7 @@ data "aws_ssm_parameter" "al2023_arm64" {
 resource "aws_launch_template" "openclaw" {
   name_prefix   = "${var.project_name}-"
   image_id      = data.aws_ssm_parameter.al2023_arm64.value
-  instance_type = "t4g.medium"
+  instance_type = "r6g.medium"
 
   iam_instance_profile {
     name = aws_iam_instance_profile.openclaw_host.name

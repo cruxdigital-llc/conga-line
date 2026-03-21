@@ -31,12 +31,16 @@ variable "alert_email" {
 variable "setup_manifest" {
   description = "Describes the config values and shared secrets required for the deployment. The CLI reads this manifest during `cruxclaw admin setup` and prompts for missing values."
   type = object({
-    config  = map(string)
-    secrets = map(string)
+    config   = map(string)
+    defaults = optional(map(string), {})
+    secrets  = map(string)
   })
   default = {
     config = {
       "openclaw-image" = "Docker image for OpenClaw (ECR, GHCR, or Docker Hub)"
+    }
+    defaults = {
+      "openclaw-image" = "ghcr.io/openclaw/openclaw:2026.3.11"
     }
     secrets = {
       "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
