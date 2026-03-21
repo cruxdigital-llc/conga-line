@@ -2,10 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"time"
 
-	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -24,29 +21,17 @@ func init() {
 func logsRun(cmd *cobra.Command, args []string) error {
 	ctx, cancel := commandContext()
 	defer cancel()
-	if err := ensureClients(ctx); err != nil {
-		return err
-	}
 
 	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
 
-	instanceID, err := findInstance(ctx)
+	output, err := prov.GetLogs(ctx, agentName, logLines)
 	if err != nil {
 		return err
 	}
 
-	script := fmt.Sprintf("docker logs conga-%s --tail %d 2>&1", agentName, logLines)
-
-	spin := ui.NewSpinner("Fetching logs...")
-	result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, script, 30*time.Second)
-	spin.Stop()
-	if err != nil {
-		return err
-	}
-
-	fmt.Print(result.Stdout)
+	fmt.Print(output)
 	return nil
 }

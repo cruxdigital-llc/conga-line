@@ -103,6 +103,25 @@ Single Slack app → Socket Mode connection held by the router (`router/src/inde
 
 ---
 
+## Phase 3 — Modular Deployment (Local Docker) ✅
+
+Goal: Decouple deployment from AWS so Conga Line can be deployed locally for development/testing, and to other targets in the future.
+
+- [x] **Provider abstraction**: `Provider` interface (16 methods) with registry pattern
+- [x] **Common package**: Config generation, routing, behavior composition extracted from shell templates into Go
+- [x] **AWS provider**: Wraps existing code with zero behavioral change
+- [x] **Local Docker provider**: File-based discovery/secrets, Docker CLI operations, same container isolation
+- [x] **Network isolation**: `--internal` Docker networks + egress proxy (nginx stream: 443/53 only)
+- [x] **Config integrity**: SHA256 hash monitoring for openclaw.json
+- [x] **CLI integration**: `--provider aws|local` flag, persistent config at `~/.conga/config.json`
+
+### Future Deployment Targets (not yet started)
+- [ ] **Kubernetes provider**: Helm chart + kubectl operations behind Provider interface
+- [ ] **ECS/Fargate provider**: Task definitions + AWS ECS API behind Provider interface
+- [ ] **Multi-cloud**: GCP Cloud Run, Azure Container Instances
+
+---
+
 ## Horizon 2 — Operational Maturity
 
 - [x] **SSM port forwarding for web UI (Phase 1)**: Per-user `gateway_port` in `users` variable, Docker `-p 127.0.0.1:<port>:18789`, SSM output commands. See `specs/2026-03-17_feature_ssm-port-forwarding/`.

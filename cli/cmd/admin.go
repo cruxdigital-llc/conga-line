@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -23,18 +22,18 @@ func init() {
 	}
 
 	addUserCmd := &cobra.Command{
-		Use:   "add-user <name> <slack_member_id>",
-		Short: "Provision a new individual (DM-only) agent for a user",
-		Args:  cobra.ExactArgs(2),
+		Use:   "add-user <name> [slack_member_id]",
+		Short: "Provision a new agent (Slack member ID optional for gateway-only mode)",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE:  adminAddUserRun,
 	}
 	addUserCmd.Flags().IntVar(&adminGatewayPort, "gateway-port", 0, "Gateway port (auto-assigned if 0)")
 	addUserCmd.Flags().StringVar(&adminIAMIdentity, "iam-identity", "", "IAM identity (SSO username/email)")
 
 	addTeamCmd := &cobra.Command{
-		Use:   "add-team <name> <slack_channel>",
-		Short: "Provision a new team (channel-based) agent",
-		Args:  cobra.ExactArgs(2),
+		Use:   "add-team <name> [slack_channel]",
+		Short: "Provision a new team agent (Slack channel optional for gateway-only mode)",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE:  adminAddTeamRun,
 	}
 	addTeamCmd.Flags().IntVar(&adminGatewayPort, "gateway-port", 0, "Gateway port (auto-assigned if 0)")
@@ -47,7 +46,7 @@ func init() {
 
 	removeAgentCmd := &cobra.Command{
 		Use:   "remove-agent <name>",
-		Short: "Remove an agent from the instance",
+		Short: "Remove an agent",
 		Args:  cobra.ExactArgs(1),
 		RunE:  adminRemoveAgentRun,
 	}
@@ -56,14 +55,14 @@ func init() {
 
 	cycleHostCmd := &cobra.Command{
 		Use:   "cycle-host",
-		Short: "Stop and restart the EC2 instance (re-bootstraps all containers)",
+		Short: "Restart the deployment environment (re-bootstraps all containers)",
 		RunE:  adminCycleHostRun,
 	}
 	cycleHostCmd.Flags().BoolVar(&adminForce, "force", false, "Skip confirmation")
 
 	setupCmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Configure shared secrets and settings from the deployment manifest",
+		Short: "Configure shared secrets and settings",
 		RunE:  adminSetupRun,
 	}
 
@@ -74,18 +73,22 @@ func init() {
 	}
 	refreshAllCmd.Flags().BoolVar(&adminForce, "force", false, "Skip confirmation")
 
-	adminCmd.AddCommand(setupCmd, addUserCmd, addTeamCmd, listAgentsCmd, removeAgentCmd, cycleHostCmd, refreshAllCmd)
+	teardownCmd := &cobra.Command{
+		Use:   "teardown",
+		Short: "Remove the entire deployment (all agents, containers, config)",
+		RunE:  adminTeardownRun,
+	}
+	teardownCmd.Flags().BoolVar(&adminForce, "force", false, "Skip confirmation")
+
+	adminCmd.AddCommand(setupCmd, addUserCmd, addTeamCmd, listAgentsCmd, removeAgentCmd, cycleHostCmd, refreshAllCmd, teardownCmd)
 	rootCmd.AddCommand(adminCmd)
 }
 
 func adminListAgentsRun(cmd *cobra.Command, args []string) error {
 	ctx, cancel := commandContext()
 	defer cancel()
-	if err := ensureClients(ctx); err != nil {
-		return err
-	}
 
-	agents, err := discovery.ListAgents(ctx, clients.SSM)
+	agents, err := prov.ListAgents(ctx)
 	if err != nil {
 		return err
 	}
@@ -102,9 +105,10 @@ func adminListAgentsRun(cmd *cobra.Command, args []string) error {
 		if a.Type == "team" {
 			identifier = a.SlackChannel
 		}
-		rows = append(rows, []string{a.Name, a.Type, identifier, strconv.Itoa(a.GatewayPort)})
+		rows = append(rows, []string{a.Name, string(a.Type), identifier, strconv.Itoa(a.GatewayPort)})
 	}
 
 	ui.PrintTable(headers, rows)
 	return nil
 }
+

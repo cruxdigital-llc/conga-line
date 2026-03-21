@@ -2,9 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
-	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +20,7 @@ func init() {
 	setCmd := &cobra.Command{
 		Use:   "set [name]",
 		Short: "Create or update a secret",
-		Long: `Create or update a secret in AWS Secrets Manager.
+		Long: `Create or update a secret for your agent.
 
 The secret name is transformed into an environment variable and injected into
 your OpenClaw container in SCREAMING_SNAKE_CASE format. For example:
@@ -29,13 +28,7 @@ your OpenClaw container in SCREAMING_SNAKE_CASE format. For example:
   anthropic-api-key  →  ANTHROPIC_API_KEY
   google-client-id   →  GOOGLE_CLIENT_ID
 
-If no name is provided, you will be prompted interactively for both the name
-and value. Use --value to pass the secret value non-interactively.
-
 After setting a secret, run 'conga refresh' to inject it into your container.`,
-		Example: `  conga secrets set                          # interactive mode
-  conga secrets set anthropic-api-key         # prompts for value
-  conga secrets set anthropic-api-key --value sk-ant-...  # non-interactive`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: secretsSetRun,
 	}
@@ -62,9 +55,6 @@ After setting a secret, run 'conga refresh' to inject it into your container.`,
 func secretsSetRun(cmd *cobra.Command, args []string) error {
 	ctx, cancel := commandContext()
 	defer cancel()
-	if err := ensureClients(ctx); err != nil {
-		return err
-	}
 
 	agentName, err := resolveAgentName(ctx)
 	if err != nil {
@@ -74,7 +64,7 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 	var name string
 	if len(args) > 0 {
 		name = args[0]
-		fmt.Printf("  -> will be injected as: %s\n", secretNameToEnvVar(name))
+		fmt.Printf("  -> will be injected as: %s\n", common.SecretNameToEnvVar(name))
 	} else {
 		fmt.Println("Secret names are injected as env vars in SCREAMING_SNAKE_CASE (e.g. anthropic-api-key → ANTHROPIC_API_KEY).")
 		name, err = ui.TextPrompt("Secret name (e.g. anthropic-api-key)")
@@ -84,7 +74,7 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		if name == "" {
 			return fmt.Errorf("secret name cannot be empty")
 		}
-		fmt.Printf("  → will be injected as: %s\n", secretNameToEnvVar(name))
+		fmt.Printf("  → will be injected as: %s\n", common.SecretNameToEnvVar(name))
 	}
 
 	value := secretValue
@@ -98,29 +88,24 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("secret value cannot be empty")
 	}
 
-	secretPath := fmt.Sprintf("conga/agents/%s/%s", agentName, name)
-	if err := awsutil.SetSecret(ctx, clients.SecretsManager, secretPath, value); err != nil {
+	if err := prov.SetSecret(ctx, agentName, name, value); err != nil {
 		return err
 	}
 
-	fmt.Printf("Secret '%s' saved (env var: %s). Run `conga refresh` to pick it up.\n", name, secretNameToEnvVar(name))
+	fmt.Printf("Secret '%s' saved (env var: %s). Run `conga refresh` to pick it up.\n", name, common.SecretNameToEnvVar(name))
 	return nil
 }
 
 func secretsListRun(cmd *cobra.Command, args []string) error {
 	ctx, cancel := commandContext()
 	defer cancel()
-	if err := ensureClients(ctx); err != nil {
-		return err
-	}
 
 	agentName, err := resolveAgentName(ctx)
 	if err != nil {
 		return err
 	}
 
-	prefix := fmt.Sprintf("conga/agents/%s/", agentName)
-	entries, err := awsutil.ListSecrets(ctx, clients.SecretsManager, prefix)
+	entries, err := prov.ListSecrets(ctx, agentName)
 	if err != nil {
 		return err
 	}
@@ -133,7 +118,11 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 	headers := []string{"NAME", "ENV VAR", "LAST CHANGED"}
 	var rows [][]string
 	for _, e := range entries {
-		rows = append(rows, []string{e.Name, secretNameToEnvVar(e.Name), e.LastChanged})
+		lastChanged := ""
+		if !e.LastChanged.IsZero() {
+			lastChanged = e.LastChanged.Format("2006-01-02 15:04:05")
+		}
+		rows = append(rows, []string{e.Name, e.EnvVar, lastChanged})
 	}
 	ui.PrintTable(headers, rows)
 	return nil
@@ -142,9 +131,6 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 	ctx, cancel := commandContext()
 	defer cancel()
-	if err := ensureClients(ctx); err != nil {
-		return err
-	}
 
 	agentName, err := resolveAgentName(ctx)
 	if err != nil {
@@ -158,17 +144,10 @@ func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	secretPath := fmt.Sprintf("conga/agents/%s/%s", agentName, args[0])
-	if err := awsutil.DeleteSecret(ctx, clients.SecretsManager, secretPath); err != nil {
+	if err := prov.DeleteSecret(ctx, agentName, args[0]); err != nil {
 		return err
 	}
 
 	fmt.Printf("Secret '%s' deleted.\n", args[0])
 	return nil
-}
-
-// secretNameToEnvVar converts a secret name to the environment variable name
-// injected into the container. Mirrors the bootstrap transform in user-data.sh.tftpl.
-func secretNameToEnvVar(name string) string {
-	return strings.NewReplacer("-", "_").Replace(strings.ToUpper(name))
 }

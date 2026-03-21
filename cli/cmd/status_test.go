@@ -5,65 +5,6 @@ import (
 	"time"
 )
 
-func TestParseKeyValues(t *testing.T) {
-	tests := []struct {
-		name   string
-		input  string
-		expect map[string]string
-	}{
-		{"basic", "KEY=value\nFOO=bar", map[string]string{"KEY": "value", "FOO": "bar"}},
-		{"empty value", "KEY=", map[string]string{"KEY": ""}},
-		{"equals in value", "KEY=a=b", map[string]string{"KEY": "a=b"}},
-		{"empty input", "", map[string]string{}},
-		{"trailing newline", "KEY=val\n", map[string]string{"KEY": "val"}},
-		{"no equals", "NOEQ", map[string]string{}},
-		{"mixed", "KEY=val\nBAD\nFOO=bar", map[string]string{"KEY": "val", "FOO": "bar"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseKeyValues(tt.input)
-			if len(got) != len(tt.expect) {
-				t.Errorf("parseKeyValues(%q) returned %d entries, want %d", tt.input, len(got), len(tt.expect))
-				return
-			}
-			for k, want := range tt.expect {
-				if got[k] != want {
-					t.Errorf("parseKeyValues(%q)[%q] = %q, want %q", tt.input, k, got[k], want)
-				}
-			}
-		})
-	}
-}
-
-func TestSplitStats(t *testing.T) {
-	tests := []struct {
-		name   string
-		input  string
-		expect []string
-	}{
-		{"three parts", "0.50% | 128MiB / 2GiB | 12", []string{"0.50%", "128MiB / 2GiB", "12"}},
-		{"one part", "only", []string{"only"}},
-		{"two parts", "a|b", []string{"a", "b"}},
-		{"empty", "", []string{""}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := splitStats(tt.input)
-			if len(got) != len(tt.expect) {
-				t.Errorf("splitStats(%q) returned %d parts, want %d", tt.input, len(got), len(tt.expect))
-				return
-			}
-			for i, want := range tt.expect {
-				if got[i] != want {
-					t.Errorf("splitStats(%q)[%d] = %q, want %q", tt.input, i, got[i], want)
-				}
-			}
-		})
-	}
-}
-
 func TestFormatUptime(t *testing.T) {
 	tests := []struct {
 		name     string

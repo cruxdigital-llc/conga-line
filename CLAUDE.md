@@ -2,15 +2,27 @@
 
 ## Project Overview
 
-This is an infrastructure-as-code project deploying Conga Line (autonomous AI assistant) on hardened AWS. There is no application code — the deliverable is Terraform configuration + bootstrap scripts.
+This is an infrastructure-as-code project deploying Conga Line (autonomous AI assistant) via pluggable providers. Supports **local Docker** (for dev/personal use) and **hardened AWS** (for teams/production). There is no application code — the deliverable is Terraform configuration + bootstrap scripts + a Go CLI.
 
 ## Key Context
 
-- **Architecture**: Single EC2 host (AL2023, ARM64) with per-agent Docker containers in a zero-ingress VPC. Instance sized at ~2GB per agent (e.g. r6g.medium for 3 agents)
+- **Provider model**: CLI uses a `Provider` interface (`cli/internal/provider/provider.go`) with two implementations: `awsprovider` (EC2/SSM/Secrets Manager) and `localprovider` (Docker CLI/file-based secrets). Commands call `prov.Method()` and work identically on either provider.
+- **AWS architecture**: Single EC2 host (AL2023, ARM64) with per-agent Docker containers in a zero-ingress VPC. Instance sized at ~2GB per agent (e.g. r6g.medium for 3 agents)
+- **Local architecture**: Per-agent Docker containers on the local machine. State in `~/.conga/`. No cloud services needed. Slack optional — can run gateway-only (web UI).
 - **NAT**: fck-nat via `RaJiska/fck-nat/aws` module v1.4.0 (not AWS NAT Gateway)
 - **Terraform state**: S3 bucket `<project_name>-terraform-state-<account_id>` + DynamoDB `<project_name>-terraform-locks`
 - **Configuration**: Environment-specific values are in gitignored `terraform/terraform.tfvars` and `terraform/backend.tf`. See `.example` files.
-- **Separation of concerns**: Terraform manages infrastructure (VPC, EC2, IAM, router). CLI manages configuration (`admin setup`) and agents (`admin add-user/add-team`). Agents are discovered from SSM Parameter Store at `/conga/agents/<name>` at boot time.
+- **Separation of concerns**: Terraform manages AWS infrastructure. CLI manages configuration (`admin setup`) and agents (`admin add-user/add-team`). On AWS, agents are discovered from SSM Parameter Store at `/conga/agents/<name>` at boot time. On local, agents are stored as JSON files in `~/.conga/agents/`.
+
+## Provider System
+
+- **Provider interface**: `cli/internal/provider/provider.go` — 17 methods covering identity, agent lifecycle, container ops, secrets, connectivity, environment management, and teardown
+- **Provider registry**: `cli/internal/provider/registry.go` — `Register(name, factory)` / `Get(name, cfg)`
+- **AWS provider**: `cli/internal/provider/awsprovider/provider.go` — wraps existing `aws`, `discovery`, `tunnel` packages
+- **Local provider**: `cli/internal/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
+- **Common package**: `cli/internal/common/` — shared logic used by both providers: config generation (`GenerateOpenClawConfig`), routing (`GenerateRoutingJSON`), behavior file composition, port allocation, validation
+- **Provider selection**: `--provider aws|local` flag, persisted in `~/.conga/config.json`, auto-detected (config file → default aws)
+- **Slack is optional**: When no Slack tokens are provided, openclaw.json omits the `channels` section and the agent runs in gateway-only mode. The router is only started when Slack is configured.
 
 ## Working with Terraform
 
@@ -23,26 +35,27 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 
 ## Secrets
 
-- Secrets are in AWS Secrets Manager under `conga/shared/*` and `conga/agents/<name>/*`
+- **AWS provider**: Secrets in AWS Secrets Manager under `conga/shared/*` and `conga/agents/<name>/*`
+- **Local provider**: Secrets as files under `~/.conga/secrets/shared/` and `~/.conga/secrets/agents/<name>/` (mode 0400)
 - Shared secrets created via `conga admin setup` (prompts interactively for missing values)
-- Per-agent secrets under `conga/agents/<name>/*` — users self-serve via `conga secrets set`
-- Shared secrets (Slack tokens, Google OAuth) under `conga/shared/*` — managed by CLI (`admin setup`)
+- Per-agent secrets — users self-serve via `conga secrets set`
 - Never put real secret values in Terraform files or state
 - OpenClaw reads secrets from environment variables (highest priority over config file)
 - Do NOT use `${VAR}` substitution in `openclaw.json` — Issue #9627 causes secret values to be written to disk
-- **Bootstrap requires `admin setup` first**: shared secrets must exist before cycling the host, or the bootstrap will skip secret fetches and containers will fail to connect
+- **AWS bootstrap requires `admin setup` first**: shared secrets must exist before cycling the host
 
 ## OpenClaw-Specific
 
-- Docker image: configured via `conga admin setup`, stored in SSM at `/conga/config/image`
+- Docker image: configured via `conga admin setup`, stored in SSM (AWS) or `~/.conga/local-config.json` (local)
 - Container runs as `node` user (uid 1000 inside container)
-- Config at `/opt/conga/data/{agent_name}/openclaw.json` — no secrets in this file
-- Env file at `/opt/conga/config/{agent_name}.env` — secrets, mode 0400
+- Config at `/home/node/.openclaw/openclaw.json` inside container — mapped from host data directory
+- Env file at `~/.conga/config/{agent_name}.env` (local) or `/opt/conga/config/{agent_name}.env` (AWS) — secrets, mode 0400
 - OpenClaw hot-reload writes `.tmp` files next to `openclaw.json` — the config directory must be writable by the container user
 - Container needs `NODE_OPTIONS="--max-old-space-size=1536"` to avoid V8 heap OOM
-- Container memory limit: 2GB per agent (idle ~500MB, spikes to 1-1.5GB during heavy conversations; 1.5GB limit caused V8 OOM). Size the instance at ~2GB per agent plus ~500MB overhead
+- Container memory limit: 2GB per agent (idle ~500MB, spikes to 1-1.5GB during heavy conversations)
 - **Agents are keyed by agent name** (e.g. `aaron`, `leadership`), not Slack member ID or username
 - Two agent types: **user agents** (DM-only, `dmPolicy: "allowlist"`) and **team agents** (channel-based, `groupPolicy: "allowlist"`)
+- Gateway listens on port **18789** inside the container, bound to localhost on the host
 
 ## Planning
 
@@ -53,29 +66,40 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 
 ## Slack Architecture
 
+- **Slack is optional** — agents can run in gateway-only mode (web UI) without any Slack configuration
 - **Single shared Slack app** — one Slack app for all agents. The Slack event router (`router/src/index.js`) holds the single Socket Mode connection and fans out events to per-agent containers via HTTP webhook.
 - **Containers use HTTP webhook mode** (`mode: "http"`) — they never connect to Slack directly. The router forwards events with signed HTTP requests.
-- `signingSecret` and `botToken` MUST be in `openclaw.json` (env var override doesn't work for these)
+- `signingSecret` and `botToken` are in `openclaw.json` under `channels.slack` (only when Slack is configured)
 - `SLACK_APP_TOKEN` is held only by the router (in `router.env`) — containers do not need it
 - Router must be connected to each agent's Docker network (`docker network connect conga-<agent_name> conga-router`) so it can reach the container's webhook endpoint
-- Routing config at `/opt/conga/config/routing.json` maps channels and member IDs to container URLs
+- Routing config at routing.json maps channels and member IDs to container webhook URLs (`http://conga-{name}:18789/slack/events`)
 - The deployed image is pinned to `ghcr.io/openclaw/openclaw:2026.3.11` (`29dc654`), the last stable release before a Slack socket mode regression in v2026.3.12 ([#45311](https://github.com/openclaw/openclaw/issues/45311))
 
 ## OpenClaw Behavioral Issues
 
 - **Billing/rate errors are cached**: When Anthropic returns a billing or rate limit error, OpenClaw's model fallback system caches the rejection. Even after the billing issue is resolved, the container must be restarted to clear the cached error state.
-- **Container restart reconnects router automatically**: Agent systemd units include `ExecStartPost` to reconnect the router to the agent's Docker network after every container start.
+- **Container restart reconnects router automatically**: On AWS, agent systemd units include `ExecStartPost` to reconnect the router. On local, `RefreshAgent()` reconnects the router after container restart.
 
 ## Known Limitations
 
 - Docker rootless mode deferred — AL2023 lacks `fuse-overlayfs` and `slirp4netns` packages needed for rootless Docker CE. Using standard Docker with cap-drop ALL, no-new-privileges, and resource limits instead.
-- Config file cannot be made read-only at the filesystem level due to OpenClaw's hot-reload `.tmp` file behavior. Config integrity will be enforced via hash-check monitoring (Epic 4).
-- Env file with secrets is on disk (mode 0400, encrypted EBS) — required for systemd to re-inject env vars on container restart.
+- Config file cannot be made read-only at the filesystem level due to OpenClaw's hot-reload `.tmp` file behavior. Config integrity is enforced via hash-check monitoring.
+- Env file with secrets is on disk (mode 0400). On AWS, encrypted EBS provides additional protection. On local, disk encryption is the user's responsibility.
+- Local provider uses Docker bridge networks (not `--internal`) because `--internal` prevents `-p` port publishing to localhost. Isolation is enforced by separate per-agent networks, localhost-only port binding, and the egress proxy.
 
 ## Debugging
 
+### AWS
 - Connect to instance: `aws ssm start-session --target <instance-id> --region <region> --profile <profile>`
 - Bootstrap log: `cat /var/log/conga-bootstrap.log`
 - Service status: `systemctl status conga-<agent_name>`
 - Container logs: `docker logs conga-<agent_name> --tail 50`
 - Journal: `journalctl -u conga-<agent_name> --no-pager -n 50`
+
+### Local
+- Container status: `conga status --agent <name>`
+- Container logs: `conga logs --agent <name>` or `docker logs conga-<name> --tail 50`
+- Config file: `cat ~/.conga/data/<name>/openclaw.json`
+- Env file: `cat ~/.conga/config/<name>.env`
+- Agent config: `cat ~/.conga/agents/<name>.json`
+- Teardown and restart: `conga admin teardown && conga admin setup --provider local`

@@ -3,16 +3,13 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
 	"github.com/spf13/cobra"
 )
 
 func init() {
 	authCmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Manage AWS SSO authentication",
+		Short: "Manage authentication",
 	}
 
 	authCmd.AddCommand(authLoginCmd)
@@ -25,6 +22,11 @@ var authLoginCmd = &cobra.Command{
 	Short: "Authenticate via AWS SSO",
 	Long:  "Opens your browser to complete AWS SSO login. Credentials are cached for future commands.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if prov != nil && prov.Name() == "local" {
+			fmt.Println("Local provider does not require authentication.")
+			return nil
+		}
+
 		profileName := resolvedProfile
 		if profileName == "" {
 			profileName = "your-profile"
@@ -62,24 +64,27 @@ var authLoginCmd = &cobra.Command{
 
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show current AWS identity and agent mapping",
+	Short: "Show current identity and agent mapping",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := commandContext()
 		defer cancel()
-		if err := ensureClients(ctx); err != nil {
+
+		identity, err := prov.WhoAmI(ctx)
+		if err != nil {
 			return err
 		}
 
-		out, err := clients.STS.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-		if err != nil {
-			return fmt.Errorf("session expired or invalid. Run `conga auth login` to authenticate.\n%w", err)
+		if identity.ARN != "" {
+			fmt.Printf("Identity:        %s\n", identity.ARN)
+		} else {
+			fmt.Printf("Identity:        %s\n", identity.Name)
 		}
+		if identity.AccountID != "" {
+			fmt.Printf("Account:         %s\n", identity.AccountID)
+		}
+		fmt.Printf("Provider:        %s\n", prov.Name())
 
-		fmt.Printf("Identity:        %s\n", aws.ToString(out.Arn))
-		fmt.Printf("Account:         %s\n", aws.ToString(out.Account))
-
-		identity, err := discovery.ResolveIdentity(ctx, clients.STS, clients.SSM)
-		if err == nil && identity.AgentName != "" {
+		if identity.AgentName != "" {
 			fmt.Printf("Agent:           %s\n", identity.AgentName)
 		} else {
 			fmt.Println("Agent:           (not mapped — use --agent or ask admin)")

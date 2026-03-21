@@ -1,0 +1,60 @@
+package provider
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+)
+
+// Config holds provider-agnostic configuration.
+type Config struct {
+	Provider string `json:"provider"`           // "aws" or "local"
+	DataDir  string `json:"data_dir,omitempty"` // override for ~/.conga/
+	Region   string `json:"region,omitempty"`   // AWS region (aws provider)
+	Profile  string `json:"profile,omitempty"`  // AWS profile (aws provider)
+}
+
+// DefaultDataDir returns ~/.conga/.
+func DefaultDataDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".conga")
+	}
+	return filepath.Join(home, ".conga")
+}
+
+// DefaultConfigPath returns ~/.conga/config.json.
+func DefaultConfigPath() string {
+	return filepath.Join(DefaultDataDir(), "config.json")
+}
+
+// LoadConfig reads provider config from disk. Returns defaults if file doesn't exist.
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &Config{}, nil
+		}
+		return nil, err
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// SaveConfig writes provider config to disk atomically.
+func SaveConfig(path string, cfg *Config) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, append(data, '\n'), 0600)
+}

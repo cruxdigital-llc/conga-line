@@ -1,4 +1,4 @@
-# Conga Line 🦞🦞🦞 - Run an OpenClaw "cluster" on AWS
+# Conga Line 🦞🦞🦞 - Run an OpenClaw "cluster" anywhere
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.25.0-00ADD8.svg)](cli/)
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
@@ -7,54 +7,115 @@
   <img src="assets/congaline.png" alt="OpenClaw agents" width="300">
 </p>
 
-Deploy and manage "clusters" of OpenClaw instances on hardened AWS infrastructure behind a single Slack App. Each agent runs in its own isolated Docker container with dedicated secrets, networking, and access controls — giving teams and enterprises granular permission management over their AI workforce.
+Deploy and manage "clusters" of OpenClaw instances with per-agent isolation. Supports **local Docker** deployment for development and personal use, and **hardened AWS** deployment for teams and production.
 
 ## Key Features
 
-- **Zero-ingress networking** — no SSH, no public ports; all access through AWS SSM
+- **Two deployment modes** — local Docker (no cloud needed) or hardened AWS
 - **Per-agent isolation** — separate Docker containers, networks, secrets, and config
+- **Slack optional** — use via web UI (gateway) only, or connect to Slack for team chat
 - **Two agent types** — user agents (DM-only) for individuals, team agents (channel-based) for groups
-- **SSM-driven discovery** — agents are registered in Parameter Store and provisioned automatically at boot, no Terraform changes needed to add or remove agents
-- **Slack event router** — single Socket Mode connection fans out to per-agent containers via HTTP webhook
-- **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway); instance sized to ~2GB per agent (e.g. r6g.medium for 3 agents)
 - **CLI for everything** — operators and end users manage agents, secrets, and infrastructure through the `conga` CLI
+- **Modular provider system** — pluggable deployment targets (AWS, local, future: Kubernetes, ECS)
 
 ## Architecture
 
 ```
-                        +---------------------+
-                        |     AWS Cloud        |
-                        |  (zero-ingress VPC)  |
-                        |                      |
-  Slack API <-----------+----> Router          |
-  (Socket Mode)         |       |              |
-                        |       +-> Agent A    |
-                        |       |   (container)|
-                        |       +-> Agent B    |
-                        |       |   (container)|
-                        |       +-> Agent N    |
-                        |           (container)|
-                        |                      |
-  Operator/User <--SSM--+----> EC2 Host        |
-                        +---------------------+
+┌─────────────────────────────────────────────────┐
+│                 CLI Commands                     │
+│  (setup, add-user, status, logs, connect, ...)   │
+└────────────────────┬────────────────────────────┘
+                     │ Provider interface
+         ┌───────────┴───────────┐
+         ▼                       ▼
+┌─────────────────┐   ┌─────────────────┐
+│  AWS Provider   │   │ Local Provider  │
+│                 │   │                 │
+│ EC2 + SSM       │   │ Docker CLI      │
+│ Secrets Manager │   │ File secrets    │
+│ Zero-ingress VPC│   │ localhost-only  │
+└─────────────────┘   └─────────────────┘
 ```
 
 ### Separation of Concerns
 
 | Layer | Managed by | What it does |
 |-------|-----------|-------------|
-| **Infrastructure** | Terraform | VPC, EC2, IAM, router, SNS alerts, setup manifest |
+| **Infrastructure** | Terraform (AWS) or `conga admin setup` (local) | VPC/EC2 or Docker environment |
 | **Configuration** | CLI (`conga admin setup`) | Shared secrets, Docker image, deployment settings |
 | **Agents** | CLI (`conga admin add-user/add-team`) | Per-agent containers, configs, routing, secrets |
 
-## Quick Start (Operators)
+## Quick Start (Local Docker)
+
+The fastest way to get running — no AWS account needed.
+
+### Prerequisites
+
+- **Docker Desktop** installed and running
+- **Go** >= 1.25 (to build the CLI)
+- **Anthropic API key**
+
+### 1. Build the CLI
+
+```bash
+cd cli
+go build -o /usr/local/bin/conga .
+```
+
+### 2. Setup local environment
+
+```bash
+conga admin setup --provider local
+```
+
+This will prompt for the repo path (auto-detected), Docker image, and optionally Slack tokens. Skip Slack tokens for gateway-only mode (web UI).
+
+### 3. Add an agent
+
+```bash
+conga admin add-user myagent
+```
+
+No Slack member ID needed for gateway-only mode. With Slack:
+
+```bash
+conga admin add-user myagent U0123456789
+```
+
+### 4. Set your API key and start
+
+```bash
+conga secrets set anthropic-api-key --agent myagent
+conga refresh --agent myagent
+conga status --agent myagent
+```
+
+### 5. Connect
+
+```bash
+conga connect --agent myagent
+```
+
+Open the URL in your browser. Device pairing is auto-approved.
+
+### 6. Teardown (when done)
+
+```bash
+conga admin teardown
+```
+
+Removes all containers, networks, and local config.
+
+## Quick Start (AWS)
+
+For teams and production — hardened, zero-ingress deployment.
 
 ### Prerequisites
 
 - **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
 - **AWS CLI v2** with **session-manager-plugin** installed
 - **Terraform** >= 1.5
-- **Slack app** configured for OpenClaw — follow the [OpenClaw Slack setup guide](https://github.com/openclaw/openclaw/blob/main/docs/slack.md) to create an app with Socket Mode enabled and the required bot scopes. You'll need the bot token, app token, and signing secret for `conga admin setup`
+- **Slack app** configured for OpenClaw (required for AWS deployment)
 - **OpenClaw Docker image** — pinned to `v2026.3.11` (see [Docker Image](#docker-image))
 
 ### 1. Bootstrap Terraform state
@@ -84,8 +145,6 @@ terraform apply
 conga admin setup
 ```
 
-This reads the setup manifest from SSM and prompts for shared secrets (Slack tokens, signing secret, Google OAuth) and config values (Docker image URL).
-
 ### 4. Add agents and start
 
 ```bash
@@ -100,11 +159,15 @@ conga admin cycle-host   # restarts EC2; bootstrap discovers and provisions all 
 
 No Terraform, Go, or repo clone required. This is how users manage their agents and secrets as well as access the web UI securely.
 
-### Prerequisites
+### Prerequisites (AWS provider)
 
 - **AWS CLI v2** — [Install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - **session-manager-plugin** — macOS: `brew install --cask session-manager-plugin` | [Other platforms](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 - **AWS SSO access** — your admin will provide the SSO URL and account ID
+
+### Prerequisites (Local provider)
+
+- **Docker Desktop** installed and running
 
 ### Install
 
@@ -128,22 +191,28 @@ curl -fsSL https://github.com/cruxdigital-llc/conga-line/releases/latest/downloa
 curl -fsSL https://github.com/cruxdigital-llc/conga-line/releases/latest/download/conga_linux_arm64.tar.gz | tar xz -C /usr/local/bin conga
 ```
 
-### First-time setup
+### First-time setup (AWS)
 
 ```bash
 aws configure sso --profile your-profile
 export AWS_PROFILE=your-profile
 aws sso login
 
-conga auth status        # triggers interactive CLI setup
+conga auth status
 conga secrets set anthropic-api-key
 conga refresh
 conga connect            # opens SSM tunnel to web UI
 ```
 
-Open http://localhost:18789 in your browser.
+### First-time setup (Local)
 
-> NOTE: For ease of use in the future, you may want to add the `export AWS_PROFILE=your-profile` line to your shell profile (~/.bashrc, ~/.zshrc, etc.) to avoid having to export it or pass `--profile` every time.
+```bash
+conga admin setup --provider local
+conga admin add-user myagent
+conga secrets set anthropic-api-key --agent myagent
+conga refresh --agent myagent
+conga connect --agent myagent
+```
 
 ## CLI Reference
 
@@ -151,12 +220,12 @@ Open http://localhost:18789 in your browser.
 
 | Command | Description |
 |---------|-------------|
-| `conga auth login` | Authenticate via AWS SSO |
-| `conga auth status` | Show your AWS identity and agent mapping |
+| `conga auth login` | Authenticate (AWS: SSO login; local: not required) |
+| `conga auth status` | Show identity, provider, and agent mapping |
 | `conga secrets set <name>` | Create or update a secret |
 | `conga secrets list` | List your secrets |
 | `conga secrets delete <name>` | Delete a secret |
-| `conga connect` | Open SSM tunnel to web UI |
+| `conga connect` | Connect to web UI (AWS: SSM tunnel; local: direct localhost) |
 | `conga refresh` | Restart container with fresh secrets |
 | `conga status` | Show container status and resource usage |
 | `conga logs` | Tail container logs |
@@ -166,34 +235,54 @@ Open http://localhost:18789 in your browser.
 
 | Command | Description |
 |---------|-------------|
-| `conga admin setup` | Configure shared secrets and settings from the deployment manifest |
-| `conga admin add-user <name> <slack_member_id>` | Provision a user agent (DM-only) |
-| `conga admin add-team <name> <slack_channel>` | Provision a team agent (channel-based) |
+| `conga admin setup` | Configure shared secrets and settings |
+| `conga admin add-user <name> [slack_member_id]` | Provision a user agent (Slack ID optional for gateway-only) |
+| `conga admin add-team <name> [slack_channel]` | Provision a team agent (Slack channel optional for gateway-only) |
 | `conga admin list-agents` | List all provisioned agents |
 | `conga admin remove-agent <name>` | Remove an agent |
-| `conga admin cycle-host` | Stop/start the EC2 instance |
-| `conga admin refresh-all` | Restart all agent containers (picks up latest behavior, config, secrets) |
+| `conga admin cycle-host` | Restart the deployment environment |
+| `conga admin refresh-all` | Restart all agent containers |
+| `conga admin teardown` | Remove the entire deployment (local only; AWS: use `terraform destroy`) |
 
 ### Global Flags
 
-| Flag | Description                                                  |
-|------|--------------------------------------------------------------|
-| `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var)             |
-| `--region` | AWS region (default: from config)                            |
-| `--agent` | Override auto-detected agent name or target a specific agent |
-| `--verbose` | Verbose output                                               |
+| Flag | Description |
+|------|-------------|
+| `--provider` | Deployment provider: `aws`, `local` (default: auto-detect) |
+| `--data-dir` | Data directory for local provider (default: `~/.conga/`) |
+| `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var) |
+| `--region` | AWS region (default: from config) |
+| `--agent` | Override auto-detected agent name |
+| `--verbose` | Verbose output |
+| `--timeout` | Global timeout for operations (default: 5m) |
 
 ## How It Works
 
-The CLI discovers infrastructure via AWS APIs — no Terraform access or repo clone needed:
+### Provider Auto-Detection
 
+The CLI auto-detects which provider to use:
+1. If `~/.conga/config.json` exists with a `provider` field, use it
+2. Otherwise, default to `aws`
+
+Use `--provider` to override, or run `conga admin setup --provider local` to persist the choice.
+
+### AWS Provider
+
+Discovers infrastructure via AWS APIs — no Terraform access or repo clone needed:
 - **Instance**: Found by EC2 tag `Name=conga-line-host`
-- **Agent config**: Stored in SSM Parameter Store at `/conga/agents/{name}`
-- **Identity mapping**: Your SSO username matches the `iam_identity` field in your agent's SSM config
-- **Secrets**: Managed in AWS Secrets Manager under `conga/agents/{name}/`
-- **Shared config**: Setup manifest at `/conga/config/setup-manifest`, image at `/conga/config/image`
-- **Remote operations**: Executed via SSM RunCommand (no SSH, no ingress)
-- **Bootstrap discovery**: On instance boot, the bootstrap script reads all agents from `/conga/agents/` in SSM and provisions them automatically
+- **Agent config**: SSM Parameter Store at `/conga/agents/{name}`
+- **Secrets**: AWS Secrets Manager under `conga/agents/{name}/`
+- **Remote operations**: SSM RunCommand (no SSH, no ingress)
+
+### Local Provider
+
+All state lives under `~/.conga/`:
+- **Agent config**: `~/.conga/agents/{name}.json`
+- **Secrets**: `~/.conga/secrets/agents/{name}/` (file per secret, mode 0400)
+- **Container data**: `~/.conga/data/{name}/` (mounted to `/home/node/.openclaw`)
+- **Container operations**: Docker CLI (`docker run`, `docker logs`, etc.)
+- **Network isolation**: Per-agent Docker bridge networks, localhost-only port binding
+- **Slack routing**: Router container auto-started when Slack tokens are configured
 
 ## Docker Image
 
@@ -214,29 +303,42 @@ For developers building and testing the `conga` CLI locally.
 ### Prerequisites
 
 - **Go** >= 1.25
-- AWS access configured (see [Install the CLI](#install-the-cli-end-users))
+- **Docker** (for local provider testing)
 
 ### Build and run
 
 ```bash
 cd cli
 go build -o conga .
-./conga auth status
+./conga auth status --provider local
 ```
 
 ### Project structure
 
 ```
 cli/
-├── cmd/           # Cobra command definitions
-├── internal/      # Internal packages (config, AWS clients, discovery)
-├── scripts/       # Embedded shell script templates for remote execution
-├── main.go        # Entrypoint
+├── cmd/                        # Cobra command definitions
+├── internal/
+│   ├── aws/                    # AWS SDK wrappers
+│   ├── common/                 # Shared logic (config gen, routing, validation)
+│   ├── discovery/              # Agent & identity resolution (AWS)
+│   ├── provider/               # Provider interface & registry
+│   │   ├── awsprovider/        # AWS provider implementation
+│   │   └── localprovider/      # Local Docker provider implementation
+│   ├── tunnel/                 # SSM port forwarding
+│   └── ui/                     # Spinners, prompts, tables
+├── scripts/                    # Embedded shell templates (AWS remote execution)
+├── main.go
 ├── go.mod
 └── go.sum
-```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, testing, and PR guidelines.
+deploy/
+└── egress-proxy/               # Nginx proxy for HTTPS/DNS-only egress (local)
+
+terraform/                      # AWS infrastructure (VPC, EC2, IAM, etc.)
+router/                         # Slack event router (Node.js)
+behavior/                       # Agent personality files (SOUL.md, etc.)
+```
 
 ## License
 

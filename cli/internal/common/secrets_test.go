@@ -1,10 +1,6 @@
-package cmd
+package common
 
-import (
-	"testing"
-
-	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
-)
+import "testing"
 
 func TestSecretNameToEnvVar(t *testing.T) {
 	tests := []struct {
@@ -22,7 +18,7 @@ func TestSecretNameToEnvVar(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := common.SecretNameToEnvVar(tt.input)
+			got := SecretNameToEnvVar(tt.input)
 			if got != tt.expect {
 				t.Errorf("SecretNameToEnvVar(%q) = %q, want %q", tt.input, got, tt.expect)
 			}
