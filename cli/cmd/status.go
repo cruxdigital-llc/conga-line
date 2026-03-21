@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -79,7 +79,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		script := fmt.Sprintf(`
-SVC=openclaw-%s
+SVC=conga-%s
 
 # Service state
 SVC_STATE=$(systemctl is-active $SVC 2>/dev/null || echo "inactive")
@@ -138,7 +138,7 @@ fi
 			phase = "ready"
 		}
 		if kv["BOOT_ERROR"] != "0" && kv["BOOT_ERROR"] != "" {
-			phase += " (errors in logs — check `cruxclaw logs`)"
+			phase += " (errors in logs — check `conga logs`)"
 		}
 
 		fmt.Printf("Container:  %s\n", containerStatus)

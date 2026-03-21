@@ -3,7 +3,7 @@ import { readFileSync, watch } from 'fs';
 import { createHmac } from 'crypto';
 
 // Load routing config
-const CONFIG_PATH = process.env.ROUTER_CONFIG || '/opt/openclaw/config/routing.json';
+const CONFIG_PATH = process.env.ROUTER_CONFIG || '/opt/conga/config/routing.json';
 let config;
 
 function loadConfig() {

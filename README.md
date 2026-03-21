@@ -1,4 +1,4 @@
-# Crux Claw - Run an OpenClaw "cluster" on AWS
+# Conga Line 🦞🦞🦞 - Run an OpenClaw "cluster" on AWS
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.25.0-00ADD8.svg)](cli/)
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
@@ -17,7 +17,7 @@ Deploy and manage "clusters" of OpenClaw instances on hardened AWS infrastructur
 - **SSM-driven discovery** — agents are registered in Parameter Store and provisioned automatically at boot, no Terraform changes needed to add or remove agents
 - **Slack event router** — single Socket Mode connection fans out to per-agent containers via HTTP webhook
 - **Cost-optimized** — fck-nat (~$3/mo vs $33/mo NAT Gateway); instance sized to ~2GB per agent (e.g. r6g.medium for 3 agents)
-- **CLI for everything** — operators and end users manage agents, secrets, and infrastructure through the `cruxclaw` CLI
+- **CLI for everything** — operators and end users manage agents, secrets, and infrastructure through the `conga` CLI
 
 ## Architecture
 
@@ -44,8 +44,8 @@ Deploy and manage "clusters" of OpenClaw instances on hardened AWS infrastructur
 | Layer | Managed by | What it does |
 |-------|-----------|-------------|
 | **Infrastructure** | Terraform | VPC, EC2, IAM, router, SNS alerts, setup manifest |
-| **Configuration** | CLI (`cruxclaw admin setup`) | Shared secrets, Docker image, deployment settings |
-| **Agents** | CLI (`cruxclaw admin add-user/add-team`) | Per-agent containers, configs, routing, secrets |
+| **Configuration** | CLI (`conga admin setup`) | Shared secrets, Docker image, deployment settings |
+| **Agents** | CLI (`conga admin add-user/add-team`) | Per-agent containers, configs, routing, secrets |
 
 ## Quick Start (Operators)
 
@@ -54,7 +54,7 @@ Deploy and manage "clusters" of OpenClaw instances on hardened AWS infrastructur
 - **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
 - **AWS CLI v2** with **session-manager-plugin** installed
 - **Terraform** >= 1.5
-- **Slack app** configured for OpenClaw — follow the [OpenClaw Slack setup guide](https://github.com/openclaw/openclaw/blob/main/docs/slack.md) to create an app with Socket Mode enabled and the required bot scopes. You'll need the bot token, app token, and signing secret for `cruxclaw admin setup`
+- **Slack app** configured for OpenClaw — follow the [OpenClaw Slack setup guide](https://github.com/openclaw/openclaw/blob/main/docs/slack.md) to create an app with Socket Mode enabled and the required bot scopes. You'll need the bot token, app token, and signing secret for `conga admin setup`
 - **OpenClaw Docker image** — pinned to `v2026.3.11` (see [Docker Image](#docker-image))
 
 ### 1. Bootstrap Terraform state
@@ -81,7 +81,7 @@ terraform apply
 ### 3. Configure the deployment
 
 ```bash
-cruxclaw admin setup
+conga admin setup
 ```
 
 This reads the setup manifest from SSM and prompts for shared secrets (Slack tokens, signing secret, Google OAuth) and config values (Docker image URL).
@@ -89,11 +89,11 @@ This reads the setup manifest from SSM and prompts for shared secrets (Slack tok
 ### 4. Add agents and start
 
 ```bash
-cruxclaw admin add-user boblobclaw UEXAMPLE01
-cruxclaw admin add-team bluthcompany CEXAMPLE01
-cruxclaw admin list-agents
+conga admin add-user boblobclaw UEXAMPLE01
+conga admin add-team bluthcompany CEXAMPLE01
+conga admin list-agents
 
-cruxclaw admin cycle-host   # restarts EC2; bootstrap discovers and provisions all agents
+conga admin cycle-host   # restarts EC2; bootstrap discovers and provisions all agents
 ```
 
 ## Install the CLI (End Users)
@@ -110,22 +110,22 @@ No Terraform, Go, or repo clone required. This is how users manage their agents 
 
 **macOS (Apple Silicon)** — tested:
 ```bash
-curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_darwin_arm64.tar.gz | tar xz -C /usr/local/bin cruxclaw
+curl -fsSL https://github.com/cruxdigital-llc/conga-line/releases/latest/download/conga_darwin_arm64.tar.gz | tar xz -C /usr/local/bin conga
 ```
 
 **macOS (Intel)**:
 ```bash
-curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_darwin_amd64.tar.gz | tar xz -C /usr/local/bin cruxclaw
+curl -fsSL https://github.com/cruxdigital-llc/conga-line/releases/latest/download/conga_darwin_amd64.tar.gz | tar xz -C /usr/local/bin conga
 ```
 
 **Linux (amd64)** — untested:
 ```bash
-curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_linux_amd64.tar.gz | tar xz -C /usr/local/bin cruxclaw
+curl -fsSL https://github.com/cruxdigital-llc/conga-line/releases/latest/download/conga_linux_amd64.tar.gz | tar xz -C /usr/local/bin conga
 ```
 
 **Linux (arm64)** — untested:
 ```bash
-curl -fsSL https://github.com/cruxdigital-llc/crux-claw/releases/latest/download/cruxclaw_linux_arm64.tar.gz | tar xz -C /usr/local/bin cruxclaw
+curl -fsSL https://github.com/cruxdigital-llc/conga-line/releases/latest/download/conga_linux_arm64.tar.gz | tar xz -C /usr/local/bin conga
 ```
 
 ### First-time setup
@@ -135,10 +135,10 @@ aws configure sso --profile your-profile
 export AWS_PROFILE=your-profile
 aws sso login
 
-cruxclaw auth status        # triggers interactive CLI setup
-cruxclaw secrets set anthropic-api-key
-cruxclaw refresh
-cruxclaw connect            # opens SSM tunnel to web UI
+conga auth status        # triggers interactive CLI setup
+conga secrets set anthropic-api-key
+conga refresh
+conga connect            # opens SSM tunnel to web UI
 ```
 
 Open http://localhost:18789 in your browser.
@@ -151,28 +151,28 @@ Open http://localhost:18789 in your browser.
 
 | Command | Description |
 |---------|-------------|
-| `cruxclaw auth login` | Authenticate via AWS SSO |
-| `cruxclaw auth status` | Show your AWS identity and agent mapping |
-| `cruxclaw secrets set <name>` | Create or update a secret |
-| `cruxclaw secrets list` | List your secrets |
-| `cruxclaw secrets delete <name>` | Delete a secret |
-| `cruxclaw connect` | Open SSM tunnel to web UI |
-| `cruxclaw refresh` | Restart container with fresh secrets |
-| `cruxclaw status` | Show container status and resource usage |
-| `cruxclaw logs` | Tail container logs |
-| `cruxclaw version` | Show CLI version |
+| `conga auth login` | Authenticate via AWS SSO |
+| `conga auth status` | Show your AWS identity and agent mapping |
+| `conga secrets set <name>` | Create or update a secret |
+| `conga secrets list` | List your secrets |
+| `conga secrets delete <name>` | Delete a secret |
+| `conga connect` | Open SSM tunnel to web UI |
+| `conga refresh` | Restart container with fresh secrets |
+| `conga status` | Show container status and resource usage |
+| `conga logs` | Tail container logs |
+| `conga version` | Show CLI version |
 
 ### Admin Commands
 
 | Command | Description |
 |---------|-------------|
-| `cruxclaw admin setup` | Configure shared secrets and settings from the deployment manifest |
-| `cruxclaw admin add-user <name> <slack_member_id>` | Provision a user agent (DM-only) |
-| `cruxclaw admin add-team <name> <slack_channel>` | Provision a team agent (channel-based) |
-| `cruxclaw admin list-agents` | List all provisioned agents |
-| `cruxclaw admin remove-agent <name>` | Remove an agent |
-| `cruxclaw admin cycle-host` | Stop/start the EC2 instance |
-| `cruxclaw admin refresh-all` | Restart all agent containers (picks up latest behavior, config, secrets) |
+| `conga admin setup` | Configure shared secrets and settings from the deployment manifest |
+| `conga admin add-user <name> <slack_member_id>` | Provision a user agent (DM-only) |
+| `conga admin add-team <name> <slack_channel>` | Provision a team agent (channel-based) |
+| `conga admin list-agents` | List all provisioned agents |
+| `conga admin remove-agent <name>` | Remove an agent |
+| `conga admin cycle-host` | Stop/start the EC2 instance |
+| `conga admin refresh-all` | Restart all agent containers (picks up latest behavior, config, secrets) |
 
 ### Global Flags
 
@@ -187,13 +187,13 @@ Open http://localhost:18789 in your browser.
 
 The CLI discovers infrastructure via AWS APIs — no Terraform access or repo clone needed:
 
-- **Instance**: Found by EC2 tag `Name=openclaw-host`
-- **Agent config**: Stored in SSM Parameter Store at `/openclaw/agents/{name}`
+- **Instance**: Found by EC2 tag `Name=conga-host`
+- **Agent config**: Stored in SSM Parameter Store at `/conga/agents/{name}`
 - **Identity mapping**: Your SSO username matches the `iam_identity` field in your agent's SSM config
-- **Secrets**: Managed in AWS Secrets Manager under `openclaw/agents/{name}/`
-- **Shared config**: Setup manifest at `/openclaw/config/setup-manifest`, image at `/openclaw/config/openclaw-image`
+- **Secrets**: Managed in AWS Secrets Manager under `conga/agents/{name}/`
+- **Shared config**: Setup manifest at `/conga/config/setup-manifest`, image at `/conga/config/image`
 - **Remote operations**: Executed via SSM RunCommand (no SSH, no ingress)
-- **Bootstrap discovery**: On instance boot, the bootstrap script reads all agents from `/openclaw/agents/` in SSM and provisions them automatically
+- **Bootstrap discovery**: On instance boot, the bootstrap script reads all agents from `/conga/agents/` in SSM and provisions them automatically
 
 ## Docker Image
 
@@ -203,13 +203,13 @@ This project uses the official OpenClaw image pinned to **v2026.3.11** (`29dc654
 ghcr.io/openclaw/openclaw:2026.3.11
 ```
 
-Set this as the image URL when prompted by `cruxclaw admin setup`.
+Set this as the image URL when prompted by `conga admin setup`.
 
 > NOTE: Once the bug introduced in v2026.3.12 is fixed, we'll update this to reference the latest stable release.
 
 ## Development
 
-For developers building and testing the `cruxclaw` CLI locally.
+For developers building and testing the `conga` CLI locally.
 
 ### Prerequisites
 
@@ -220,8 +220,8 @@ For developers building and testing the `cruxclaw` CLI locally.
 
 ```bash
 cd cli
-go build -o cruxclaw .
-./cruxclaw auth status
+go build -o conga .
+./conga auth status
 ```
 
 ### Project structure

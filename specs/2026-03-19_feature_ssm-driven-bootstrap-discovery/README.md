@@ -21,14 +21,14 @@
 ## Decisions
 - **SSM as single source of truth**: Bootstrap discovers agents from SSM at boot instead of Terraform template loops. `var.agents` still drives SSM param creation + Terraform-time resources (dashboards, outputs, IAM).
 - **Personas selected**: Architect (system integrity, IAM scoping) + QA (edge cases, failure modes)
-- **IAM widening**: Replace per-user secret ARN enumeration with `openclaw/U*` + `openclaw/teams/*` wildcards to support CLI-added agents. Acceptable risk — single-tenant infra.
+- **IAM widening**: Replace per-user secret ARN enumeration with `conga/U*` + `conga/teams/*` wildcards to support CLI-added agents. Acceptable risk — single-tenant infra.
 - **`jq` dependency**: Added to bootstrap for JSON parsing. Available in AL2023 default repos.
 - **Static bootstrap**: After refactor, bootstrap S3 object hash no longer changes per-agent. Adding agents never forces instance replacement.
 
 ## Session: Spec (2026-03-19)
 - Resumed trace for detailed specification
-- Created `spec.md` — unified `/openclaw/agents/` namespace, bootstrap discovery loop, CLI command changes
-- Decision: Restructure SSM from 3 paths (`/users/`, `/teams/`, `/users/by-iam/`) to single `/openclaw/agents/<name>` path with `type` discriminator and `iam_identity` in value
+- Created `spec.md` — unified `/conga/agents/` namespace, bootstrap discovery loop, CLI command changes
+- Decision: Restructure SSM from 3 paths (`/users/`, `/teams/`, `/users/by-iam/`) to single `/conga/agents/<name>` path with `type` discriminator and `iam_identity` in value
 - Decision: Unify `remove-user`/`remove-team` into `remove-agent <name>`
 - Decision: `add-user` takes `<name> <member_id>` (2 args) for consistency with Terraform naming
 
@@ -42,7 +42,7 @@
 
 **QA:**
 - Migration: old SSM params must not be deleted until new bootstrap is deployed and verified.
-- `GetParametersByPath` does not recurse by default — verify no nested paths under `/openclaw/agents/`.
+- `GetParametersByPath` does not recurse by default — verify no nested paths under `/conga/agents/`.
 - Empty `iam_identity` on team agents handled gracefully by scan logic (no match = skip).
 - Agent name validation should use consistent pattern (lowercase alphanumeric + hyphens) for both user and team names since name becomes SSM path component and Docker container ID prefix.
 - ✅ Approved with notes above incorporated
@@ -53,7 +53,7 @@
 |---|---|---|---|
 | Zero trust the AI agent | all | must | ✅ PASSES — No change to agent trust model |
 | Immutable configuration | all | must | ✅ PASSES — Config generation unchanged, still root-owned + hash-checked |
-| Least privilege everywhere | iam | must | ⚠️ WARNING — IAM secrets policy widens from per-user ARNs to `openclaw/U*` + `openclaw/teams/*` wildcards. Slightly broader but still scoped to `openclaw/` prefix. Acceptable for single-tenant infra. |
+| Least privilege everywhere | iam | must | ⚠️ WARNING — IAM secrets policy widens from per-user ARNs to `conga/U*` + `conga/teams/*` wildcards. Slightly broader but still scoped to `conga/` prefix. Acceptable for single-tenant infra. |
 | Defense in depth | all | must | ✅ PASSES — Container isolation, network isolation, config integrity monitoring all unchanged |
 | Secrets never touch disk | secrets | must | ✅ PASSES — Env file pattern unchanged (mode 0400, encrypted EBS). Known accepted risk per CLAUDE.md. |
 | Detect what you can't prevent | monitoring | must | ✅ PASSES — Config integrity check, CloudWatch metrics, session metrics all unchanged |

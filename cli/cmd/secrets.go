@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -32,10 +32,10 @@ your OpenClaw container in SCREAMING_SNAKE_CASE format. For example:
 If no name is provided, you will be prompted interactively for both the name
 and value. Use --value to pass the secret value non-interactively.
 
-After setting a secret, run 'cruxclaw refresh' to inject it into your container.`,
-		Example: `  cruxclaw secrets set                          # interactive mode
-  cruxclaw secrets set anthropic-api-key         # prompts for value
-  cruxclaw secrets set anthropic-api-key --value sk-ant-...  # non-interactive`,
+After setting a secret, run 'conga refresh' to inject it into your container.`,
+		Example: `  conga secrets set                          # interactive mode
+  conga secrets set anthropic-api-key         # prompts for value
+  conga secrets set anthropic-api-key --value sk-ant-...  # non-interactive`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: secretsSetRun,
 	}
@@ -98,12 +98,12 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("secret value cannot be empty")
 	}
 
-	secretPath := fmt.Sprintf("openclaw/agents/%s/%s", agentName, name)
+	secretPath := fmt.Sprintf("conga/agents/%s/%s", agentName, name)
 	if err := awsutil.SetSecret(ctx, clients.SecretsManager, secretPath, value); err != nil {
 		return err
 	}
 
-	fmt.Printf("Secret '%s' saved (env var: %s). Run `cruxclaw refresh` to pick it up.\n", name, secretNameToEnvVar(name))
+	fmt.Printf("Secret '%s' saved (env var: %s). Run `conga refresh` to pick it up.\n", name, secretNameToEnvVar(name))
 	return nil
 }
 
@@ -119,14 +119,14 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	prefix := fmt.Sprintf("openclaw/agents/%s/", agentName)
+	prefix := fmt.Sprintf("conga/agents/%s/", agentName)
 	entries, err := awsutil.ListSecrets(ctx, clients.SecretsManager, prefix)
 	if err != nil {
 		return err
 	}
 
 	if len(entries) == 0 {
-		fmt.Println("No secrets found. Use `cruxclaw secrets set <name>` to add one.")
+		fmt.Println("No secrets found. Use `conga secrets set <name>` to add one.")
 		return nil
 	}
 
@@ -158,7 +158,7 @@ func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	secretPath := fmt.Sprintf("openclaw/agents/%s/%s", agentName, args[0])
+	secretPath := fmt.Sprintf("conga/agents/%s/%s", agentName, args[0])
 	if err := awsutil.DeleteSecret(ctx, clients.SecretsManager, secretPath); err != nil {
 		return err
 	}

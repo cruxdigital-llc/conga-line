@@ -7,10 +7,10 @@ import (
 	"text/template"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
-	"github.com/cruxdigital-llc/openclaw-template/cli/scripts"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/scripts"
 	"github.com/spf13/cobra"
 )
 

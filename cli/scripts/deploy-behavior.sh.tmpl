@@ -3,11 +3,11 @@ set -euo pipefail
 
 AGENT_NAME="$1"
 AGENT_TYPE="$2"
-STAGING="/opt/openclaw/behavior"
-WORKSPACE="/opt/openclaw/data/$AGENT_NAME/data/workspace"
+STAGING="/opt/conga/behavior"
+WORKSPACE="/opt/conga/data/$AGENT_NAME/data/workspace"
 
 # Read Slack identifier for template substitution
-SLACK_ID=$(cat "/opt/openclaw/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
+SLACK_ID=$(cat "/opt/conga/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
 
 # Compose SOUL.md: override > concat(base + type)
 if [ -f "$STAGING/overrides/$AGENT_NAME/SOUL.md" ]; then

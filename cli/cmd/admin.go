@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 

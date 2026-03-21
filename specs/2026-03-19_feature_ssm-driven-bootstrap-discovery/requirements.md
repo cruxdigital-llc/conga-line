@@ -8,14 +8,14 @@ Refactor the bootstrap script to discover agents from SSM Parameter Store at boo
 
 Currently there are two provisioning paths that can diverge:
 - **Terraform** (`var.agents` in `terraform.tfvars`) bakes agent configs into the bootstrap template at apply time. Changing agents changes the bootstrap hash, forcing instance replacement.
-- **CLI** (`cruxclaw admin add-user`/`add-team`) writes SSM parameters and runs setup on the live instance. Works immediately but agents are lost on instance replacement since they aren't in the baked-in bootstrap.
+- **CLI** (`conga admin add-user`/`add-team`) writes SSM parameters and runs setup on the live instance. Works immediately but agents are lost on instance replacement since they aren't in the baked-in bootstrap.
 
-Both paths already write to the same SSM Parameter Store paths (`/openclaw/users/`, `/openclaw/teams/`), making SSM the natural single source of truth.
+Both paths already write to the same SSM Parameter Store paths (`/conga/users/`, `/conga/teams/`), making SSM the natural single source of truth.
 
 ## Success Criteria
 
 1. An admin can add an agent via CLI and it works immediately on the live instance
-2. That CLI-added agent survives instance cycle (`cruxclaw admin cycle-host`) without any Terraform involvement
+2. That CLI-added agent survives instance cycle (`conga admin cycle-host`) without any Terraform involvement
 3. Agents defined in `var.agents` continue to work — Terraform writes SSM params, bootstrap discovers them at boot
 4. Adding/removing agents in `var.agents` no longer forces instance replacement (bootstrap content hash becomes static)
 5. `routing.json` is built dynamically at boot from discovered agents

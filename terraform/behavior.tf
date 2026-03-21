@@ -12,7 +12,7 @@ locals {
 resource "aws_s3_object" "behavior" {
   for_each = local.behavior_files
   bucket   = local.state_bucket
-  key      = "openclaw/behavior/${each.value}"
+  key      = "conga/behavior/${each.value}"
   content  = file("${path.module}/../behavior/${each.value}")
   etag     = md5(file("${path.module}/../behavior/${each.value}"))
 }
@@ -20,7 +20,7 @@ resource "aws_s3_object" "behavior" {
 # Upload deploy helper to S3 — single source of truth for bootstrap and provisioning
 resource "aws_s3_object" "deploy_behavior_helper" {
   bucket  = local.state_bucket
-  key     = "openclaw/scripts/deploy-behavior.sh"
+  key     = "conga/scripts/deploy-behavior.sh"
   content = file("${path.module}/../cli/scripts/deploy-behavior.sh.tmpl")
   etag    = md5(file("${path.module}/../cli/scripts/deploy-behavior.sh.tmpl"))
 }

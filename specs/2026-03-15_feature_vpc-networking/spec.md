@@ -46,7 +46,7 @@ resource "aws_subnet" "public" {
   }
 }
 
-# Private subnet — hosts the OpenClaw EC2 instance
+# Private subnet — hosts the Conga Line EC2 instance
 resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.0.16/28"
@@ -117,11 +117,11 @@ module "fck_nat" {
 ### 3. `terraform/security.tf`
 
 ```hcl
-# --- Security Group: OpenClaw Host (zero ingress) ---
+# --- Security Group: Conga Line Host (zero ingress) ---
 
-resource "aws_security_group" "openclaw_host" {
+resource "aws_security_group" "conga_host" {
   name_prefix = "${var.project_name}-host-"
-  description = "OpenClaw host - zero ingress, HTTPS + DNS egress only"
+  description = "Conga Line host - zero ingress, HTTPS + DNS egress only"
   vpc_id      = aws_vpc.main.id
 
   tags = {
@@ -134,7 +134,7 @@ resource "aws_security_group" "openclaw_host" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "https" {
-  security_group_id = aws_security_group.openclaw_host.id
+  security_group_id = aws_security_group.conga_host.id
   description       = "HTTPS egress (Slack WSS, LLM APIs, Docker Hub, SSM)"
   ip_protocol       = "tcp"
   from_port         = 443
@@ -143,7 +143,7 @@ resource "aws_vpc_security_group_egress_rule" "https" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "dns_tcp" {
-  security_group_id = aws_security_group.openclaw_host.id
+  security_group_id = aws_security_group.conga_host.id
   description       = "DNS TCP (VPC resolver)"
   ip_protocol       = "tcp"
   from_port         = 53
@@ -152,7 +152,7 @@ resource "aws_vpc_security_group_egress_rule" "dns_tcp" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "dns_udp" {
-  security_group_id = aws_security_group.openclaw_host.id
+  security_group_id = aws_security_group.conga_host.id
   description       = "DNS UDP (VPC resolver)"
   ip_protocol       = "udp"
   from_port         = 53
@@ -309,13 +309,13 @@ output "vpc_id" {
 }
 
 output "private_subnet_id" {
-  description = "Private subnet ID for OpenClaw host"
+  description = "Private subnet ID for Conga Line host"
   value       = aws_subnet.private.id
 }
 
-output "openclaw_host_sg_id" {
-  description = "Security group ID for OpenClaw host"
-  value       = aws_security_group.openclaw_host.id
+output "conga_host_sg_id" {
+  description = "Security group ID for Conga Line host"
+  value       = aws_security_group.conga_host.id
 }
 
 output "nat_public_ip" {

@@ -50,7 +50,7 @@ resource "aws_cloudwatch_log_metric_filter" "config_violation" {
 
   metric_transformation {
     name          = "ConfigIntegrityViolation"
-    namespace     = "OpenClaw"
+    namespace     = "Conga Line"
     value         = "1"
     default_value = "0"
   }
@@ -63,14 +63,14 @@ resource "aws_cloudwatch_alarm" "config_violation" {
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "ConfigIntegrityViolation"
-  namespace           = "OpenClaw"
+  namespace           = "Conga Line"
   period              = 300
   statistic           = "Sum"
   threshold           = 0
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
-  alarm_description   = "OpenClaw config file integrity violation detected"
+  alarm_description   = "Conga Line config file integrity violation detected"
 
   tags = {
     Name = "${var.project_name}-config-integrity-alarm"
@@ -90,37 +90,37 @@ Add these sections between the existing section 8 (CREATE SYSTEMD SERVICE) and s
 # ============================================================
 
 # Store known-good config hash (root-owned, read-only)
-sha256sum /opt/openclaw/config/openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/openclaw.json.sha256
-chmod 0444 /opt/openclaw/config/openclaw.json.sha256
+sha256sum /opt/conga/config/openclaw.json | cut -d' ' -f1 > /opt/conga/config/openclaw.json.sha256
+chmod 0444 /opt/conga/config/openclaw.json.sha256
 
 # Create integrity check script
-mkdir -p /opt/openclaw/scripts
-cat > /opt/openclaw/scripts/check-config-integrity.sh << 'CHECKSCRIPT'
+mkdir -p /opt/conga/scripts
+cat > /opt/conga/scripts/check-config-integrity.sh << 'CHECKSCRIPT'
 #!/bin/bash
-EXPECTED_HASH=$(cat /opt/openclaw/config/openclaw.json.sha256)
-CURRENT_HASH=$(sha256sum /opt/openclaw/data/myagent/openclaw.json | cut -d' ' -f1)
+EXPECTED_HASH=$(cat /opt/conga/config/openclaw.json.sha256)
+CURRENT_HASH=$(sha256sum /opt/conga/data/myagent/openclaw.json | cut -d' ' -f1)
 if [ "$EXPECTED_HASH" != "$CURRENT_HASH" ]; then
-  echo "CONFIG_INTEGRITY_VIOLATION user=myagent expected=$EXPECTED_HASH actual=$CURRENT_HASH" | systemd-cat -t openclaw-integrity -p warning
+  echo "CONFIG_INTEGRITY_VIOLATION user=myagent expected=$EXPECTED_HASH actual=$CURRENT_HASH" | systemd-cat -t conga-integrity -p warning
 else
-  echo "Config integrity OK user=myagent hash=$CURRENT_HASH" | systemd-cat -t openclaw-integrity
+  echo "Config integrity OK user=myagent hash=$CURRENT_HASH" | systemd-cat -t conga-integrity
 fi
 CHECKSCRIPT
-chmod 0755 /opt/openclaw/scripts/check-config-integrity.sh
+chmod 0755 /opt/conga/scripts/check-config-integrity.sh
 
 # Create systemd service for the check
-cat > /etc/systemd/system/openclaw-config-check.service << 'CHECKSVC'
+cat > /etc/systemd/system/conga-config-check.service << 'CHECKSVC'
 [Unit]
-Description=OpenClaw Config Integrity Check
+Description=Conga Line Config Integrity Check
 
 [Service]
 Type=oneshot
-ExecStart=/opt/openclaw/scripts/check-config-integrity.sh
+ExecStart=/opt/conga/scripts/check-config-integrity.sh
 CHECKSVC
 
 # Create systemd timer
-cat > /etc/systemd/system/openclaw-config-check.timer << CHECKTIMER
+cat > /etc/systemd/system/conga-config-check.timer << CHECKTIMER
 [Unit]
-Description=OpenClaw Config Integrity Check Timer
+Description=Conga Line Config Integrity Check Timer
 
 [Timer]
 OnBootSec=2min
@@ -132,7 +132,7 @@ WantedBy=timers.target
 CHECKTIMER
 
 systemctl daemon-reload
-systemctl enable --now openclaw-config-check.timer
+systemctl enable --now conga-config-check.timer
 
 echo "Config integrity monitoring enabled (every ${config_check_interval_minutes} minutes)"
 
@@ -157,8 +157,8 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << CWCON
           "log_stream_name": "{instance_id}",
           "retention_in_days": 30,
           "filters": [
-            { "_SYSTEMD_UNIT": "openclaw-*.service" },
-            { "SYSLOG_IDENTIFIER": "openclaw-integrity" }
+            { "_SYSTEMD_UNIT": "conga-*.service" },
+            { "SYSLOG_IDENTIFIER": "conga-integrity" }
           ]
         }
       ]
@@ -194,7 +194,7 @@ The existing CloudWatch Logs policy scopes to the gateway log group ARN. The Clo
 ```hcl
 resource "aws_iam_role_policy" "cloudwatch_logs" {
   name_prefix = "${var.project_name}-logs-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -238,7 +238,7 @@ output "config_check_interval" {
 | Scenario | Handling |
 |---|---|
 | Config changes legitimately (redeployment) | New instance gets fresh hash at bootstrap; no false alarm |
-| OpenClaw hot-reload modifies config | Hash mismatch triggers alarm — this is the intended behavior (detects tampering AND hot-reload writes) |
+| Conga Line hot-reload modifies config | Hash mismatch triggers alarm — this is the intended behavior (detects tampering AND hot-reload writes) |
 | CloudWatch agent fails to start | Container still runs; logs just aren't shipped. Check agent status via SSM. |
 | Timer fires before container is running | Check script runs but file exists from bootstrap; will report OK |
 | SNS topic with no subscribers | Alarm state changes visible in CloudWatch console; no email sent |
@@ -249,15 +249,15 @@ output "config_check_interval" {
 1. `terraform plan` — should show monitoring.tf resources (SNS topic, metric filter, alarm) + updated launch template
 2. `terraform apply` — creates resources, replaces instance
 3. Wait for bootstrap, then via SSM:
-   - `systemctl status openclaw-config-check.timer` — timer active
+   - `systemctl status conga-config-check.timer` — timer active
    - `systemctl list-timers` — shows next run time
-   - `/opt/openclaw/scripts/check-config-integrity.sh` — run manually, should report OK
+   - `/opt/conga/scripts/check-config-integrity.sh` — run manually, should report OK
    - `systemctl status amazon-cloudwatch-agent` — agent running
 4. Check CloudWatch console:
-   - Log group `/openclaw/gateway` has log stream with journal entries
-   - Alarm `openclaw-config-integrity-violation` in OK state
+   - Log group `/conga/gateway` has log stream with journal entries
+   - Alarm `conga-config-integrity-violation` in OK state
 5. Tamper test (optional):
-   - Modify `/opt/openclaw/data/myagent/openclaw.json` slightly
+   - Modify `/opt/conga/data/myagent/openclaw.json` slightly
    - Wait for timer to fire (or run check manually)
    - Verify `CONFIG_INTEGRITY_VIOLATION` appears in CloudWatch logs
    - Verify alarm transitions to ALARM state

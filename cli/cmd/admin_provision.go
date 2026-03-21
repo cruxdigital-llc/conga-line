@@ -9,10 +9,10 @@ import (
 	"text/template"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
-	"github.com/cruxdigital-llc/openclaw-template/cli/scripts"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/scripts"
 	"github.com/spf13/cobra"
 )
 
@@ -65,12 +65,12 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Creating SSM parameter...")
-	if err := awsutil.PutParameter(ctx, clients.SSM, fmt.Sprintf("/openclaw/agents/%s", agentName), string(agentConfigJSON)); err != nil {
+	if err := awsutil.PutParameter(ctx, clients.SSM, fmt.Sprintf("/conga/agents/%s", agentName), string(agentConfigJSON)); err != nil {
 		return fmt.Errorf("failed to create agent config parameter: %w", err)
 	}
 
 	// Resolve state bucket for behavior file sync
-	stateBucket, err := awsutil.GetParameter(ctx, clients.SSM, "/openclaw/config/state-bucket")
+	stateBucket, err := awsutil.GetParameter(ctx, clients.SSM, "/conga/config/state-bucket")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not resolve state bucket — behavior files will not sync. Run 'terraform apply' first.\n")
 		stateBucket = "" // Non-fatal: behavior files won't sync but provisioning continues
@@ -119,9 +119,9 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\nAgent %s provisioned successfully!\n\n", agentName)
 	fmt.Println("Next steps for the user:")
-	fmt.Printf("  1. cruxclaw secrets set anthropic-api-key --agent %s\n", agentName)
-	fmt.Printf("  2. cruxclaw refresh --agent %s\n", agentName)
-	fmt.Printf("  3. cruxclaw connect --agent %s\n", agentName)
+	fmt.Printf("  1. conga secrets set anthropic-api-key --agent %s\n", agentName)
+	fmt.Printf("  2. conga refresh --agent %s\n", agentName)
+	fmt.Printf("  3. conga connect --agent %s\n", agentName)
 	return nil
 }
 
@@ -159,12 +159,12 @@ func adminAddTeamRun(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Creating SSM parameter...")
-	if err := awsutil.PutParameter(ctx, clients.SSM, fmt.Sprintf("/openclaw/agents/%s", agentName), string(agentConfigJSON)); err != nil {
+	if err := awsutil.PutParameter(ctx, clients.SSM, fmt.Sprintf("/conga/agents/%s", agentName), string(agentConfigJSON)); err != nil {
 		return fmt.Errorf("failed to create agent config parameter: %w", err)
 	}
 
 	// Resolve state bucket for behavior file sync
-	stateBucket, err := awsutil.GetParameter(ctx, clients.SSM, "/openclaw/config/state-bucket")
+	stateBucket, err := awsutil.GetParameter(ctx, clients.SSM, "/conga/config/state-bucket")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not resolve state bucket — behavior files will not sync. Run 'terraform apply' first.\n")
 		stateBucket = "" // Non-fatal: behavior files won't sync but provisioning continues

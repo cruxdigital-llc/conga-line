@@ -24,7 +24,7 @@ resource "aws_cloudwatch_log_metric_filter" "config_violation" {
 
   metric_transformation {
     name          = "ConfigIntegrityViolation"
-    namespace     = "OpenClaw"
+    namespace     = "CongaLine"
     value         = "1"
     default_value = "0"
   }
@@ -37,14 +37,14 @@ resource "aws_cloudwatch_metric_alarm" "config_violation" {
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "ConfigIntegrityViolation"
-  namespace           = "OpenClaw"
+  namespace           = "CongaLine"
   period              = 300
   statistic           = "Sum"
   threshold           = 0
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
-  alarm_description   = "OpenClaw config file integrity violation detected"
+  alarm_description   = "Conga Line config file integrity violation detected"
 
   tags = {
     Name = "${var.project_name}-config-integrity-alarm"

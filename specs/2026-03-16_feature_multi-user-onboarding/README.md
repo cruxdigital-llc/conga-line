@@ -9,8 +9,8 @@
 ## Decisions
 - **Admin provides**: user_id + slack_channel only
 - **User provides**: their own secrets via self-service script
-- **No per-user secrets in Terraform** — users manage their own under `openclaw/{user_id}/*`
-- **Generic openclaw.json** — no per-user skill config; users configure via OpenClaw
+- **No per-user secrets in Terraform** — users manage their own under `conga/{user_id}/*`
+- **Generic openclaw.json** — no per-user skill config; users configure via Conga Line
 - **Secret discovery at boot** — user-data lists all secrets under each user's path dynamically
 - **Env var naming**: secret name `foo-bar` → env var `FOO_BAR` (uppercase, hyphens to underscores)
 - **Adding a user requires instance replacement** (user-data changes) — acceptable

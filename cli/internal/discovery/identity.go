@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
 )
 
 type ResolvedIdentity struct {

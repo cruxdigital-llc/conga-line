@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature adds a behavior file management pipeline to the OpenClaw deployment. Version-controlled markdown files in the repo define agent identity and guidelines, get uploaded to S3 via Terraform, and are automatically composed and deployed to agent workspaces on every container start.
+This feature adds a behavior file management pipeline to the Conga Line deployment. Version-controlled markdown files in the repo define agent identity and guidelines, get uploaded to S3 via Terraform, and are automatically composed and deployed to agent workspaces on every container start.
 
 ## 1. Repo Structure
 
@@ -55,7 +55,7 @@ locals {
 resource "aws_s3_object" "behavior" {
   for_each = local.behavior_files
   bucket   = local.state_bucket
-  key      = "openclaw/behavior/${each.value}"
+  key      = "conga/behavior/${each.value}"
   content  = file("${path.module}/../behavior/${each.value}")
   etag     = md5(file("${path.module}/../behavior/${each.value}"))
 }
@@ -68,10 +68,10 @@ This uses the same pattern as `router.tf` — individual S3 objects with `etag` 
 Add to the `aws_iam_role_policy.s3_read` resource's `Resource` array:
 
 ```hcl
-"arn:aws:s3:::${local.state_bucket}/openclaw/behavior/*"
+"arn:aws:s3:::${local.state_bucket}/conga/behavior/*"
 ```
 
-Also adds `s3:ListBucket` on the bucket itself (required by `aws s3 sync`), scoped to the `openclaw/*` prefix via a `Condition` block to prevent listing unrelated keys (e.g. Terraform state).
+Also adds `s3:ListBucket` on the bucket itself (required by `aws s3 sync`), scoped to the `conga/*` prefix via a `Condition` block to prevent listing unrelated keys (e.g. Terraform state).
 
 This allows the EC2 instance to read and list behavior files from S3 (same permission level as router and bootstrap artifacts).
 
@@ -79,15 +79,15 @@ This allows the EC2 instance to read and list behavior files from S3 (same permi
 
 ### 3.1 File: `cli/scripts/deploy-behavior.sh.tmpl`
 
-Installed to `/opt/openclaw/bin/deploy-behavior.sh` on the host during bootstrap.
+Installed to `/opt/conga/bin/deploy-behavior.sh` on the host during bootstrap.
 
 **Signature**: `deploy-behavior.sh <agent_name> <agent_type>`
 
 Where `agent_type` is `user` or `team`.
 
 **Preconditions**:
-- `/opt/openclaw/behavior/` staging area is populated (caller's responsibility)
-- `/opt/openclaw/data/<agent_name>/data/workspace/` directory exists
+- `/opt/conga/behavior/` staging area is populated (caller's responsibility)
+- `/opt/conga/data/<agent_name>/data/workspace/` directory exists
 
 **Behavior**:
 
@@ -97,8 +97,8 @@ set -euo pipefail
 
 AGENT_NAME="$1"
 AGENT_TYPE="$2"
-STAGING="/opt/openclaw/behavior"
-WORKSPACE="/opt/openclaw/data/$AGENT_NAME/data/workspace"
+STAGING="/opt/conga/behavior"
+WORKSPACE="/opt/conga/data/$AGENT_NAME/data/workspace"
 
 # Compose SOUL.md
 if [ -f "$STAGING/overrides/$AGENT_NAME/SOUL.md" ]; then
@@ -136,16 +136,16 @@ chown 1000:1000 "$WORKSPACE/SOUL.md" "$WORKSPACE/AGENTS.md" "$WORKSPACE/USER.md"
 echo "Behavior files deployed for $AGENT_NAME ($AGENT_TYPE)"
 ```
 
-**Note on SlackChannel/SlackMemberID substitution**: The deploy helper receives only agent name and type. For USER.md templates that reference `{{.SlackChannel}}` or `{{.SlackMemberID}}`, the provisioning scripts (add-user.sh.tmpl, add-team.sh.tmpl) already have these values available. The ExecStartPre path needs them too — they can be read from the SSM agent parameter JSON at `/openclaw/agents/<name>`. To avoid adding an AWS CLI call to every container start, store the Slack identifier alongside the type file:
+**Note on SlackChannel/SlackMemberID substitution**: The deploy helper receives only agent name and type. For USER.md templates that reference `{{.SlackChannel}}` or `{{.SlackMemberID}}`, the provisioning scripts (add-user.sh.tmpl, add-team.sh.tmpl) already have these values available. The ExecStartPre path needs them too — they can be read from the SSM agent parameter JSON at `/conga/agents/<name>`. To avoid adding an AWS CLI call to every container start, store the Slack identifier alongside the type file:
 
-- `/opt/openclaw/config/<agent>.type` — contains "user" or "team"
-- `/opt/openclaw/config/<agent>.slack-id` — contains the Slack member ID or channel ID
+- `/opt/conga/config/<agent>.type` — contains "user" or "team"
+- `/opt/conga/config/<agent>.slack-id` — contains the Slack member ID or channel ID
 
 The deploy helper reads `<agent>.slack-id` and substitutes both `{{.SlackChannel}}` and `{{.SlackMemberID}}` (only one will match per template, the other is a no-op sed).
 
 Updated sed line:
 ```bash
-SLACK_ID=$(cat "/opt/openclaw/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
+SLACK_ID=$(cat "/opt/conga/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
 sed -e "s/{{.AgentName}}/$AGENT_NAME/g" \
     -e "s/{{.SlackChannel}}/$SLACK_ID/g" \
     -e "s/{{.SlackMemberID}}/$SLACK_ID/g" \
@@ -158,7 +158,7 @@ sed -e "s/{{.AgentName}}/$AGENT_NAME/g" \
 
 ```bash
 # Download behavior files from S3
-aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --region "$AWS_REGION"
+aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region "$AWS_REGION"
 ```
 
 ### 4.2 Install deploy helper (after bin directory setup)
@@ -166,8 +166,8 @@ aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --re
 Downloaded from S3 (canonical source: `cli/scripts/deploy-behavior.sh.tmpl`, uploaded by Terraform):
 
 ```bash
-aws s3 cp s3://${state_bucket}/openclaw/scripts/deploy-behavior.sh /opt/openclaw/bin/deploy-behavior.sh --region "$AWS_REGION"
-chmod +x /opt/openclaw/bin/deploy-behavior.sh
+aws s3 cp s3://${state_bucket}/conga/scripts/deploy-behavior.sh /opt/conga/bin/deploy-behavior.sh --region "$AWS_REGION"
+chmod +x /opt/conga/bin/deploy-behavior.sh
 ```
 
 ### 4.3 Update `setup_agent_common()` signature
@@ -181,24 +181,24 @@ Add to `setup_agent_common()`, after the workspace mkdir block (line ~362):
 local AGENT_TYPE="$3"
 
 # Store agent type and Slack ID for ExecStartPre
-echo "$AGENT_TYPE" > /opt/openclaw/config/$AGENT_NAME.type
+echo "$AGENT_TYPE" > /opt/conga/config/$AGENT_NAME.type
 ```
 
 And the deploy call:
 ```bash
-/opt/openclaw/bin/deploy-behavior.sh "$AGENT_NAME" "$AGENT_TYPE"
+/opt/conga/bin/deploy-behavior.sh "$AGENT_NAME" "$AGENT_TYPE"
 ```
 
 ### 4.4 Store Slack ID during agent setup
 
 In `setup_user_agent()`, after calling `setup_agent_common`:
 ```bash
-echo "$SLACK_MEMBER_ID" > /opt/openclaw/config/$AGENT_NAME.slack-id
+echo "$SLACK_MEMBER_ID" > /opt/conga/config/$AGENT_NAME.slack-id
 ```
 
 In `setup_team_agent()`:
 ```bash
-echo "$SLACK_CHANNEL" > /opt/openclaw/config/$AGENT_NAME.slack-id
+echo "$SLACK_CHANNEL" > /opt/conga/config/$AGENT_NAME.slack-id
 ```
 
 Note: These writes must happen **before** the `setup_agent_common` call (which calls deploy-behavior.sh), or be moved into `setup_agent_common` using the SSM parameter data that's already parsed. The simplest approach: write the slack-id and type files in the type-specific functions, before calling `setup_agent_common`, and have `setup_agent_common` read them.
@@ -208,25 +208,25 @@ Note: These writes must happen **before** the `setup_agent_common` call (which c
 Add to the systemd unit template in `setup_agent_common()`, before the existing `ExecStartPre`:
 
 ```
-ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/openclaw/bin/deploy-behavior.sh %N $(cat /opt/openclaw/config/%N.type 2>/dev/null || echo user)'
+ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh %N $(cat /opt/conga/config/%N.type 2>/dev/null || echo user)'
 ```
 
-Wait — `%N` is the systemd unit name (e.g. `openclaw-myagent`), but we need the agent name (e.g. `myagent`). Use a variable substitution:
+Wait — `%N` is the systemd unit name (e.g. `conga-myagent`), but we need the agent name (e.g. `myagent`). Use a variable substitution:
 
 ```
-ExecStartPre=/bin/bash -c 'AGENT=${state_bucket:+$AGENT_NAME}; aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/openclaw/bin/deploy-behavior.sh $AGENT_NAME $(cat /opt/openclaw/config/$AGENT_NAME.type 2>/dev/null || echo user)'
+ExecStartPre=/bin/bash -c 'AGENT=${state_bucket:+$AGENT_NAME}; aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh $AGENT_NAME $(cat /opt/conga/config/$AGENT_NAME.type 2>/dev/null || echo user)'
 ```
 
 Since the systemd unit is generated with `$AGENT_NAME` already expanded in the heredoc, this is straightforward — `$AGENT_NAME` becomes a literal string in the unit file:
 
 ```
-ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/openclaw/behavior/ /opt/openclaw/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/openclaw/bin/deploy-behavior.sh $AGENT_NAME $(cat /opt/openclaw/config/$AGENT_NAME.type 2>/dev/null || echo user)'
+ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh $AGENT_NAME $(cat /opt/conga/config/$AGENT_NAME.type 2>/dev/null || echo user)'
 ```
 
 In the generated unit file, `$AGENT_NAME`, `${state_bucket}`, and `${aws_region}` are all expanded at generation time (they're shell variables in the bootstrap heredoc). The resulting unit file contains literal values like:
 
 ```
-ExecStartPre=/bin/bash -c 'aws s3 sync s3://openclaw-terraform-state-123456/openclaw/behavior/ /opt/openclaw/behavior/ --region us-east-1 2>/dev/null || true; /opt/openclaw/bin/deploy-behavior.sh myagent $(cat /opt/openclaw/config/myagent.type 2>/dev/null || echo user)'
+ExecStartPre=/bin/bash -c 'aws s3 sync s3://conga-terraform-state-123456/conga/behavior/ /opt/conga/behavior/ --region us-east-1 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh myagent $(cat /opt/conga/config/myagent.type 2>/dev/null || echo user)'
 ```
 
 **Error handling**: `2>/dev/null || true` on the S3 sync means that if S3 is unreachable (network blip, IAM issue), the container still starts with whatever behavior files were last synced. Stale behavior is better than failing to start.
@@ -239,7 +239,7 @@ setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT"
 ```
 to:
 ```bash
-echo "$SLACK_MEMBER_ID" > /opt/openclaw/config/$AGENT_NAME.slack-id
+echo "$SLACK_MEMBER_ID" > /opt/conga/config/$AGENT_NAME.slack-id
 setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT" "user"
 ```
 
@@ -249,7 +249,7 @@ setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT"
 ```
 to:
 ```bash
-echo "$SLACK_CHANNEL" > /opt/openclaw/config/$AGENT_NAME.slack-id
+echo "$SLACK_CHANNEL" > /opt/conga/config/$AGENT_NAME.slack-id
 setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT" "team"
 ```
 
@@ -261,26 +261,26 @@ Add after workspace mkdir block (line ~104), before container start:
 
 ```bash
 # Store agent metadata for behavior deployment
-echo "user" > /opt/openclaw/config/$AGENT_NAME.type
-echo "$SLACK_MEMBER_ID" > /opt/openclaw/config/$AGENT_NAME.slack-id
+echo "user" > /opt/conga/config/$AGENT_NAME.type
+echo "$SLACK_MEMBER_ID" > /opt/conga/config/$AGENT_NAME.slack-id
 
 # Sync and deploy behavior files
-aws s3 sync "s3://{{.StateBucket}}/openclaw/behavior/" /opt/openclaw/behavior/ --region "$AWS_REGION" 2>/dev/null || true
-/opt/openclaw/bin/deploy-behavior.sh "$AGENT_NAME" "user"
+aws s3 sync "s3://{{.StateBucket}}/conga/behavior/" /opt/conga/behavior/ --region "$AWS_REGION" 2>/dev/null || true
+/opt/conga/bin/deploy-behavior.sh "$AGENT_NAME" "user"
 ```
 
-**New template variable**: `{{.StateBucket}}` must be passed when rendering. Resolved in the CLI from SSM parameter `/openclaw/config/state-bucket`.
+**New template variable**: `{{.StateBucket}}` must be passed when rendering. Resolved in the CLI from SSM parameter `/conga/config/state-bucket`.
 
 ### 5.2 `cli/scripts/add-team.sh.tmpl`
 
 Same pattern, with `"team"` and `$SLACK_CHANNEL`:
 
 ```bash
-echo "team" > /opt/openclaw/config/$AGENT_NAME.type
-echo "$SLACK_CHANNEL" > /opt/openclaw/config/$AGENT_NAME.slack-id
+echo "team" > /opt/conga/config/$AGENT_NAME.type
+echo "$SLACK_CHANNEL" > /opt/conga/config/$AGENT_NAME.slack-id
 
-aws s3 sync "s3://{{.StateBucket}}/openclaw/behavior/" /opt/openclaw/behavior/ --region "$AWS_REGION" 2>/dev/null || true
-/opt/openclaw/bin/deploy-behavior.sh "$AGENT_NAME" "team"
+aws s3 sync "s3://{{.StateBucket}}/conga/behavior/" /opt/conga/behavior/ --region "$AWS_REGION" 2>/dev/null || true
+/opt/conga/bin/deploy-behavior.sh "$AGENT_NAME" "team"
 ```
 
 ### 5.3 CLI template rendering updates
@@ -304,7 +304,7 @@ err = tmpl.Execute(&buf, struct {
 })
 ```
 
-`stateBucket` is resolved by reading SSM parameter `/openclaw/config/state-bucket`.
+`stateBucket` is resolved by reading SSM parameter `/conga/config/state-bucket`.
 
 For `adminAddTeamRun`, same addition of `StateBucket`.
 
@@ -315,7 +315,7 @@ For `adminAddTeamRun`, same addition of `StateBucket`.
 The state bucket name is written to SSM automatically by Terraform in `ssm-parameters.tf`:
 
 ```
-/openclaw/config/state-bucket = local.state_bucket
+/conga/config/state-bucket = local.state_bucket
 ```
 
 No interactive setup needed — the value is deterministic and Terraform owns it.
@@ -390,10 +390,10 @@ func adminRefreshAllRun(cmd *cobra.Command, args []string) error {
 set -euo pipefail
 
 {{range .Agents}}
-echo "Restarting openclaw-{{.Name}}..."
-systemctl restart openclaw-{{.Name}}
+echo "Restarting conga-{{.Name}}..."
+systemctl restart conga-{{.Name}}
 sleep 2
-docker network connect "openclaw-{{.Name}}" openclaw-router 2>/dev/null || true
+docker network connect "conga-{{.Name}}" conga-router 2>/dev/null || true
 {{end}}
 
 echo "All agents restarted"
@@ -430,7 +430,7 @@ Note: `deploy-behavior.sh.tmpl` is NOT embedded in the Go binary — it is uploa
 | Scenario | Behavior |
 |----------|----------|
 | S3 sync fails during ExecStartPre | Suppressed (`|| true`). Container starts with last-synced behavior files. |
-| No behavior files in S3 (first deploy before `terraform apply`) | Deploy helper finds no source files, writes nothing. Agent starts with OpenClaw defaults. |
+| No behavior files in S3 (first deploy before `terraform apply`) | Deploy helper finds no source files, writes nothing. Agent starts with Conga Line defaults. |
 | Agent workspace doesn't exist yet | `setup_agent_common` creates it before calling deploy helper. |
 | Override directory exists but is empty | No override files found, falls through to concatenation. |
 | Template variable not available (e.g. missing `.slack-id` file) | `sed` substitution is a no-op for unmatched patterns. Template literal `{{.SlackChannel}}` remains in output. Acceptable — better than failing. |
@@ -441,7 +441,7 @@ Note: `deploy-behavior.sh.tmpl` is NOT embedded in the Go binary — it is uploa
 ## 9. Security Considerations
 
 - **No secrets in behavior files**: Behavior files contain only markdown text (identity, guidelines, philosophy). No API keys, tokens, or credentials. Enforced by code review — no automated check needed.
-- **S3 read-only from host**: The IAM policy grants only `s3:GetObject` and prefix-scoped `s3:ListBucket` — the host cannot modify behavior files in S3, and cannot list keys outside `openclaw/*`.
+- **S3 read-only from host**: The IAM policy grants only `s3:GetObject` and prefix-scoped `s3:ListBucket` — the host cannot modify behavior files in S3, and cannot list keys outside `conga/*`.
 - **File ownership**: Behavior files are owned by uid 1000 (node user) so the container can read them. They are not executable.
 - **ExecStartPre runs as root**: The systemd unit runs ExecStartPre as root (before dropping to the container user). This is necessary for `chown 1000:1000` and consistent with how openclaw.json is already deployed.
 - **No new network access**: S3 access uses the existing VPC endpoint or HTTPS egress — no new network paths.
@@ -458,7 +458,7 @@ Note: `deploy-behavior.sh.tmpl` is NOT embedded in the Go binary — it is uploa
 | `behavior/team/USER.md.tmpl` | Create | Per-team USER.md template |
 | `behavior/overrides/.gitkeep` | Create | Placeholder for per-agent overrides |
 | `terraform/behavior.tf` | Create | S3 upload resources for behavior files |
-| `terraform/iam.tf` | Modify | Add `openclaw/behavior/*` to S3 read policy |
+| `terraform/iam.tf` | Modify | Add `conga/behavior/*` to S3 read policy |
 | `terraform/user-data.sh.tftpl` | Modify | S3 sync, helper install, ExecStartPre, setup_agent_common signature |
 | `cli/scripts/deploy-behavior.sh.tmpl` | Create | Host-side composition helper script |
 | `cli/scripts/refresh-all.sh.tmpl` | Create | SSM RunCommand script to restart all agents |

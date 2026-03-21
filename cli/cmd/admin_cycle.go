@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -63,6 +63,6 @@ func adminCycleHostRun(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Instance running. SSM agent may take 1-2 minutes to reconnect.")
-	fmt.Println("Use `cruxclaw status` to verify your container is healthy.")
+	fmt.Println("Use `conga status` to verify your container is healthy.")
 	return nil
 }

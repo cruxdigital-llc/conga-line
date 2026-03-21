@@ -47,12 +47,12 @@ variable "users" {
 
 Before:
 ```bash
-ExecStart=/usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStart=/usr/bin/docker run --name conga-$USER_ID --network conga-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE
 ```
 
 After:
 ```bash
-ExecStart=/usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID -p 127.0.0.1:${user_config.gateway_port}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
+ExecStart=/usr/bin/docker run --name conga-$USER_ID --network conga-$USER_ID -p 127.0.0.1:${user_config.gateway_port}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$USER_ID:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE
 ```
 
 The `-p 127.0.0.1:${user_config.gateway_port}:18789` flag:
@@ -64,12 +64,12 @@ The `-p 127.0.0.1:${user_config.gateway_port}:18789` flag:
 
 Before:
 ```bash
-echo "Service: openclaw-${user_id} (channel: ${user_config.slack_channel}, HTTP webhook mode)"
+echo "Service: conga-${user_id} (channel: ${user_config.slack_channel}, HTTP webhook mode)"
 ```
 
 After:
 ```bash
-echo "Service: openclaw-${user_id} (channel: ${user_config.slack_channel}, port: ${user_config.gateway_port}, HTTP webhook mode)"
+echo "Service: conga-${user_id} (channel: ${user_config.slack_channel}, port: ${user_config.gateway_port}, HTTP webhook mode)"
 ```
 
 ### 3. `terraform/outputs.tf` — Add SSM port forward commands
@@ -82,7 +82,7 @@ output "ssm_port_forward_commands" {
   value = {
     for uid, cfg in var.users : uid => join(" ", [
       "aws ssm start-session",
-      "--target ${aws_instance.openclaw.id}",
+      "--target ${aws_instance.conga.id}",
       "--region ${var.aws_region}",
       "--profile ${var.aws_profile}",
       "--document-name AWS-StartPortForwardingSession",
@@ -119,7 +119,7 @@ This uses the built-in `AWS-StartPortForwardingSession` SSM document — no cust
 1. `terraform validate` / `terraform plan` — confirm clean, no unexpected changes beyond launch template
 2. `terraform apply` — replaces instance (user-data changed)
 3. SSM into instance, verify:
-   - `docker port openclaw-UEXAMPLE01` shows `127.0.0.1:18789->18789/tcp`
-   - `docker port openclaw-UEXAMPLE02` shows `127.0.0.1:18790->18790/tcp`
+   - `docker port conga-UEXAMPLE01` shows `127.0.0.1:18789->18789/tcp`
+   - `docker port conga-UEXAMPLE02` shows `127.0.0.1:18790->18790/tcp`
 4. From local machine, run the SSM port forward command from `terraform output ssm_port_forward_commands`
-5. Open `http://localhost:18789` in browser — should see OpenClaw web UI
+5. Open `http://localhost:18789` in browser — should see Conga Line web UI

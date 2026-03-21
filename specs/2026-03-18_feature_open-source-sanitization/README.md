@@ -12,12 +12,12 @@
 - 2026-03-18: Plan drafted — 3 workstreams (Terraform, CLI, Documentation), 22 files, see `plan.md`
 - Key decisions:
   - `backend.tf` gitignored with `.example` committed (option 1 over partial backend config)
-  - `openclaw_image` as required Terraform variable (no default — upstream image broken without PR #49514)
+  - `conga_image` as required Terraform variable (no default — upstream image broken without PR #49514)
   - Spec files left as-is (historical records, not worth sanitizing)
   - Speed over completeness — rough edges acceptable, must be configurable and company-agnostic
 - 2026-03-18: Spec-feature workflow started — resuming from plan
 - 2026-03-18: Spec written — see `spec.md`. Key additions vs plan:
-  - New `cruxclaw init` command with interactive prompts for first-run config
+  - New `conga init` command with interactive prompts for first-run config
   - Auto-trigger in PersistentPreRun when required config missing
   - Consolidated root + CLI README into single project README
   - ECR auto-detect in user-data template (handles ECR vs non-ECR images)
@@ -26,11 +26,11 @@
 
 **Architect**: Approved. Template plumbing follows existing patterns. ECR auto-detect is clean. No new dependencies. Minor concern on PersistentPreRun init trigger for subcommands — mitigated by checking `cmd.Name()`.
 
-**Product Manager**: Approved. First-run `cruxclaw init` auto-trigger eliminates confusion. Consolidated README is the right call. Suggestion: README Quick Start should lead with prerequisites before steps.
+**Product Manager**: Approved. First-run `conga init` auto-trigger eliminates confusion. Consolidated README is the right call. Suggestion: README Quick Start should lead with prerequisites before steps.
 
 **QA**: Approved with verification checklist:
-1. `terraform plan` with empty `openclaw_image` must fail with validation error
-2. `cruxclaw init` must create `~/.cruxclaw/` directory if missing
+1. `terraform plan` with empty `conga_image` must fail with validation error
+2. `conga init` must create `~/.conga/` directory if missing
 3. `git rm --cached` for `backend.tf` and `terraform.tfvars` is critical
 4. Post-implementation grep audit for all known environment-specific values
 5. Spec files excluded from audit (historical records)

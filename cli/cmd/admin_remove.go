@@ -7,10 +7,10 @@ import (
 	"text/template"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
-	"github.com/cruxdigital-llc/openclaw-template/cli/scripts"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/scripts"
 	"github.com/spf13/cobra"
 )
 
@@ -67,19 +67,19 @@ func adminRemoveAgentRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Delete SSM parameter
-	if err := awsutil.DeleteParameter(ctx, clients.SSM, fmt.Sprintf("/openclaw/agents/%s", agentName)); err != nil {
+	if err := awsutil.DeleteParameter(ctx, clients.SSM, fmt.Sprintf("/conga/agents/%s", agentName)); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Sprintf("SSM parameter: %v", err))
 	}
 
 	// Delete secrets if requested
 	if adminDeleteSecrets {
-		secretPrefix := fmt.Sprintf("openclaw/agents/%s/", agentName)
+		secretPrefix := fmt.Sprintf("conga/agents/%s/", agentName)
 		secrets, err := awsutil.ListSecrets(ctx, clients.SecretsManager, secretPrefix)
 		if err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Sprintf("list secrets: %v", err))
 		} else {
 			for _, s := range secrets {
-				if err := awsutil.DeleteSecret(ctx, clients.SecretsManager, fmt.Sprintf("openclaw/agents/%s/%s", agentName, s.Name)); err != nil {
+				if err := awsutil.DeleteSecret(ctx, clients.SecretsManager, fmt.Sprintf("conga/agents/%s/%s", agentName, s.Name)); err != nil {
 					cleanupErrs = append(cleanupErrs, fmt.Sprintf("delete secret %s: %v", s.Name, err))
 				}
 			}
@@ -87,7 +87,7 @@ func adminRemoveAgentRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update CloudWatch dashboard to reflect removal
-	if _, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, "/opt/openclaw/bin/update-dashboard.sh", 30*time.Second); err != nil {
+	if _, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, "/opt/conga/bin/update-dashboard.sh", 30*time.Second); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Sprintf("dashboard update: %v", err))
 	}
 

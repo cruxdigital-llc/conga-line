@@ -77,6 +77,6 @@ Add `go test ./...` to `.github/workflows/release.yml` (or create a separate `ci
 
 1. `go test ./... -v` — all tests pass
 2. `go test ./... -coverprofile=coverage.out` — check coverage meets targets
-3. Manual smoke test: `cruxclaw status`, `cruxclaw secrets list`, `cruxclaw admin list-agents` — all work as before
-4. Manual test: `cruxclaw admin add-user test-agent UINVALIDX` — rejected with tighter validation message
-5. Build: `go build -o cruxclaw ./cli` — compiles cleanly
+3. Manual smoke test: `conga status`, `conga secrets list`, `conga admin list-agents` — all work as before
+4. Manual test: `conga admin add-user test-agent UINVALIDX` — rejected with tighter validation message
+5. Build: `go build -o conga ./cli` — compiles cleanly

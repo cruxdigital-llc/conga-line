@@ -1,19 +1,19 @@
 # Requirements: IAM + Secrets
 
 ## Goal
-Create the IAM role, KMS key, and Secrets Manager entries needed for the EC2 host to bootstrap Aaron's OpenClaw container securely.
+Create the IAM role, KMS key, and Secrets Manager entries needed for the EC2 host to bootstrap Aaron's Conga Line container securely.
 
 ## Secrets Inventory
 
 ### Shared (reused by user 2)
-- `openclaw/shared/slack-bot-token` — Slack botToken (xoxb-)
-- `openclaw/shared/slack-app-token` — Slack appToken (xapp-)
+- `conga/shared/slack-bot-token` — Slack botToken (xoxb-)
+- `conga/shared/slack-app-token` — Slack appToken (xapp-)
 
 ### Per-user (Aaron)
-- `openclaw/myagent/anthropic-api-key`
-- `openclaw/myagent/gateway-token`
-- `openclaw/myagent/trello-api-key`
-- `openclaw/myagent/trello-token`
+- `conga/myagent/anthropic-api-key`
+- `conga/myagent/gateway-token`
+- `conga/myagent/trello-api-key`
+- `conga/myagent/trello-token`
 
 ## Success Criteria
 1. Instance IAM role with SSM access, Secrets Manager read, CloudWatch Logs write

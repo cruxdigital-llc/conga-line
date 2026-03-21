@@ -14,9 +14,9 @@
 ## Decisions
 - **Region**: us-east-2
 - **Bootstrap approach**: Shell script using AWS CLI (not a separate Terraform config)
-- **Bucket**: `openclaw-terraform-state` (may need account ID suffix if name is taken)
-- **Lock table**: `openclaw-terraform-locks` (DynamoDB, on-demand billing)
-- **State key**: `openclaw/terraform.tfstate`
+- **Bucket**: `conga-terraform-state` (may need account ID suffix if name is taken)
+- **Lock table**: `conga-terraform-locks` (DynamoDB, on-demand billing)
+- **State key**: `conga/terraform.tfstate`
 - **Encryption**: AES256 default (not KMS — state contains infra metadata, not secrets)
 
 ## Files Created
@@ -35,7 +35,7 @@
 | Security: Least privilege | infra | should | ⚠️ WARNING — bootstrap uses AdministratorAccess (acceptable for one-time setup) |
 
 ## Implementation Log
-- Bucket name collision: `openclaw-terraform-state` taken globally → used `openclaw-terraform-state-123456789012`
+- Bucket name collision: `conga-terraform-state` taken globally → used `conga-terraform-state-123456789012`
 - Bootstrap script: S3 bucket created (versioned, encrypted, public access blocked), DynamoDB table created (PAY_PER_REQUEST)
 - `terraform init`: S3 backend configured, AWS provider v5.100.0 installed
 - `terraform plan`: Shows only output values, no resources — correct for empty state

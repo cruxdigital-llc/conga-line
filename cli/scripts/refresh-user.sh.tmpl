@@ -8,15 +8,15 @@ get_secret() {
     --secret-id "$1" --query SecretString --output text --region "$AWS_REGION"
 }
 
-OPENCLAW_IMAGE=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" \
+CONGA_IMAGE=$(aws ssm get-parameter --name "/conga/config/image" \
   --query "Parameter.Value" --output text --region "$AWS_REGION")
 
-SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
-SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
-GOOGLE_CLIENT_ID=$(get_secret "openclaw/shared/google-client-id")
-GOOGLE_CLIENT_SECRET=$(get_secret "openclaw/shared/google-client-secret")
+SLACK_BOT_TOKEN=$(get_secret "conga/shared/slack-bot-token")
+SLACK_SIGNING_SECRET=$(get_secret "conga/shared/slack-signing-secret")
+GOOGLE_CLIENT_ID=$(get_secret "conga/shared/google-client-id")
+GOOGLE_CLIENT_SECRET=$(get_secret "conga/shared/google-client-secret")
 
-cat > /opt/openclaw/config/$AGENT_NAME.env << EOF
+cat > /opt/conga/config/$AGENT_NAME.env << EOF
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
 SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
 GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
@@ -24,32 +24,32 @@ GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
 EOF
 
 AGENT_SECRETS=$(aws secretsmanager list-secrets \
-  --filter Key=name,Values="openclaw/agents/$AGENT_NAME/" \
+  --filter Key=name,Values="conga/agents/$AGENT_NAME/" \
   --query 'SecretList[].Name' --output text \
   --region "$AWS_REGION" 2>/dev/null || echo "")
 
 for SP in $AGENT_SECRETS; do
   SV=$(get_secret "$SP")
-  SN=$(echo "$SP" | sed "s|openclaw/agents/$AGENT_NAME/||" | tr '[:lower:]-' '[:upper:]_')
-  echo "$SN=$SV" >> /opt/openclaw/config/$AGENT_NAME.env
+  SN=$(echo "$SP" | sed "s|conga/agents/$AGENT_NAME/||" | tr '[:lower:]-' '[:upper:]_')
+  echo "$SN=$SV" >> /opt/conga/config/$AGENT_NAME.env
 done
 
-chmod 0400 /opt/openclaw/config/$AGENT_NAME.env
+chmod 0400 /opt/conga/config/$AGENT_NAME.env
 
 ENV_FLAGS=""
 while IFS="=" read -r key value; do
   [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
-done < /opt/openclaw/config/$AGENT_NAME.env
+done < /opt/conga/config/$AGENT_NAME.env
 
 # Extract existing port mapping from current systemd unit
-PORT_FLAG=$(grep -oE '\-p 127\.0\.0\.1:[0-9]+:18789' /etc/systemd/system/openclaw-$AGENT_NAME.service || echo "")
+PORT_FLAG=$(grep -oE '\-p 127\.0\.0\.1:[0-9]+:18789' /etc/systemd/system/conga-$AGENT_NAME.service || echo "")
 
-sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 0.75 -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE|" /etc/systemd/system/openclaw-$AGENT_NAME.service
+sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE|" /etc/systemd/system/conga-$AGENT_NAME.service
 
 systemctl daemon-reload
-systemctl restart openclaw-$AGENT_NAME
+systemctl restart conga-$AGENT_NAME
 
 # Reconnect router to agent network (lost on container restart)
-docker network connect "openclaw-$AGENT_NAME" openclaw-router 2>/dev/null || true
+docker network connect "conga-$AGENT_NAME" conga-router 2>/dev/null || true
 
 echo "Secrets refreshed and container restarted for $AGENT_NAME"

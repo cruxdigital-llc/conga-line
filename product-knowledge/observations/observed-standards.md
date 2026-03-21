@@ -9,7 +9,7 @@
 
 ### 2026-03-15 - S3 bucket names must include account ID
 - **Source**: Implementation discovery — global namespace collision
-- **Context**: `openclaw-terraform-state` was already taken; had to suffix with account ID
+- **Context**: `conga-terraform-state` was already taken; had to suffix with account ID
 - **Proposed Standard**: "All S3 bucket names must be suffixed with the AWS account ID to avoid global namespace collisions"
 - **Suggested Severity**: must
 - **Confidence**: High

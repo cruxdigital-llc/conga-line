@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Node.js service that maintains a single outbound Slack Socket Mode connection, inspects incoming events, and forwards them to the correct OpenClaw container via internal HTTP webhook. Preserves zero-ingress security model — all connections are outbound.
+A Node.js service that maintains a single outbound Slack Socket Mode connection, inspects incoming events, and forwards them to the correct Conga Line container via internal HTTP webhook. Preserves zero-ingress security model — all connections are outbound.
 
 ## Architecture
 
@@ -79,12 +79,12 @@ Generated at bootstrap from the Terraform `users` variable:
 ```json
 {
   "channels": {
-    "CEXAMPLE01": "http://openclaw-UEXAMPLE01:18789/slack/events",
-    "CEXAMPLE02": "http://openclaw-UEXAMPLE02:18789/slack/events"
+    "CEXAMPLE01": "http://conga-UEXAMPLE01:18789/slack/events",
+    "CEXAMPLE02": "http://conga-UEXAMPLE02:18789/slack/events"
   },
   "members": {
-    "UEXAMPLE01": "http://openclaw-UEXAMPLE01:18789/slack/events",
-    "UEXAMPLE02": "http://openclaw-UEXAMPLE02:18789/slack/events"
+    "UEXAMPLE01": "http://conga-UEXAMPLE01:18789/slack/events",
+    "UEXAMPLE02": "http://conga-UEXAMPLE02:18789/slack/events"
   }
 }
 ```
@@ -97,7 +97,7 @@ Generated at bootstrap from the Terraform `users` variable:
 
 ## Container Changes
 
-Each OpenClaw container switches from Socket Mode to HTTP webhook mode:
+Each Conga Line container switches from Socket Mode to HTTP webhook mode:
 
 ```json
 {
@@ -127,7 +127,7 @@ Key changes:
 The router needs to reach each container's port 18789. Options:
 
 ### Option A: Shared Docker network
-Create a single `openclaw-router` network. Router and all containers join it. Containers can't reach each other (Docker bridge isolation between containers on the same network is NOT enforced — they CAN communicate).
+Create a single `conga-router` network. Router and all containers join it. Containers can't reach each other (Docker bridge isolation between containers on the same network is NOT enforced — they CAN communicate).
 
 **Problem**: Breaks container isolation.
 
@@ -135,8 +135,8 @@ Create a single `openclaw-router` network. Router and all containers join it. Co
 Router container joins every user's Docker network. Each user network is isolated — containers on different networks can't reach each other, but the router can reach all of them.
 
 ```bash
-docker network connect openclaw-UEXAMPLE01 router
-docker network connect openclaw-UEXAMPLE02 router
+docker network connect conga-UEXAMPLE01 router
+docker network connect conga-UEXAMPLE02 router
 ```
 
 **This preserves isolation** — User A's container can't reach User B's container because they're on separate networks. The router is the only bridge.
@@ -149,7 +149,7 @@ docker network connect openclaw-UEXAMPLE02 router
 - **User containers**: Slack `botToken` (xoxb-) + `signingSecret` + per-user API keys
 - Slack tokens are shared between router and containers (botToken needed by containers to send responses)
 
-New shared secret needed: `openclaw/shared/slack-signing-secret`
+New shared secret needed: `conga/shared/slack-signing-secret`
 
 ## User-Data Changes
 
@@ -177,6 +177,6 @@ New shared secret needed: `openclaw/shared/slack-signing-secret`
 
 - **Zero ingress preserved**: All Slack communication is outbound WSS from the router. Internal HTTP between router and containers is localhost-only.
 - **Router as SPOF**: If the router dies, all users lose Slack. Mitigated by systemd restart. Same risk as the current single NAT instance.
-- **3-second ack window**: Slack requires envelope acknowledgement within 3 seconds. The router must ack BEFORE forwarding to the container (acknowledge receipt, not processing completion). OpenClaw sends responses asynchronously via the Web API.
+- **3-second ack window**: Slack requires envelope acknowledgement within 3 seconds. The router must ack BEFORE forwarding to the container (acknowledge receipt, not processing completion). Conga Line sends responses asynchronously via the Web API.
 - **Option B networking**: Router joins all networks but containers remain isolated from each other. Clean topology.
 - **Bot token sharing**: Both router and containers need the bot token — router for Socket Mode connection metadata, containers for sending replies. This is the standard Slack pattern.

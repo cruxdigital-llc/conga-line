@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +38,7 @@ func logsRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	script := fmt.Sprintf("docker logs openclaw-%s --tail %d 2>&1", agentName, logLines)
+	script := fmt.Sprintf("docker logs conga-%s --tail %d 2>&1", agentName, logLines)
 
 	spin := ui.NewSpinner("Fetching logs...")
 	result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, script, 30*time.Second)

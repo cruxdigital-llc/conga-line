@@ -1,4 +1,4 @@
-# Tasks: CruxClaw CLI Implementation
+# Tasks: Conga Line CLI Implementation
 
 ## Phase 1: Terraform — Infrastructure Discovery Layer
 - [x] **Task 1.1**: Create `terraform/ssm-parameters.tf` — user_config + user_iam_mapping resources
@@ -54,4 +54,4 @@
 ## Phase 11: Build + Smoke Test
 - [x] **Task 11.1**: `go build` — compilation successful
 - [x] **Task 11.2**: `go vet` + `gofmt` — all clean
-- [x] **Task 11.3**: `./cruxclaw version` — binary works, all 13 commands registered
+- [x] **Task 11.3**: `./conga version` — binary works, all 13 commands registered

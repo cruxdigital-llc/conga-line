@@ -25,7 +25,7 @@
 - `terraform/nat.tf` — fck-nat module (t4g.nano, ASG-backed)
 - `terraform/security.tf` — zero-ingress SG + NACLs
 - `terraform/flow-logs.tf` — VPC Flow Logs to CloudWatch
-- `terraform/outputs.tf` — added vpc_id, private_subnet_id, openclaw_host_sg_id
+- `terraform/outputs.tf` — added vpc_id, private_subnet_id, conga_host_sg_id
 - `terraform/providers.tf` — upgraded AWS provider ~> 5.0 → ~> 6.0
 
 ## Implementation Notes

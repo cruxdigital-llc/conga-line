@@ -1,6 +1,6 @@
 # --- Instance Role ---
 
-resource "aws_iam_role" "openclaw_host" {
+resource "aws_iam_role" "conga_host" {
   name_prefix = "${var.project_name}-host-"
 
   assume_role_policy = jsonencode({
@@ -19,15 +19,15 @@ resource "aws_iam_role" "openclaw_host" {
   }
 }
 
-resource "aws_iam_instance_profile" "openclaw_host" {
+resource "aws_iam_instance_profile" "conga_host" {
   name_prefix = "${var.project_name}-host-"
-  role        = aws_iam_role.openclaw_host.name
+  role        = aws_iam_role.conga_host.name
 }
 
 # --- SSM Access (AWS managed policy) ---
 
 resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.openclaw_host.name
+  role       = aws_iam_role.conga_host.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
@@ -35,7 +35,7 @@ resource "aws_iam_role_policy_attachment" "ssm" {
 
 resource "aws_iam_role_policy" "secrets_read" {
   name_prefix = "${var.project_name}-secrets-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -46,8 +46,8 @@ resource "aws_iam_role_policy" "secrets_read" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
-          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/shared/*",
-          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/agents/*"
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/shared/*",
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/agents/*"
         ]
       },
       {
@@ -62,7 +62,7 @@ resource "aws_iam_role_policy" "secrets_read" {
           "ssm:GetParametersByPath"
         ]
         Resource = [
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/openclaw/*"
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/conga/*"
         ]
       },
       {
@@ -79,7 +79,7 @@ resource "aws_iam_role_policy" "secrets_read" {
           "ecr:BatchGetImage",
           "ecr:BatchCheckLayerAvailability"
         ]
-        Resource = aws_ecr_repository.openclaw.arn
+        Resource = aws_ecr_repository.conga.arn
       },
       {
         Effect   = "Allow"
@@ -87,7 +87,7 @@ resource "aws_iam_role_policy" "secrets_read" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "cloudwatch:namespace" = "OpenClaw"
+            "cloudwatch:namespace" = "CongaLine"
           }
         }
       },
@@ -106,7 +106,7 @@ resource "aws_iam_role_policy" "secrets_read" {
 
 resource "aws_iam_role_policy" "s3_read" {
   name_prefix = "${var.project_name}-s3-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -115,10 +115,10 @@ resource "aws_iam_role_policy" "s3_read" {
         Effect = "Allow"
         Action = ["s3:GetObject"]
         Resource = [
-          "arn:aws:s3:::${local.state_bucket}/openclaw/router/*",
-          "arn:aws:s3:::${local.state_bucket}/openclaw/bootstrap/*",
-          "arn:aws:s3:::${local.state_bucket}/openclaw/behavior/*",
-          "arn:aws:s3:::${local.state_bucket}/openclaw/scripts/*"
+          "arn:aws:s3:::${local.state_bucket}/conga/router/*",
+          "arn:aws:s3:::${local.state_bucket}/conga/bootstrap/*",
+          "arn:aws:s3:::${local.state_bucket}/conga/behavior/*",
+          "arn:aws:s3:::${local.state_bucket}/conga/scripts/*"
         ]
       },
       {
@@ -127,7 +127,7 @@ resource "aws_iam_role_policy" "s3_read" {
         Resource = ["arn:aws:s3:::${local.state_bucket}"]
         Condition = {
           StringLike = {
-            "s3:prefix" = ["openclaw/*"]
+            "s3:prefix" = ["conga/*"]
           }
         }
       }
@@ -148,7 +148,7 @@ resource "aws_cloudwatch_log_group" "gateway" {
 
 resource "aws_iam_role_policy" "cloudwatch_logs" {
   name_prefix = "${var.project_name}-logs-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -174,7 +174,7 @@ resource "aws_iam_role_policy" "cloudwatch_logs" {
 
 resource "aws_iam_role_policy" "deny_dangerous" {
   name_prefix = "${var.project_name}-deny-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"

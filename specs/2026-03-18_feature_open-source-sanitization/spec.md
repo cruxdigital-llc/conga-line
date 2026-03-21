@@ -2,7 +2,7 @@
 
 ## Overview
 
-Remove all hardcoded environment-specific values from the repository so it can be published as an early-preview open-source project. Any developer should be able to clone, configure, and deploy their own OpenClaw instance.
+Remove all hardcoded environment-specific values from the repository so it can be published as an early-preview open-source project. Any developer should be able to clone, configure, and deploy their own Conga Line instance.
 
 ## 1. Terraform Genericization
 
@@ -37,14 +37,14 @@ terraform {
 # AWS Configuration
 aws_region   = "us-east-2"
 aws_profile  = "your-aws-profile"
-project_name = "openclaw"
+project_name = "conga"
 
-# OpenClaw Docker image — REQUIRED
+# Conga Line Docker image — REQUIRED
 # The upstream ghcr.io/openclaw/openclaw:latest does not work with Slack
 # without the fix from PR https://github.com/openclaw/openclaw/pull/49514.
 # Build your own image with that fix applied and push to ECR or another registry.
-# Example: openclaw_image = "123456789012.dkr.ecr.us-east-2.amazonaws.com/openclaw:latest"
-openclaw_image = ""
+# Example: conga_image = "123456789012.dkr.ecr.us-east-2.amazonaws.com/conga:latest"
+conga_image = ""
 
 # Monitoring
 config_check_interval_minutes = 5
@@ -59,17 +59,17 @@ users = {
 }
 ```
 
-### 1.2 New variable: `openclaw_image`
+### 1.2 New variable: `conga_image`
 
 **`terraform/variables.tf`** — add:
 ```hcl
-variable "openclaw_image" {
-  description = "Docker image for OpenClaw containers (ECR, GHCR, or Docker Hub). Required — upstream image needs PR #49514 fix."
+variable "conga_image" {
+  description = "Docker image for Conga Line containers (ECR, GHCR, or Docker Hub). Required — upstream image needs PR #49514 fix."
   type        = string
 
   validation {
-    condition     = length(var.openclaw_image) > 0
-    error_message = "openclaw_image must be set. See terraform.tfvars.example for details."
+    condition     = length(var.conga_image) > 0
+    error_message = "conga_image must be set. See terraform.tfvars.example for details."
   }
 }
 ```
@@ -111,11 +111,11 @@ locals {
     project_name                  = var.project_name
     users                         = var.users
     config_check_interval_minutes = var.config_check_interval_minutes
-    openclaw_image                = var.openclaw_image
+    conga_image                = var.conga_image
     state_bucket                  = local.state_bucket
     routing_json = jsonencode({
-      channels = { for uid, cfg in var.users : cfg.slack_channel => "http://openclaw-${uid}:18789/slack/events" }
-      members  = { for uid, cfg in var.users : uid => "http://openclaw-${uid}:18789/slack/events" }
+      channels = { for uid, cfg in var.users : cfg.slack_channel => "http://conga-${uid}:18789/slack/events" }
+      members  = { for uid, cfg in var.users : uid => "http://conga-${uid}:18789/slack/events" }
     })
   })
 }
@@ -134,37 +134,37 @@ user_data = base64encode(templatefile("${path.module}/user-data-shim.sh.tftpl", 
 **`terraform/user-data-shim.sh.tftpl`** — line 6:
 ```bash
 # Before:
-aws s3 cp s3://openclaw-terraform-state-123456789012/openclaw/bootstrap/bootstrap.sh /tmp/bootstrap.sh --region ${aws_region}
+aws s3 cp s3://conga-terraform-state-123456789012/conga/bootstrap/bootstrap.sh /tmp/bootstrap.sh --region ${aws_region}
 
 # After:
-aws s3 cp s3://${state_bucket}/openclaw/bootstrap/bootstrap.sh /tmp/bootstrap.sh --region ${aws_region}
+aws s3 cp s3://${state_bucket}/conga/bootstrap/bootstrap.sh /tmp/bootstrap.sh --region ${aws_region}
 ```
 
 **`terraform/user-data.sh.tftpl`** — three changes:
 
 1. **ECR image block** (lines 92-96) — replace with configurable image + auto-detect ECR:
 ```bash
-OPENCLAW_IMAGE="${openclaw_image}"
+CONGA_IMAGE="${conga_image}"
 
 # Auto-login to ECR if image is from ECR
-ECR_DOMAIN=$(echo "$OPENCLAW_IMAGE" | cut -d'/' -f1)
+ECR_DOMAIN=$(echo "$CONGA_IMAGE" | cut -d'/' -f1)
 if [[ "$ECR_DOMAIN" == *".dkr.ecr."* ]]; then
   aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_DOMAIN"
 fi
 
-docker pull "$OPENCLAW_IMAGE"
+docker pull "$CONGA_IMAGE"
 docker pull node:22-alpine
 ```
 
 2. **S3 router downloads** (lines 108-109):
 ```bash
 # Before:
-aws s3 cp s3://openclaw-terraform-state-123456789012/openclaw/router/package.json ...
-aws s3 cp s3://openclaw-terraform-state-123456789012/openclaw/router/src/index.js ...
+aws s3 cp s3://conga-terraform-state-123456789012/conga/router/package.json ...
+aws s3 cp s3://conga-terraform-state-123456789012/conga/router/src/index.js ...
 
 # After:
-aws s3 cp s3://${state_bucket}/openclaw/router/package.json ...
-aws s3 cp s3://${state_bucket}/openclaw/router/src/index.js ...
+aws s3 cp s3://${state_bucket}/conga/router/package.json ...
+aws s3 cp s3://${state_bucket}/conga/router/src/index.js ...
 ```
 
 3. **Region fallback** (line 351):
@@ -181,8 +181,8 @@ REGION=$${REGION:-${aws_region}}
 **`terraform/bootstrap.sh`** — replace hardcoded config block (lines 4-8):
 ```bash
 # Configuration — override via environment variables
-PROJECT_NAME="${1:-openclaw}"
-AWS_PROFILE="${AWS_PROFILE:-openclaw}"
+PROJECT_NAME="${1:-conga}"
+AWS_PROFILE="${AWS_PROFILE:-conga}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 
 # ... (existing prerequisite checks) ...
@@ -206,33 +206,33 @@ info "Next step: cp backend.tf.example backend.tf && edit values, then terraform
 
 **`terraform/populate-secrets.sh`** — replace hardcoded lines 4-5:
 ```bash
-AWS_PROFILE="${AWS_PROFILE:-openclaw}"
+AWS_PROFILE="${AWS_PROFILE:-conga}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 ```
 
 ## 2. CLI Genericization
 
-### 2.1 Interactive first-run setup (`cruxclaw init`)
+### 2.1 Interactive first-run setup (`conga init`)
 
-New command: `cruxclaw init`. Triggered automatically when required config is missing. Prompts for:
+New command: `conga init`. Triggered automatically when required config is missing. Prompts for:
 
-1. **AWS Region** — `"AWS region for your OpenClaw deployment"` (default: `us-east-2`)
+1. **AWS Region** — `"AWS region for your Conga Line deployment"` (default: `us-east-2`)
 2. **SSO Start URL** — `"AWS SSO start URL (e.g., https://your-org.awsapps.com/start/)"` (no default)
 3. **SSO Account ID** — `"AWS account ID"` (no default)
-4. **SSO Role Name** — `"SSO role/permission set name"` (default: `OpenClawUser`)
-5. **OpenClaw Image** — `"Docker image for OpenClaw (e.g., 123456789012.dkr.ecr.us-east-2.amazonaws.com/openclaw:latest)"` (no default)
+4. **SSO Role Name** — `"SSO role/permission set name"` (default: `Conga LineUser`)
+5. **Conga Line Image** — `"Docker image for Conga Line (e.g., 123456789012.dkr.ecr.us-east-2.amazonaws.com/conga:latest)"` (no default)
 
-Writes `~/.cruxclaw/config.toml`:
+Writes `~/.conga/config.toml`:
 ```toml
 region = "us-east-2"
 sso_start_url = "https://your-org.awsapps.com/start/"
 sso_account_id = "123456789012"
-sso_role_name = "OpenClawUser"
-instance_tag = "openclaw-host"
-openclaw_image = "123456789012.dkr.ecr.us-east-2.amazonaws.com/openclaw:latest"
+sso_role_name = "Conga LineUser"
+instance_tag = "conga-host"
+conga_image = "123456789012.dkr.ecr.us-east-2.amazonaws.com/conga:latest"
 ```
 
-**Trigger logic**: In `PersistentPreRun`, after `config.Load()`, check if required fields are empty. If so, print "First-time setup required. Running `cruxclaw init`..." and invoke the setup flow. Skip for `cruxclaw init` itself, `cruxclaw --help`, and `cruxclaw auth login`.
+**Trigger logic**: In `PersistentPreRun`, after `config.Load()`, check if required fields are empty. If so, print "First-time setup required. Running `conga init`..." and invoke the setup flow. Skip for `conga init` itself, `conga --help`, and `conga auth login`.
 
 ### 2.2 Config struct changes
 
@@ -245,17 +245,17 @@ type Config struct {
     SSOAccountID  string `toml:"sso_account_id"`
     SSORoleName   string `toml:"sso_role_name"`
     InstanceTag   string `toml:"instance_tag"`
-    OpenClawImage string `toml:"openclaw_image"`
+    Conga LineImage string `toml:"conga_image"`
 }
 
 func Defaults() *Config {
     return &Config{
-        InstanceTag: "openclaw-host",
+        InstanceTag: "conga-host",
     }
 }
 ```
 
-All other fields default to empty string. Env var overrides remain (add `CRUXCLAW_OPENCLAW_IMAGE`).
+All other fields default to empty string. Env var overrides remain (add `CONGA_CONGA_IMAGE`).
 
 Add helper:
 ```go
@@ -270,8 +270,8 @@ func (c *Config) RequiredFieldsMissing() []string {
     if c.SSOAccountID == "" {
         missing = append(missing, "sso_account_id")
     }
-    if c.OpenClawImage == "" {
-        missing = append(missing, "openclaw_image")
+    if c.Conga LineImage == "" {
+        missing = append(missing, "conga_image")
     }
     return missing
 }
@@ -282,7 +282,7 @@ func (c *Config) RequiredFieldsMissing() []string {
 ```go
 var initCmd = &cobra.Command{
     Use:   "init",
-    Short: "Configure CruxClaw for first use",
+    Short: "Configure Conga Line for first use",
     RunE:  runInit,
 }
 ```
@@ -290,9 +290,9 @@ var initCmd = &cobra.Command{
 `runInit` function:
 1. Load existing config (may be partial)
 2. For each required field, if empty, prompt using `ui.TextPrompt` with a descriptive label and optional default
-3. Write `~/.cruxclaw/config.toml` using `toml.Encode`
+3. Write `~/.conga/config.toml` using `toml.Encode`
 4. Print summary of what was written
-5. Suggest `cruxclaw auth login` as the next step
+5. Suggest `conga auth login` as the next step
 
 ### 2.4 Auto-trigger in PersistentPreRun
 
@@ -326,7 +326,7 @@ if cmdName != "init" && cmdName != "help" && cmdName != "completion" {
 ... $ENV_FLAGS ghcr.io/openclaw/openclaw:latest
 
 # After:
-... $ENV_FLAGS {{.OpenClawImage}}
+... $ENV_FLAGS {{.Conga LineImage}}
 ```
 
 **`cli/scripts/refresh-user.sh.tmpl`** — line 43:
@@ -335,7 +335,7 @@ if cmdName != "init" && cmdName != "help" && cmdName != "completion" {
 ... $ENV_FLAGS ghcr.io/openclaw/openclaw:latest
 
 # After:
-... $ENV_FLAGS {{.OpenClawImage}}
+... $ENV_FLAGS {{.Conga LineImage}}
 ```
 
 **`cli/cmd/admin.go`** — template execution struct (line 149):
@@ -345,13 +345,13 @@ err = tmpl.Execute(&buf, struct {
     SlackChannel  string
     AWSRegion     string
     GatewayPort   int
-    OpenClawImage string
+    Conga LineImage string
 }{
     MemberID:      memberID,
     SlackChannel:  slackChannel,
     AWSRegion:     cfg.Region,
     GatewayPort:   gatewayPort,
-    OpenClawImage: cfg.OpenClawImage,
+    Conga LineImage: cfg.Conga LineImage,
 })
 ```
 
@@ -360,11 +360,11 @@ err = tmpl.Execute(&buf, struct {
 err = tmpl.Execute(&buf, struct {
     MemberID      string
     AWSRegion     string
-    OpenClawImage string
+    Conga LineImage string
 }{
     MemberID:      memberID,
     AWSRegion:     cfg.Region,
-    OpenClawImage: cfg.OpenClawImage,
+    Conga LineImage: cfg.Conga LineImage,
 })
 ```
 
@@ -375,7 +375,7 @@ err = tmpl.Execute(&buf, struct {
 - Line 76: `CEXAMPLE01` → `CXXXXXXXXXX`
 
 **`cli/cmd/auth.go`**:
-- Line 33: `"cruxclaw"` → use the profile flag or a generic name. Actually, this is fine — `cruxclaw` is a reasonable generic profile suggestion.
+- Line 33: `"conga"` → use the profile flag or a generic name. Actually, this is fine — `conga` is a reasonable generic profile suggestion.
 - Lines 38-41: These print `cfg.SSOStartURL`, `cfg.Region`, etc. — these will now come from config, so they'll show the user's values. If empty (shouldn't happen if init ran), they'll show empty. This is fine.
 
 ## 3. Documentation
@@ -394,11 +394,11 @@ err = tmpl.Execute(&buf, struct {
    d. Copy `terraform.tfvars.example` → `terraform.tfvars`, fill in values
    e. Build and push Docker image (with PR #49514 fix note)
    f. `terraform init && terraform plan && terraform apply`
-   g. Build CLI: `cd cli && go build -o cruxclaw .`
-   h. `cruxclaw init` (configures CLI)
-   i. `cruxclaw auth login` → `aws sso login`
-   j. `cruxclaw secrets set anthropic-api-key`
-   k. `cruxclaw connect`
+   g. Build CLI: `cd cli && go build -o conga .`
+   h. `conga init` (configures CLI)
+   i. `conga auth login` → `aws sso login`
+   j. `conga secrets set anthropic-api-key`
+   k. `conga connect`
 5. **CLI Commands** — Table from current cli/README.md
 6. **Onboarding a New User** — Admin + user steps
 7. **Docker Image** — Section explaining the Slack bugfix requirement, linking to PR #49514, with instructions to build a patched image
@@ -413,7 +413,7 @@ Replace all real values with generic patterns:
 - `UEXAMPLE01` → `<member_id>`
 - `CEXAMPLE01` → `<channel_id>`
 - `exampleuser` → `<username>`
-- `openclaw-myagent` → `openclaw-<member_id>`
+- `conga-myagent` → `conga-<member_id>`
 - SSO URL → `<sso_start_url>`
 - S3 bucket → `<project_name>-terraform-state-<account_id>`
 - DynamoDB → `<project_name>-terraform-locks`
@@ -422,33 +422,33 @@ Replace all real values with generic patterns:
 
 Replace:
 - `CEXAMPLE01` → `<channel_id>`
-- `openclaw-terraform-state-123456789012` → `<project_name>-terraform-state-<account_id>`
-- `openclaw-terraform-locks` → `<project_name>-terraform-locks`
+- `conga-terraform-state-123456789012` → `<project_name>-terraform-state-<account_id>`
+- `conga-terraform-locks` → `<project_name>-terraform-locks`
 - `vpc-067ea4b769f7e994a` → `<vpc_id>`
 - `subnet-06119ed58d773bd9d` → `<subnet_id>`
 - `sg-0f0c53457d0220f7c` → `<sg_id>`
 - "Aaron" → "first user" or generic language
-- `openclaw-myagent` → `openclaw-<member_id>`
+- `conga-myagent` → `conga-<member_id>`
 
 ## 4. Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|
-| `openclaw_image` empty in Terraform | `terraform plan` fails with clear validation error |
+| `conga_image` empty in Terraform | `terraform plan` fails with clear validation error |
 | `users = {}` in Terraform | Plan succeeds — creates infrastructure with no user containers |
-| `~/.cruxclaw/config.toml` doesn't exist | `cruxclaw init` auto-triggers on first command, creates the file |
-| `config.toml` partially filled | `cruxclaw init` prompts only for missing fields (skips already-configured ones) |
+| `~/.conga/config.toml` doesn't exist | `conga init` auto-triggers on first command, creates the file |
+| `config.toml` partially filled | `conga init` prompts only for missing fields (skips already-configured ones) |
 | ECR image in `user-data.sh.tftpl` | Auto-detects `.dkr.ecr.` in domain, runs `ecr get-login-password` |
 | Non-ECR image (GHCR, Docker Hub) | Skips ECR login, just `docker pull` |
-| `bootstrap.sh` run without project name arg | Defaults to `openclaw` |
-| User runs `cruxclaw init` again | Overwrites config.toml with new values (re-prompts for all fields) |
+| `bootstrap.sh` run without project name arg | Defaults to `conga` |
+| User runs `conga init` again | Overwrites config.toml with new values (re-prompts for all fields) |
 
 ## 5. Files Changed
 
 | # | File | Change Type |
 |---|------|-------------|
 | 1 | `.gitignore` | Edit — add 2 entries |
-| 2 | `terraform/variables.tf` | Edit — empty users default, add `openclaw_image` |
+| 2 | `terraform/variables.tf` | Edit — empty users default, add `conga_image` |
 | 3 | `terraform/data.tf` | Edit — add `local.lock_table` |
 | 4 | `terraform/outputs.tf` | Edit — use locals |
 | 5 | `terraform/backend.tf.example` | New file |
@@ -460,12 +460,12 @@ Replace:
 | 11 | `terraform/bootstrap.sh` | Edit — dynamic derivation |
 | 12 | `terraform/populate-secrets.sh` | Edit — env var defaults |
 | 13 | `cli/internal/config/config.go` | Edit — empty defaults, add fields, add validation |
-| 14 | `cli/cmd/init.go` | New file — `cruxclaw init` command |
+| 14 | `cli/cmd/init.go` | New file — `conga init` command |
 | 15 | `cli/cmd/root.go` | Edit — auto-trigger init, scrub example IDs |
-| 16 | `cli/cmd/admin.go` | Edit — pass `OpenClawImage` to template |
-| 17 | `cli/cmd/refresh.go` | Edit — pass `OpenClawImage` to template |
-| 18 | `cli/scripts/add-user.sh.tmpl` | Edit — use `{{.OpenClawImage}}` |
-| 19 | `cli/scripts/refresh-user.sh.tmpl` | Edit — use `{{.OpenClawImage}}` |
+| 16 | `cli/cmd/admin.go` | Edit — pass `Conga LineImage` to template |
+| 17 | `cli/cmd/refresh.go` | Edit — pass `Conga LineImage` to template |
+| 18 | `cli/scripts/add-user.sh.tmpl` | Edit — use `{{.Conga LineImage}}` |
+| 19 | `cli/scripts/refresh-user.sh.tmpl` | Edit — use `{{.Conga LineImage}}` |
 | 20 | `README.md` | Rewrite — consolidated project README |
 | 21 | `cli/README.md` | Delete — consolidated into root |
 | 22 | `CLAUDE.md` | Edit — replace all real values |

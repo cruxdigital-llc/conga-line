@@ -2,7 +2,7 @@
 
 ## Overview
 
-Harden the `cruxclaw` CLI by fixing silent failures, tightening input validation, refactoring for testability, and establishing baseline test coverage. No new commands or features — this is a reliability and maintainability pass on the existing 13-command CLI.
+Harden the `conga` CLI by fixing silent failures, tightening input validation, refactoring for testability, and establishing baseline test coverage. No new commands or features — this is a reliability and maintainability pass on the existing 13-command CLI.
 
 ---
 
@@ -43,25 +43,25 @@ Same fix at line 308 for the team agent variant.
 ```go
 var cleanupErrs []string
 
-if err := awsutil.DeleteParameter(ctx, clients.SSM, fmt.Sprintf("/openclaw/agents/%s", agentName)); err != nil {
+if err := awsutil.DeleteParameter(ctx, clients.SSM, fmt.Sprintf("/conga/agents/%s", agentName)); err != nil {
     cleanupErrs = append(cleanupErrs, fmt.Sprintf("SSM parameter: %v", err))
 }
 
 if adminDeleteSecrets {
-    secretPrefix := fmt.Sprintf("openclaw/agents/%s/", agentName)
+    secretPrefix := fmt.Sprintf("conga/agents/%s/", agentName)
     secrets, err := awsutil.ListSecrets(ctx, clients.SecretsManager, secretPrefix)
     if err != nil {
         cleanupErrs = append(cleanupErrs, fmt.Sprintf("list secrets: %v", err))
     } else {
         for _, s := range secrets {
-            if err := awsutil.DeleteSecret(ctx, clients.SecretsManager, fmt.Sprintf("openclaw/agents/%s/%s", agentName, s.Name)); err != nil {
+            if err := awsutil.DeleteSecret(ctx, clients.SecretsManager, fmt.Sprintf("conga/agents/%s/%s", agentName, s.Name)); err != nil {
                 cleanupErrs = append(cleanupErrs, fmt.Sprintf("delete secret %s: %v", s.Name, err))
             }
         }
     }
 }
 
-if _, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, "/opt/openclaw/bin/update-dashboard.sh", 30*time.Second); err != nil {
+if _, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, "/opt/conga/bin/update-dashboard.sh", 30*time.Second); err != nil {
     cleanupErrs = append(cleanupErrs, fmt.Sprintf("dashboard update: %v", err))
 }
 
@@ -196,7 +196,7 @@ func pollDevicePairing(ctx context.Context, instanceID, agentName string, verbos
             return
         }
 
-        listScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices list --json 2>&1", agentName)
+        listScript := fmt.Sprintf("docker exec conga-%s npx openclaw devices list --json 2>&1", agentName)
         result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, listScript, 30*time.Second)
         if err != nil {
             if ctx.Err() != nil {
@@ -212,7 +212,7 @@ func pollDevicePairing(ctx context.Context, instanceID, agentName string, verbos
             continue
         }
 
-        approveScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices approve --latest 2>&1", agentName)
+        approveScript := fmt.Sprintf("docker exec conga-%s npx openclaw devices approve --latest 2>&1", agentName)
         result, err = awsutil.RunCommand(ctx, clients.SSM, instanceID, approveScript, 30*time.Second)
         if err != nil {
             if verbose {
@@ -263,16 +263,16 @@ if len(args) > 0 {
 
 **Current:**
 ```go
-fmt.Printf("  1. cruxclaw secrets set anthropic-api-key\n")
-fmt.Printf("  2. cruxclaw refresh\n")
-fmt.Printf("  3. cruxclaw connect\n")
+fmt.Printf("  1. conga secrets set anthropic-api-key\n")
+fmt.Printf("  2. conga refresh\n")
+fmt.Printf("  3. conga connect\n")
 ```
 
 **Fixed:**
 ```go
-fmt.Printf("  1. cruxclaw secrets set anthropic-api-key --agent %s\n", agentName)
-fmt.Printf("  2. cruxclaw refresh --agent %s\n", agentName)
-fmt.Printf("  3. cruxclaw connect --agent %s\n", agentName)
+fmt.Printf("  1. conga secrets set anthropic-api-key --agent %s\n", agentName)
+fmt.Printf("  2. conga refresh --agent %s\n", agentName)
+fmt.Printf("  3. conga connect --agent %s\n", agentName)
 ```
 
 ### 5c. Human-Readable Uptime in `status`
@@ -358,7 +358,7 @@ import (
     "context"
     "time"
 
-    awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
+    awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
 )
 
 // SSMExecutor executes scripts on a remote EC2 instance via AWS SSM.
@@ -388,7 +388,7 @@ func (e *SSMExecutor) InstanceID() string {
 
 ```go
 // LocalExecutor executes scripts directly on the local machine.
-// This would be the implementation for `cruxclaw --local` mode.
+// This would be the implementation for `conga --local` mode.
 type LocalExecutor struct{}
 
 func (e *LocalExecutor) RunScript(ctx context.Context, script string, timeout time.Duration) (*Result, error) {
@@ -509,8 +509,8 @@ package cmd
 import (
     "time"
 
-    awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-    "github.com/cruxdigital-llc/openclaw-template/cli/internal/executor"
+    awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+    "github.com/cruxdigital-llc/conga-line/cli/internal/executor"
 )
 
 type CLIContext struct {

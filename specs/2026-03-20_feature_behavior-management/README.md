@@ -15,7 +15,7 @@
 - **Success criteria defined**: See `requirements.md`
 - **Key design decisions**:
   - Composition: concatenation of base + type-specific files (not merge)
-  - Directory: `behavior/` (not "behavioral" — our term, not OpenClaw's)
+  - Directory: `behavior/` (not "behavioral" — our term, not Conga Line's)
   - CLI command: `admin refresh-all` (generic agent restart, not behavior-specific)
   - Runtime handles sync: systemd ExecStartPre pulls latest from S3 on every container start
   - MEMORY.md is never touched by the deployment system
@@ -51,7 +51,7 @@
   - `cli/scripts/refresh-all.sh.tmpl`
   - `cli/cmd/admin_refresh_all.go`
 - **Files modified**:
-  - `terraform/iam.tf` — added `openclaw/behavior/*` to S3 read + `s3:ListBucket`
+  - `terraform/iam.tf` — added `conga/behavior/*` to S3 read + `s3:ListBucket`
   - `terraform/ssm-parameters.tf` — added `state-bucket` SSM parameter
   - `terraform/user-data.sh.tftpl` — S3 sync, helper install, ExecStartPre, setup_agent_common signature
   - `cli/scripts/add-user.sh.tmpl` — behavior sync + deploy

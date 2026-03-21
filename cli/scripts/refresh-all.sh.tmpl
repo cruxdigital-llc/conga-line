@@ -3,32 +3,32 @@ set -uo pipefail
 # Run the boot-time image refresh script (installed by bootstrap) to pull latest
 # image from SSM and update all agent systemd units. This is the single source of
 # truth for image refresh logic — see terraform/user-data.sh.tftpl.
-if [ -x /opt/openclaw/bin/refresh-image.sh ]; then
-  /opt/openclaw/bin/refresh-image.sh
+if [ -x /opt/conga/bin/refresh-image.sh ]; then
+  /opt/conga/bin/refresh-image.sh
 else
-  echo "WARNING: /opt/openclaw/bin/refresh-image.sh not found — image refresh skipped."
+  echo "WARNING: /opt/conga/bin/refresh-image.sh not found — image refresh skipped."
   echo "This script is installed during bootstrap. Re-cycle the host to restore it."
 fi
 
 # Patch existing units: remove stale env file refs, add router reconnect
-for UNIT_FILE in /etc/systemd/system/openclaw-*.service; do
+for UNIT_FILE in /etc/systemd/system/conga-*.service; do
   [ -f "$UNIT_FILE" ] || continue
   UNIT_NAME=$(basename "$UNIT_FILE" .service)
   case "$UNIT_NAME" in
-    openclaw-router|openclaw-image-refresh|openclaw-config-check|openclaw-session-metrics) continue ;;
+    conga-router|conga-image-refresh|conga-config-check|conga-session-metrics) continue ;;
   esac
-  AGENT=$(echo "$UNIT_NAME" | sed 's/^openclaw-//')
+  AGENT=$(echo "$UNIT_NAME" | sed 's/^conga-//')
 
   # Remove stale EnvironmentFile for image env if present
-  sed -i '/openclaw-image\.env/d' "$UNIT_FILE"
+  sed -i '/conga-image\.env/d' "$UNIT_FILE"
 
-  # Remove stale ${OPENCLAW_IMAGE} references (replace with literal from current unit)
+  # Remove stale ${CONGA_IMAGE} references (replace with literal from current unit)
   CURRENT_IMG=$(grep '^ExecStart=' "$UNIT_FILE" | grep -oE '[^ ]+$')
-  sed -i "s|\${OPENCLAW_IMAGE}|$CURRENT_IMG|g" "$UNIT_FILE"
+  sed -i "s|\${CONGA_IMAGE}|$CURRENT_IMG|g" "$UNIT_FILE"
 
   # Add ExecStartPost for router network if missing
   if ! grep -q 'ExecStartPost' "$UNIT_FILE"; then
-    sed -i "/ExecStop=/i ExecStartPost=-/usr/bin/docker network connect openclaw-$AGENT openclaw-router" "$UNIT_FILE"
+    sed -i "/ExecStop=/i ExecStartPost=-/usr/bin/docker network connect conga-$AGENT conga-router" "$UNIT_FILE"
   fi
 done
 systemctl daemon-reload
@@ -36,18 +36,18 @@ systemctl daemon-reload
 FAILED=""
 
 {{range .Agents}}
-echo "Restarting openclaw-{{.Name}}..."
-if systemctl restart openclaw-{{.Name}}; then
+echo "Restarting conga-{{.Name}}..."
+if systemctl restart conga-{{.Name}}; then
   # Wait for container to be running (up to 30s)
   for i in $(seq 1 15); do
-    if docker inspect -f '{{`{{.State.Running}}`}}' openclaw-{{.Name}} 2>/dev/null | grep -q true; then
+    if docker inspect -f '{{`{{.State.Running}}`}}' conga-{{.Name}} 2>/dev/null | grep -q true; then
       break
     fi
     sleep 2
   done
-  docker network connect "openclaw-{{.Name}}" openclaw-router 2>/dev/null || true
+  docker network connect "conga-{{.Name}}" conga-router 2>/dev/null || true
 else
-  echo "FAILED: openclaw-{{.Name}}"
+  echo "FAILED: conga-{{.Name}}"
   FAILED="$FAILED {{.Name}}"
 fi
 {{end}}

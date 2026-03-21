@@ -33,7 +33,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - **Milestone**: Aaron's local gateway replaced by AWS deployment
 - [x] **Epics 5+6**: Multi-user onboarding + Slack router — complete
 
-### 2. CruxClaw CLI — ✅ Complete
+### 2. Conga Line CLI — ✅ Complete
 - [x] All 11 phases implemented and verified. See `specs/2026-03-18_feature_cruxclaw-cli/`
 
 ### 3. SSM-Driven Bootstrap Discovery — Specified, Ready for Implementation
@@ -43,7 +43,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] Spec defined: `specs/2026-03-19_feature_ssm-driven-bootstrap-discovery/spec.md`
 - [x] Persona review passed (Architect + QA)
 - [x] Standards gate passed (1 warning: IAM widening, accepted)
-- [ ] Step 1: Unified SSM namespace (`/openclaw/agents/`) + config params
+- [ ] Step 1: Unified SSM namespace (`/conga/agents/`) + config params
 - [ ] Step 2: Widen IAM secrets policy for dynamic agents
 - [ ] Step 3: Rewrite bootstrap for SSM discovery + update router.tf + CLI changes
 - [ ] Step 4: Verify CLI compatibility + migration
@@ -55,7 +55,10 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 5. Behavior Management — Verified Complete
 *See `specs/2026-03-20_feature_behavior-management/` for full trace*
 
-### 6. Backlog / Upcoming
+### 6. Conga Line Rename — Verified Complete
+*See `specs/2026-03-20_feature_conga-line-rename/` for full trace*
+
+### 7. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 
@@ -68,10 +71,11 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-03-21: Conga Line Rename — comprehensive rebrand from "OpenClaw"/"CruxClaw" to "Conga Line". CLI binary `cruxclaw` → `conga`. Go module path, Terraform resources, SSM/Secrets/S3 paths (`/conga/`), Docker/systemd naming (`conga-`), host paths (`/opt/conga/`), CloudWatch namespace (`CongaLine`), GoReleaser, 80+ files across all layers. Upstream Open Claw references preserved. See `specs/2026-03-20_feature_conga-line-rename/`.
 - 2026-03-20: Behavior Management — version-controlled behavior markdown (SOUL.md, AGENTS.md, USER.md) with base + type-specific composition, S3 deployment pipeline, systemd ExecStartPre auto-sync, `admin refresh-all` CLI command. Supports user vs team agent behavioral differentiation and per-agent overrides. See `specs/2026-03-20_feature_behavior-management/`.
 - 2026-03-19: CLI Hardening — fixed 3 silent failure bugs, tightened Slack ID validation, added --timeout flag, AWS service interfaces for testability, HostExecutor interface for future local mode, 28 unit tests (7 test files), split admin.go into 4 files, human-readable uptime display, CI test/coverage steps. See `specs/2026-03-19_feature_cli-hardening/`.
-- 2026-03-18: Open-source sanitization — removed all hardcoded environment-specific values (account IDs, Slack IDs, SSO URLs, usernames). Gitignored `backend.tf` + `terraform.tfvars` with `.example` files. Added `openclaw_image` variable. New `cruxclaw init` command for first-run config. Consolidated README. See `specs/2026-03-18_feature_open-source-sanitization/`.
-- 2026-03-18: CruxClaw CLI — implemented. Go CLI with 13 commands (auth, secrets, connect, refresh, status, logs, admin). Terraform SSM parameters for discovery. GoReleaser + GitHub Actions for releases. See `specs/2026-03-18_feature_cruxclaw-cli/`.
+- 2026-03-18: Open-source sanitization — removed all hardcoded environment-specific values (account IDs, Slack IDs, SSO URLs, usernames). Gitignored `backend.tf` + `terraform.tfvars` with `.example` files. Added `openclaw_image` variable. New `conga init` command for first-run config. Consolidated README. See `specs/2026-03-18_feature_open-source-sanitization/`.
+- 2026-03-18: Conga Line CLI — implemented. Go CLI with 13 commands (auth, secrets, connect, refresh, status, logs, admin). Terraform SSM parameters for discovery. GoReleaser + GitHub Actions for releases. See `specs/2026-03-18_feature_cruxclaw-cli/`.
 - 2026-03-17: SSM port forwarding for web UI — per-user `gateway_port`, localhost Docker binding, SSM output commands. Phase 2 (auth tokens, per-user SSM docs) pending.
 - 2026-03-17: Epics 5+6 complete — multi-user onboarding, Slack event router, patched OpenClaw image (HTTP webhook fix), ECR, persistent EBS volume
 - 2026-03-16: Epic 4 complete — config integrity timer, CloudWatch agent + alarm, SNS topic

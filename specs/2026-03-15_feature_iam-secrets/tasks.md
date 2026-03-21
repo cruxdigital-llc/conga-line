@@ -15,5 +15,5 @@
 ## Notes
 - AWS provider v6.36.0 — `aws_iam_role_policy_attachment` uses `id` field (v6 behavior)
 - KMS key ID: 08d82a78-8b67-4c1f-8135-7204ccfe34a0
-- Instance profile: openclaw-host-2026031605312486820000000b
+- Instance profile: conga-host-2026031605312486820000000b
 - Secret values show as `(sensitive value)` in plan — Terraform correctly masks them

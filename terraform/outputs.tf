@@ -14,23 +14,23 @@ output "vpc_id" {
 }
 
 output "private_subnet_id" {
-  description = "Private subnet ID for OpenClaw host"
+  description = "Private subnet ID for Conga Line host"
   value       = aws_subnet.private.id
 }
 
-output "openclaw_host_sg_id" {
-  description = "Security group ID for OpenClaw host"
-  value       = aws_security_group.openclaw_host.id
+output "conga_host_sg_id" {
+  description = "Security group ID for Conga Line host"
+  value       = aws_security_group.conga_host.id
 }
 
 output "instance_profile_arn" {
-  description = "IAM instance profile ARN for OpenClaw host"
-  value       = aws_iam_instance_profile.openclaw_host.arn
+  description = "IAM instance profile ARN for Conga Line host"
+  value       = aws_iam_instance_profile.conga_host.arn
 }
 
 output "instance_profile_name" {
-  description = "IAM instance profile name for OpenClaw host"
-  value       = aws_iam_instance_profile.openclaw_host.name
+  description = "IAM instance profile name for Conga Line host"
+  value       = aws_iam_instance_profile.conga_host.name
 }
 
 output "kms_key_arn" {
@@ -44,13 +44,13 @@ output "gateway_log_group" {
 }
 
 output "instance_id" {
-  description = "OpenClaw host EC2 instance ID"
-  value       = aws_instance.openclaw.id
+  description = "Conga Line host EC2 instance ID"
+  value       = aws_instance.conga.id
 }
 
 output "ssm_connect_command" {
   description = "Command to connect via SSM"
-  value       = "aws ssm start-session --target ${aws_instance.openclaw.id} --region ${var.aws_region}"
+  value       = "aws ssm start-session --target ${aws_instance.conga.id} --region ${var.aws_region}"
 }
 
 output "sns_topic_arn" {
@@ -69,9 +69,9 @@ output "data_volume_id" {
 }
 
 output "ecr_repository_url" {
-  description = "ECR repository URL for custom OpenClaw image"
-  value       = aws_ecr_repository.openclaw.repository_url
+  description = "ECR repository URL for custom Conga Line image"
+  value       = aws_ecr_repository.conga.repository_url
 }
 
-# Port forwarding commands are available via `cruxclaw connect`,
+# Port forwarding commands are available via `conga connect`,
 # which reads agent config from SSM dynamically.

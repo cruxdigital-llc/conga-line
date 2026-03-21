@@ -3,10 +3,10 @@ CONTAINER_ID="{{.ContainerID}}"
 
 echo "=== Removing agent: $CONTAINER_ID ==="
 
-systemctl stop openclaw-$CONTAINER_ID || true
-systemctl disable openclaw-$CONTAINER_ID || true
-rm -f /etc/systemd/system/openclaw-$CONTAINER_ID.service
+systemctl stop conga-$CONTAINER_ID || true
+systemctl disable conga-$CONTAINER_ID || true
+rm -f /etc/systemd/system/conga-$CONTAINER_ID.service
 systemctl daemon-reload
-docker network rm openclaw-$CONTAINER_ID || true
+docker network rm conga-$CONTAINER_ID || true
 
 echo "=== Agent $CONTAINER_ID removed from instance ==="

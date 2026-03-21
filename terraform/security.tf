@@ -1,8 +1,8 @@
-# --- Security Group: OpenClaw Host (zero ingress) ---
+# --- Security Group: Conga Line Host (zero ingress) ---
 
-resource "aws_security_group" "openclaw_host" {
+resource "aws_security_group" "conga_host" {
   name_prefix = "${var.project_name}-host-"
-  description = "OpenClaw host - zero ingress, HTTPS + DNS egress only"
+  description = "Conga Line host - zero ingress, HTTPS + DNS egress only"
   vpc_id      = aws_vpc.main.id
 
   tags = {
@@ -15,7 +15,7 @@ resource "aws_security_group" "openclaw_host" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "https" {
-  security_group_id = aws_security_group.openclaw_host.id
+  security_group_id = aws_security_group.conga_host.id
   description       = "HTTPS egress (Slack WSS, LLM APIs, Docker Hub, SSM)"
   ip_protocol       = "tcp"
   from_port         = 443
@@ -24,7 +24,7 @@ resource "aws_vpc_security_group_egress_rule" "https" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "dns_tcp" {
-  security_group_id = aws_security_group.openclaw_host.id
+  security_group_id = aws_security_group.conga_host.id
   description       = "DNS TCP (VPC resolver)"
   ip_protocol       = "tcp"
   from_port         = 53
@@ -33,7 +33,7 @@ resource "aws_vpc_security_group_egress_rule" "dns_tcp" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "dns_udp" {
-  security_group_id = aws_security_group.openclaw_host.id
+  security_group_id = aws_security_group.conga_host.id
   description       = "DNS UDP (VPC resolver)"
   ip_protocol       = "udp"
   from_port         = 53

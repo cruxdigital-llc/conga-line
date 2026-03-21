@@ -7,17 +7,17 @@ variable "aws_region" {
 variable "aws_profile" {
   description = "AWS CLI profile name"
   type        = string
-  default     = "openclaw"
+  default     = "conga-line"
 }
 
 variable "project_name" {
   description = "Project name used for resource naming"
   type        = string
-  default     = "openclaw"
+  default     = "conga-line"
 }
 
 variable "instance_type" {
-  description = "EC2 instance type for the OpenClaw host. Size at ~2GB per agent (e.g. r6g.medium for 3 agents)"
+  description = "EC2 instance type for the Conga Line host. Size at ~2GB per agent (e.g. r6g.medium for 3 agents)"
   type        = string
   default     = "r6g.medium"
 }
@@ -35,7 +35,7 @@ variable "alert_email" {
 }
 
 variable "setup_manifest" {
-  description = "Describes the config values and shared secrets required for the deployment. The CLI reads this manifest during `cruxclaw admin setup` and prompts for missing values."
+  description = "Describes the config values and shared secrets required for the deployment. The CLI reads this manifest during `conga admin setup` and prompts for missing values."
   type = object({
     config   = map(string)
     defaults = optional(map(string), {})
@@ -43,21 +43,21 @@ variable "setup_manifest" {
   })
   default = {
     config = {
-      "openclaw-image" = "Docker image for OpenClaw (ECR, GHCR, or Docker Hub)"
+      "image" = "Docker image for OpenClaw (ECR, GHCR, or Docker Hub)"
     }
     defaults = {
-      "openclaw-image" = "ghcr.io/openclaw/openclaw:2026.3.11"
+      "image" = "ghcr.io/openclaw/openclaw:2026.3.11"
     }
     secrets = {
-      "openclaw/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
-      "openclaw/shared/slack-app-token"      = "Slack app token (xapp-)"
-      "openclaw/shared/slack-signing-secret" = "Slack signing secret"
-      "openclaw/shared/google-client-id"     = "Google OAuth client ID"
-      "openclaw/shared/google-client-secret" = "Google OAuth client secret"
+      "conga/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
+      "conga/shared/slack-app-token"      = "Slack app token (xapp-)"
+      "conga/shared/slack-signing-secret" = "Slack signing secret"
+      "conga/shared/google-client-id"     = "Google OAuth client ID"
+      "conga/shared/google-client-secret" = "Google OAuth client secret"
     }
   }
 }
 
-# Agents are managed entirely via the CLI (cruxclaw admin add-user / add-team).
-# Agent config lives in SSM Parameter Store at /openclaw/agents/<name>.
+# Agents are managed entirely via the CLI (conga admin add-user / add-team).
+# Agent config lives in SSM Parameter Store at /conga/agents/<name>.
 # The bootstrap script discovers agents from SSM at boot time.

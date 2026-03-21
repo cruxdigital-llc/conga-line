@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assistant) on hardened AWS. There is no application code — the deliverable is Terraform configuration + bootstrap scripts.
+This is an infrastructure-as-code project deploying Conga Line (autonomous AI assistant) on hardened AWS. There is no application code — the deliverable is Terraform configuration + bootstrap scripts.
 
 ## Key Context
 
@@ -10,7 +10,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 - **NAT**: fck-nat via `RaJiska/fck-nat/aws` module v1.4.0 (not AWS NAT Gateway)
 - **Terraform state**: S3 bucket `<project_name>-terraform-state-<account_id>` + DynamoDB `<project_name>-terraform-locks`
 - **Configuration**: Environment-specific values are in gitignored `terraform/terraform.tfvars` and `terraform/backend.tf`. See `.example` files.
-- **Separation of concerns**: Terraform manages infrastructure (VPC, EC2, IAM, router). CLI manages configuration (`admin setup`) and agents (`admin add-user/add-team`). Agents are discovered from SSM Parameter Store at `/openclaw/agents/<name>` at boot time.
+- **Separation of concerns**: Terraform manages infrastructure (VPC, EC2, IAM, router). CLI manages configuration (`admin setup`) and agents (`admin add-user/add-team`). Agents are discovered from SSM Parameter Store at `/conga/agents/<name>` at boot time.
 
 ## Working with Terraform
 
@@ -23,10 +23,10 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 
 ## Secrets
 
-- Secrets are in AWS Secrets Manager under `openclaw/shared/*` and `openclaw/agents/<name>/*`
-- Shared secrets created via `cruxclaw admin setup` (prompts interactively for missing values)
-- Per-agent secrets under `openclaw/agents/<name>/*` — users self-serve via `cruxclaw secrets set`
-- Shared secrets (Slack tokens, Google OAuth) under `openclaw/shared/*` — managed by CLI (`admin setup`)
+- Secrets are in AWS Secrets Manager under `conga/shared/*` and `conga/agents/<name>/*`
+- Shared secrets created via `conga admin setup` (prompts interactively for missing values)
+- Per-agent secrets under `conga/agents/<name>/*` — users self-serve via `conga secrets set`
+- Shared secrets (Slack tokens, Google OAuth) under `conga/shared/*` — managed by CLI (`admin setup`)
 - Never put real secret values in Terraform files or state
 - OpenClaw reads secrets from environment variables (highest priority over config file)
 - Do NOT use `${VAR}` substitution in `openclaw.json` — Issue #9627 causes secret values to be written to disk
@@ -34,10 +34,10 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 
 ## OpenClaw-Specific
 
-- Docker image: configured via `cruxclaw admin setup`, stored in SSM at `/openclaw/config/openclaw-image`
+- Docker image: configured via `conga admin setup`, stored in SSM at `/conga/config/image`
 - Container runs as `node` user (uid 1000 inside container)
-- Config at `/opt/openclaw/data/{agent_name}/openclaw.json` — no secrets in this file
-- Env file at `/opt/openclaw/config/{agent_name}.env` — secrets, mode 0400
+- Config at `/opt/conga/data/{agent_name}/openclaw.json` — no secrets in this file
+- Env file at `/opt/conga/config/{agent_name}.env` — secrets, mode 0400
 - OpenClaw hot-reload writes `.tmp` files next to `openclaw.json` — the config directory must be writable by the container user
 - Container needs `NODE_OPTIONS="--max-old-space-size=1536"` to avoid V8 heap OOM
 - Container memory limit: 2GB per agent (idle ~500MB, spikes to 1-1.5GB during heavy conversations; 1.5GB limit caused V8 OOM). Size the instance at ~2GB per agent plus ~500MB overhead
@@ -57,8 +57,8 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 - **Containers use HTTP webhook mode** (`mode: "http"`) — they never connect to Slack directly. The router forwards events with signed HTTP requests.
 - `signingSecret` and `botToken` MUST be in `openclaw.json` (env var override doesn't work for these)
 - `SLACK_APP_TOKEN` is held only by the router (in `router.env`) — containers do not need it
-- Router must be connected to each agent's Docker network (`docker network connect openclaw-<agent_name> openclaw-router`) so it can reach the container's webhook endpoint
-- Routing config at `/opt/openclaw/config/routing.json` maps channels and member IDs to container URLs
+- Router must be connected to each agent's Docker network (`docker network connect conga-<agent_name> conga-router`) so it can reach the container's webhook endpoint
+- Routing config at `/opt/conga/config/routing.json` maps channels and member IDs to container URLs
 - The deployed image is pinned to `ghcr.io/openclaw/openclaw:2026.3.11` (`29dc654`), the last stable release before a Slack socket mode regression in v2026.3.12 ([#45311](https://github.com/openclaw/openclaw/issues/45311))
 
 ## OpenClaw Behavioral Issues
@@ -75,7 +75,7 @@ This is an infrastructure-as-code project deploying OpenClaw (autonomous AI assi
 ## Debugging
 
 - Connect to instance: `aws ssm start-session --target <instance-id> --region <region> --profile <profile>`
-- Bootstrap log: `cat /var/log/openclaw-bootstrap.log`
-- Service status: `systemctl status openclaw-<agent_name>`
-- Container logs: `docker logs openclaw-<agent_name> --tail 50`
-- Journal: `journalctl -u openclaw-<agent_name> --no-pager -n 50`
+- Bootstrap log: `cat /var/log/conga-bootstrap.log`
+- Service status: `systemctl status conga-<agent_name>`
+- Container logs: `docker logs conga-<agent_name> --tail 50`
+- Journal: `journalctl -u conga-<agent_name> --no-pager -n 50`

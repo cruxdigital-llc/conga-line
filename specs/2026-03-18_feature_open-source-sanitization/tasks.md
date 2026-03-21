@@ -4,11 +4,11 @@
 
 - [x] **T1**: `.gitignore` — add `terraform/backend.tf` and `terraform/terraform.tfvars`
 - [x] **T2**: `terraform/backend.tf.example` — create new file with placeholder values
-- [x] **T3**: `terraform/terraform.tfvars.example` — replace real IDs with placeholders, add `openclaw_image`
-- [x] **T4**: `terraform/variables.tf` — empty `users` default, add `openclaw_image` variable with validation
+- [x] **T3**: `terraform/terraform.tfvars.example` — replace real IDs with placeholders, add `conga_image`
+- [x] **T4**: `terraform/variables.tf` — empty `users` default, add `conga_image` variable with validation
 - [x] **T5**: `terraform/data.tf` — add `local.lock_table`
 - [x] **T6**: `terraform/outputs.tf` — use `local.state_bucket` and `local.lock_table`
-- [x] **T7**: `terraform/router.tf` — pass `openclaw_image` and `state_bucket` to templatefile
+- [x] **T7**: `terraform/router.tf` — pass `conga_image` and `state_bucket` to templatefile
 - [x] **T8**: `terraform/compute.tf` — pass `state_bucket` to shim templatefile
 - [x] **T9**: `terraform/user-data-shim.sh.tftpl` — use `${state_bucket}` template var
 - [x] **T10**: `terraform/user-data.sh.tftpl` — configurable image + ECR auto-detect, S3 bucket var, region fallback var
@@ -18,14 +18,14 @@
 
 ## Workstream 2: CLI
 
-- [x] **T14**: `cli/internal/config/config.go` — empty defaults, add `OpenClawImage` field, add `RequiredFieldsMissing()`, add `Save()`, add env var override
-- [x] **T15**: `cli/cmd/init.go` — new `cruxclaw init` command with interactive prompts
+- [x] **T14**: `cli/internal/config/config.go` — empty defaults, add `Conga LineImage` field, add `RequiredFieldsMissing()`, add `Save()`, add env var override
+- [x] **T15**: `cli/cmd/init.go` — new `conga init` command with interactive prompts
 - [x] **T16**: `cli/cmd/root.go` — auto-trigger init when config missing, scrub example IDs
-- [x] **T17**: `cli/scripts/add-user.sh.tmpl` — replace hardcoded image with `{{.OpenClawImage}}`
-- [x] **T18**: `cli/scripts/refresh-user.sh.tmpl` — replace hardcoded image with `{{.OpenClawImage}}`
-- [x] **T19**: `cli/cmd/admin.go` — add `OpenClawImage` to template struct
-- [x] **T20**: `cli/cmd/refresh.go` — add `OpenClawImage` to template struct
-- [x] **T21**: Verify CLI compiles: `cd cli && go build -o cruxclaw .` — PASS
+- [x] **T17**: `cli/scripts/add-user.sh.tmpl` — replace hardcoded image with `{{.Conga LineImage}}`
+- [x] **T18**: `cli/scripts/refresh-user.sh.tmpl` — replace hardcoded image with `{{.Conga LineImage}}`
+- [x] **T19**: `cli/cmd/admin.go` — add `Conga LineImage` to template struct
+- [x] **T20**: `cli/cmd/refresh.go` — add `Conga LineImage` to template struct
+- [x] **T21**: Verify CLI compiles: `cd cli && go build -o conga .` — PASS
 
 ## Workstream 3: Documentation
 

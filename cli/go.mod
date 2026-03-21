@@ -1,4 +1,4 @@
-module github.com/cruxdigital-llc/openclaw-template/cli
+module github.com/cruxdigital-llc/conga-line/cli
 
 go 1.25.0
 

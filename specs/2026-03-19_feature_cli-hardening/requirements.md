@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-The `cruxclaw` CLI (~3,500 LOC, 24 Go source files, 13 commands) was shipped as part of the CruxClaw CLI feature (Epic 7). It is functional and deployed, but has zero test coverage, several silent failure bugs, and reliability gaps that will compound as more users onboard. Before handing the CLI to additional team members, we need to fix known bugs, add testability infrastructure, and establish baseline test coverage.
+The `conga` CLI (~3,500 LOC, 24 Go source files, 13 commands) was shipped as part of the Conga Line CLI feature (Epic 7). It is functional and deployed, but has zero test coverage, several silent failure bugs, and reliability gaps that will compound as more users onboard. Before handing the CLI to additional team members, we need to fix known bugs, add testability infrastructure, and establish baseline test coverage.
 
 ## Who Benefits
 

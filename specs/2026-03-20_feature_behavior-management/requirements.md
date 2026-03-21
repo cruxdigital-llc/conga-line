@@ -17,7 +17,7 @@ Today, our deployment has no mechanism for managing these files. Agents start wi
 
 1. Behavior files are version-controlled in the repo under `behavior/`
 2. Team agents receive team-specific SOUL.md content; user agents receive user-specific content
-3. Editing `behavior/` + `terraform apply` + `cruxclaw admin refresh-all` propagates changes to all running agents
+3. Editing `behavior/` + `terraform apply` + `conga admin refresh-all` propagates changes to all running agents
 4. MEMORY.md is never overwritten by the deployment system
 5. New agents provisioned via CLI (`admin add-user`, `admin add-team`) automatically get correct behavior files
 

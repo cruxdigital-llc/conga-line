@@ -1,5 +1,5 @@
 resource "aws_kms_key" "ebs" {
-  description             = "OpenClaw EBS encryption key"
+  description             = "Conga Line EBS encryption key"
   deletion_window_in_days = 7
   enable_key_rotation     = true
 
@@ -19,7 +19,7 @@ resource "aws_kms_key" "ebs" {
         Sid    = "AllowInstanceRole"
         Effect = "Allow"
         Principal = {
-          AWS = aws_iam_role.openclaw_host.arn
+          AWS = aws_iam_role.conga_host.arn
         }
         Action = [
           "kms:Decrypt",

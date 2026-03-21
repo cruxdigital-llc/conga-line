@@ -9,3 +9,6 @@ override.tf.json
 *_override.tf.json
 terraform/backend.tf
 terraform/terraform.tfvars
+
+# CLI build artifacts
+cli/conga

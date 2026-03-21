@@ -18,11 +18,11 @@ terraform/
 ## Step 1: Bootstrap Script (`bootstrap.sh`)
 
 Shell script using AWS CLI (profile `123456789012_AdministratorAccess`) to:
-1. Create S3 bucket `openclaw-terraform-state` in us-east-2
+1. Create S3 bucket `conga-terraform-state` in us-east-2
    - Enable versioning
    - Enable server-side encryption (AES256 default)
    - Block all public access
-2. Create DynamoDB table `openclaw-terraform-locks` in us-east-2
+2. Create DynamoDB table `conga-terraform-locks` in us-east-2
    - Partition key: `LockID` (String)
    - On-demand billing (pay-per-request, essentially free at this scale)
 3. Verify both resources exist
@@ -34,10 +34,10 @@ Script should be idempotent — safe to run multiple times.
 ```hcl
 terraform {
   backend "s3" {
-    bucket         = "openclaw-terraform-state"
-    key            = "openclaw/terraform.tfstate"
+    bucket         = "conga-terraform-state"
+    key            = "conga/terraform.tfstate"
     region         = "us-east-2"
-    dynamodb_table = "openclaw-terraform-locks"
+    dynamodb_table = "conga-terraform-locks"
     encrypt        = true
     profile        = "123456789012_AdministratorAccess"
   }
@@ -67,7 +67,7 @@ provider "aws" {
 
 - `aws_region` (default: `us-east-2`)
 - `aws_profile` (default: `123456789012_AdministratorAccess`)
-- `project_name` (default: `openclaw`)
+- `project_name` (default: `conga`)
 
 ## Step 5: Validate
 
@@ -77,7 +77,7 @@ provider "aws" {
 
 ## Architect Review
 
-- **State bucket naming**: Using account-specific naming avoids global collision. S3 bucket names are globally unique — if `openclaw-terraform-state` is taken, we'll need to suffix with account ID.
-- **State key path**: `openclaw/terraform.tfstate` leaves room for future state separation if needed.
+- **State bucket naming**: Using account-specific naming avoids global collision. S3 bucket names are globally unique — if `conga-terraform-state` is taken, we'll need to suffix with account ID.
+- **State key path**: `conga/terraform.tfstate` leaves room for future state separation if needed.
 - **No KMS for state bucket**: Using AES256 default encryption rather than a dedicated KMS key. State bucket contains infrastructure metadata, not application secrets. KMS can be added later if needed.
 - **Profile in backend block**: Hardcoded because backend blocks don't support variables. This is standard Terraform behavior.

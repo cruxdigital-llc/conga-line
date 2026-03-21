@@ -12,7 +12,7 @@
 
 ## Decisions
 - **Brave API key**: Skipped — not in use
-- **Secret paths**: `openclaw/shared/*` for shared, `openclaw/myagent/*` for per-user
+- **Secret paths**: `conga/shared/*` for shared, `conga/myagent/*` for per-user
 - **Placeholder approach**: Terraform creates secrets with `REPLACE_ME`, real values set manually via CLI
 - **Single KMS key**: Shared across all EBS volumes (sufficient for shared-host model)
 - **SSM**: AWS-managed `AmazonSSMManagedInstanceCore` policy

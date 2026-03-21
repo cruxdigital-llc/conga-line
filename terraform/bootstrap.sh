@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Configuration — override via environment variables or pass project name as $1
-PROJECT_NAME="${1:-openclaw}"
+PROJECT_NAME="${1:-conga-line}"
 AWS_PROFILE="${AWS_PROFILE:?Set AWS_PROFILE to your AWS CLI profile name}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 

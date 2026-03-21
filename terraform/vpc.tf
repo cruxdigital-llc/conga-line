@@ -36,7 +36,7 @@ resource "aws_subnet" "public" {
   }
 }
 
-# Private subnet — hosts the OpenClaw EC2 instance
+# Private subnet — hosts the Conga Line EC2 instance
 resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.0.16/28"

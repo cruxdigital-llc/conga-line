@@ -13,13 +13,13 @@
 ## Decisions
 - **AMI**: Amazon Linux 2023 arm64
 - **Docker rootless**: From day one
-- **Persistent storage**: Root EBS volume at `/opt/openclaw/data/myagent/` (KMS encrypted)
-- **Systemd management**: System unit running Docker as openclaw user
+- **Persistent storage**: Root EBS volume at `/opt/conga/data/myagent/` (KMS encrypted)
+- **Systemd management**: System unit running Docker as conga user
 - **Container hardening**: --read-only, --cap-drop ALL, --security-opt no-new-privileges, memory/cpu/pids limits
 
 ## Resolved Questions
-- **OpenClaw reads all secrets from env vars** (highest priority over config file). ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, SLACK_APP_TOKEN all supported. openclaw.json contains zero secrets.
-- **Do NOT use `${VAR}` substitution in openclaw.json** — Issue #9627: `openclaw update`/`doctor` can resolve vars and write secrets to disk. Pass env vars to container instead.
+- **Conga Line reads all secrets from env vars** (highest priority over config file). ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, SLACK_APP_TOKEN all supported. openclaw.json contains zero secrets.
+- **Do NOT use `${VAR}` substitution in openclaw.json** — Issue #9627: `conga update`/`doctor` can resolve vars and write secrets to disk. Pass env vars to container instead.
 
 ## Files Created
 - [requirements.md](requirements.md)

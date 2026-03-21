@@ -19,7 +19,7 @@ terraform/
 
 - VPC: `10.0.0.0/24` (256 IPs, plenty for single-host + NAT)
 - Public subnet: `10.0.0.0/28` (for fck-nat instance, needs IGW route)
-- Private subnet: `10.0.0.16/28` (for OpenClaw host)
+- Private subnet: `10.0.0.16/28` (for Conga Line host)
 - Internet Gateway attached to VPC
 - Public route table: `0.0.0.0/0 → IGW`
 - Private route table: `0.0.0.0/0 → fck-nat` (handled by the fck-nat module)
@@ -53,9 +53,9 @@ The module handles:
 
 ## Step 3: Security Group (`security.tf`)
 
-**OpenClaw host security group** (zero ingress):
+**Conga Line host security group** (zero ingress):
 ```hcl
-resource "aws_security_group" "openclaw_host" {
+resource "aws_security_group" "conga_host" {
   name_prefix = "${var.project_name}-host-"
   vpc_id      = aws_vpc.main.id
 
@@ -92,7 +92,7 @@ resource "aws_security_group" "openclaw_host" {
 
 ## Step 4: VPC Flow Logs (`flow-logs.tf`)
 
-- CloudWatch log group: `/openclaw/vpc-flow-logs`
+- CloudWatch log group: `/conga/vpc-flow-logs`
 - IAM role for flow logs (allows `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`)
 - VPC Flow Log resource: capture ALL traffic, send to CloudWatch
 - Log retention: 30 days (cost-conscious)

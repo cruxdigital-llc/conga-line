@@ -1,4 +1,4 @@
-resource "aws_ecr_repository" "openclaw" {
+resource "aws_ecr_repository" "conga" {
   name                 = var.project_name
   image_tag_mutability = "MUTABLE"
   force_delete         = false
@@ -21,8 +21,8 @@ resource "aws_ecr_repository" "openclaw" {
   }
 }
 
-resource "aws_ecr_lifecycle_policy" "openclaw" {
-  repository = aws_ecr_repository.openclaw.name
+resource "aws_ecr_lifecycle_policy" "conga" {
+  repository = aws_ecr_repository.conga.name
 
   policy = jsonencode({
     rules = [{

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
 )
 
 type AgentConfig struct {
@@ -32,10 +32,10 @@ func parseAgentConfig(paramName, jsonValue string) (*AgentConfig, error) {
 }
 
 func ResolveAgent(ctx context.Context, ssmClient awsutil.SSMClient, name string) (*AgentConfig, error) {
-	paramName := fmt.Sprintf("/openclaw/agents/%s", name)
+	paramName := fmt.Sprintf("/conga/agents/%s", name)
 	value, err := awsutil.GetParameter(ctx, ssmClient, paramName)
 	if err != nil {
-		return nil, fmt.Errorf("agent %q not found. Use `cruxclaw admin add-user` or `add-team` to provision", name)
+		return nil, fmt.Errorf("agent %q not found. Use `conga admin add-user` or `add-team` to provision", name)
 	}
 
 	cfg, err := parseAgentConfig(paramName, value)
@@ -46,7 +46,7 @@ func ResolveAgent(ctx context.Context, ssmClient awsutil.SSMClient, name string)
 }
 
 func ResolveAgentByIAM(ctx context.Context, ssmClient awsutil.SSMClient, iamIdentity string) (*AgentConfig, error) {
-	entries, err := awsutil.GetParametersByPath(ctx, ssmClient, "/openclaw/agents/")
+	entries, err := awsutil.GetParametersByPath(ctx, ssmClient, "/conga/agents/")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agents: %w", err)
 	}
@@ -66,7 +66,7 @@ func ResolveAgentByIAM(ctx context.Context, ssmClient awsutil.SSMClient, iamIden
 }
 
 func ListAgents(ctx context.Context, ssmClient awsutil.SSMClient) ([]AgentConfig, error) {
-	entries, err := awsutil.GetParametersByPath(ctx, ssmClient, "/openclaw/agents/")
+	entries, err := awsutil.GetParametersByPath(ctx, ssmClient, "/conga/agents/")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agents: %w", err)
 	}

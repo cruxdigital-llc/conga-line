@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
 )
 
 var (

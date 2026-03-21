@@ -1,7 +1,7 @@
 # Plan: Multi-User Onboarding (Epics 5+6)
 
 ## Overview
-Refactor from single-user hardcoded config to a data-driven multi-user model. Admin adds users via Terraform variable. Users self-serve their own secrets via an onboarding script. OpenClaw config is generic (no per-user skills). User-data loops over all users to create containers.
+Refactor from single-user hardcoded config to a data-driven multi-user model. Admin adds users via Terraform variable. Users self-serve their own secrets via an onboarding script. Conga Line config is generic (no per-user skills). User-data loops over all users to create containers.
 
 ## Changes
 
@@ -38,8 +38,8 @@ Actually — removing them from Terraform WILL destroy them unless we `terraform
 Secrets read policy scoped to all user paths dynamically:
 ```hcl
 Resource = concat(
-  ["arn:aws:secretsmanager:...:secret:openclaw/shared/*"],
-  [for uid in keys(var.users) : "arn:aws:secretsmanager:...:secret:openclaw/${uid}/*"]
+  ["arn:aws:secretsmanager:...:secret:conga/shared/*"],
+  [for uid in keys(var.users) : "arn:aws:secretsmanager:...:secret:conga/${uid}/*"]
 )
 ```
 
@@ -58,12 +58,12 @@ users = var.users  # map of user_id => {slack_channel}
 User-data pseudocode per user:
 ```bash
 for user_id, channel in users:
-  # List all secrets under openclaw/{user_id}/*
-  SECRETS=$(aws secretsmanager list-secrets --filter Key=name,Values=openclaw/$user_id)
+  # List all secrets under conga/{user_id}/*
+  SECRETS=$(aws secretsmanager list-secrets --filter Key=name,Values=conga/$user_id)
   # Fetch each and write to env file
   for secret in SECRETS:
     VALUE=$(aws secretsmanager get-secret-value ...)
-    echo "SECRET_NAME=$VALUE" >> /opt/openclaw/config/$user_id.env
+    echo "SECRET_NAME=$VALUE" >> /opt/conga/config/$user_id.env
   # Generate generic openclaw.json with this user's channel
   # Create data dir, Docker network, systemd unit
   # Start service
@@ -90,16 +90,16 @@ Self-service script for users. Requires their own AWS CLI profile.
 # Usage: ./onboard-user.sh <user_id> <aws_profile> <aws_region>
 
 # Required: add Anthropic API key
-add_secret "openclaw/$USER_ID/anthropic-api-key" "Anthropic API Key (required)"
+add_secret "conga/$USER_ID/anthropic-api-key" "Anthropic API Key (required)"
 
 # Optional: add more
 while true:
   read "Add another secret? (name or 'done')"
   if done: break
-  add_secret "openclaw/$USER_ID/$name" "$description"
+  add_secret "conga/$USER_ID/$name" "$description"
 
 # Verify
-list_secrets "openclaw/$USER_ID"
+list_secrets "conga/$USER_ID"
 echo "Done. Ask your admin to run terraform apply to deploy your container."
 ```
 
@@ -138,13 +138,13 @@ users = {
 4. Notify admin → admin runs `terraform apply` again (or instance auto-picks up new secrets on next restart)
 
 ### Post-Onboard:
-- User configures OpenClaw skills/plugins via Slack commands or container config
+- User configures Conga Line skills/plugins via Slack commands or container config
 - User can add more secrets anytime by re-running the script
 
 ## Architect Review
 
 - **Secret discovery at boot**: User-data lists all secrets under each user's path and fetches them dynamically. No Terraform-managed per-user secrets. This means a user can add a secret and have it picked up on next container restart without any Terraform changes.
 - **Instance replacement on user add**: Adding a user changes user-data, which triggers instance replacement. This is acceptable — both users' containers restart but come back automatically.
-- **Generic config**: No per-user skill config in openclaw.json. Users configure through OpenClaw itself. This trades some initial setup time for much simpler Terraform.
-- **Secret naming convention**: Users must follow `openclaw/{user_id}/{secret-name}` pattern. The onboarding script enforces this. OpenClaw reads from env vars, so the secret name maps to an env var name (e.g., `anthropic-api-key` → `ANTHROPIC_API_KEY`).
+- **Generic config**: No per-user skill config in openclaw.json. Users configure through Conga Line itself. This trades some initial setup time for much simpler Terraform.
+- **Secret naming convention**: Users must follow `conga/{user_id}/{secret-name}` pattern. The onboarding script enforces this. Conga Line reads from env vars, so the secret name maps to an env var name (e.g., `anthropic-api-key` → `ANTHROPIC_API_KEY`).
 - **Env var naming**: Need a convention for mapping secret names to env var names. Simplest: uppercase the secret name, replace hyphens with underscores. `anthropic-api-key` → `ANTHROPIC_API_KEY`.

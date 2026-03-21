@@ -1,9 +1,9 @@
 version: 2
-project_name: cruxclaw
+project_name: conga
 
 builds:
   - main: .
-    binary: cruxclaw
+    binary: conga
     env:
       - CGO_ENABLED=0
     goos:
@@ -15,13 +15,13 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/cruxdigital-llc/openclaw-template/cli/cmd.Version={{.Version}}
-      - -X github.com/cruxdigital-llc/openclaw-template/cli/cmd.Commit={{.Commit}}
-      - -X github.com/cruxdigital-llc/openclaw-template/cli/cmd.Date={{.Date}}
+      - -X github.com/cruxdigital-llc/conga-line/cli/cmd.Version={{.Version}}
+      - -X github.com/cruxdigital-llc/conga-line/cli/cmd.Commit={{.Commit}}
+      - -X github.com/cruxdigital-llc/conga-line/cli/cmd.Date={{.Date}}
 
 archives:
   - format: tar.gz
-    name_template: "cruxclaw_{{ .Os }}_{{ .Arch }}"
+    name_template: "conga_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         format: zip
@@ -32,4 +32,4 @@ checksum:
 release:
   github:
     owner: cruxdigital-llc
-    name: crux-claw
+    name: conga-line

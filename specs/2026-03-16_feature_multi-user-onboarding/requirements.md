@@ -5,7 +5,7 @@ Refactor Terraform to support multiple users from a simple config variable. User
 
 ## Roles
 - **Admin**: Adds user_id + slack_channel to Terraform, runs apply, creates Slack channel
-- **User**: Has own IAM user in the account. Runs onboarding script to add their secrets. Configures skills through OpenClaw itself.
+- **User**: Has own IAM user in the account. Runs onboarding script to add their secrets. Configures skills through Conga Line itself.
 
 ## Success Criteria
 1. `users` variable drives all per-user resources (no hardcoded user config)

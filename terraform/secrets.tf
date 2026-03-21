@@ -1,7 +1,7 @@
 # All secrets (shared and per-agent) are managed by the CLI:
-#   cruxclaw admin setup              — creates shared secrets from manifest
-#   cruxclaw secrets set <name>       — creates per-agent secrets
-#   cruxclaw admin remove-agent --delete-secrets — cleans up on removal
+#   conga admin setup              — creates shared secrets from manifest
+#   conga secrets set <name>       — creates per-agent secrets
+#   conga admin remove-agent --delete-secrets — cleans up on removal
 #
 # STATE MIGRATION (run once before first `terraform apply` on this branch):
 #   These resources were previously managed by Terraform. Remove them from

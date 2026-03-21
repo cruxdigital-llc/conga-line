@@ -21,8 +21,8 @@ terraform/
 1. **SSM managed policy** — `AmazonSSMManagedInstanceCore` (AWS managed, required for Session Manager)
 
 2. **Secrets read policy** (inline) — allows `secretsmanager:GetSecretValue` on:
-   - `arn:aws:secretsmanager:us-east-2:123456789012:secret:openclaw/shared/*`
-   - `arn:aws:secretsmanager:us-east-2:123456789012:secret:openclaw/myagent/*`
+   - `arn:aws:secretsmanager:us-east-2:123456789012:secret:conga/shared/*`
+   - `arn:aws:secretsmanager:us-east-2:123456789012:secret:conga/myagent/*`
    - (Future users will get their own path added)
 
 3. **CloudWatch Logs policy** (inline) — allows `logs:CreateLogStream`, `logs:PutLogEvents` on the gateway log group
@@ -38,7 +38,7 @@ terraform/
 
 - Single KMS key for EBS encryption
 - Key policy: allows the AWS account root + the instance role to use the key
-- Alias: `alias/openclaw-ebs`
+- Alias: `alias/conga-ebs`
 
 ## Step 3: Secrets Manager (`secrets.tf`)
 
@@ -46,17 +46,17 @@ Create 6 secrets with placeholder values (`REPLACE_ME`):
 
 | Secret Path | Description |
 |---|---|
-| `openclaw/shared/slack-bot-token` | Slack xoxb- token (shared) |
-| `openclaw/shared/slack-app-token` | Slack xapp- token (shared) |
-| `openclaw/myagent/anthropic-api-key` | Anthropic API key |
-| `openclaw/myagent/gateway-token` | OpenClaw gateway auth token |
-| `openclaw/myagent/trello-api-key` | Trello API key |
-| `openclaw/myagent/trello-token` | Trello token |
+| `conga/shared/slack-bot-token` | Slack xoxb- token (shared) |
+| `conga/shared/slack-app-token` | Slack xapp- token (shared) |
+| `conga/myagent/anthropic-api-key` | Anthropic API key |
+| `conga/myagent/gateway-token` | Conga Line gateway auth token |
+| `conga/myagent/trello-api-key` | Trello API key |
+| `conga/myagent/trello-token` | Trello token |
 
 After `terraform apply`, populate real values:
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id openclaw/shared/slack-bot-token \
+  --secret-id conga/shared/slack-bot-token \
   --secret-string "xoxb-actual-token" \
   --profile 123456789012_AdministratorAccess \
   --region us-east-2
@@ -72,7 +72,7 @@ Use `lifecycle { ignore_changes = [secret_string] }` so Terraform doesn't overwr
 
 ## Architect Review
 
-- **Secret path structure**: `openclaw/{scope}/{name}` where scope is `shared` or a user ID. Clean, extensible for user 2.
+- **Secret path structure**: `conga/{scope}/{name}` where scope is `shared` or a user ID. Clean, extensible for user 2.
 - **Placeholder approach**: Secrets created by Terraform with dummy values, real values set manually. This keeps real credentials out of Terraform state. The `ignore_changes` lifecycle rule prevents Terraform from reverting manual updates.
 - **Deny-dangerous policy**: Uses explicit Deny which overrides any Allow. Even if someone attaches AdministratorAccess to the role, the denied actions remain blocked.
 - **Single KMS key**: One key for all EBS volumes. Per-user keys would be needed at Isolation Level 4 (per-user VPCs) but are unnecessary for shared-host model.

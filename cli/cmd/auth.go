@@ -5,7 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
 	"github.com/spf13/cobra"
 )
 
@@ -72,7 +72,7 @@ var authStatusCmd = &cobra.Command{
 
 		out, err := clients.STS.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
-			return fmt.Errorf("session expired or invalid. Run `cruxclaw auth login` to authenticate.\n%w", err)
+			return fmt.Errorf("session expired or invalid. Run `conga auth login` to authenticate.\n%w", err)
 		}
 
 		fmt.Printf("Identity:        %s\n", aws.ToString(out.Arn))

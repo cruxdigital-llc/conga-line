@@ -10,23 +10,23 @@ get_secret() {
     --secret-id "$1" --query SecretString --output text --region "$AWS_REGION"
 }
 
-OPENCLAW_IMAGE=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" \
+CONGA_IMAGE=$(aws ssm get-parameter --name "/conga/config/image" \
   --query "Parameter.Value" --output text --region "$AWS_REGION")
 
 echo "=== Setting up team agent: $AGENT_NAME ==="
 
-SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
-SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
-GOOGLE_CLIENT_ID=$(get_secret "openclaw/shared/google-client-id")
-GOOGLE_CLIENT_SECRET=$(get_secret "openclaw/shared/google-client-secret")
+SLACK_BOT_TOKEN=$(get_secret "conga/shared/slack-bot-token")
+SLACK_SIGNING_SECRET=$(get_secret "conga/shared/slack-signing-secret")
+GOOGLE_CLIENT_ID=$(get_secret "conga/shared/google-client-id")
+GOOGLE_CLIENT_SECRET=$(get_secret "conga/shared/google-client-secret")
 
 # Discover per-agent secrets
 AGENT_SECRET_NAMES=$(aws secretsmanager list-secrets \
-  --filter Key=name,Values="openclaw/agents/$AGENT_NAME/" \
+  --filter Key=name,Values="conga/agents/$AGENT_NAME/" \
   --query 'SecretList[].Name' --output text \
   --region "$AWS_REGION" 2>/dev/null || echo "")
 
-cat > /opt/openclaw/config/$AGENT_NAME.env << ENVFILE
+cat > /opt/conga/config/$AGENT_NAME.env << ENVFILE
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
 SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
 GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
@@ -36,13 +36,13 @@ ENVFILE
 if [ -n "$AGENT_SECRET_NAMES" ]; then
   for SECRET_PATH in $AGENT_SECRET_NAMES; do
     SECRET_VALUE=$(get_secret "$SECRET_PATH")
-    SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|openclaw/agents/$AGENT_NAME/||" | tr '[:lower:]-' '[:upper:]_')
-    echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/openclaw/config/$AGENT_NAME.env
+    SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|conga/agents/$AGENT_NAME/||" | tr '[:lower:]-' '[:upper:]_')
+    echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/conga/config/$AGENT_NAME.env
   done
 fi
-chmod 0400 /opt/openclaw/config/$AGENT_NAME.env
+chmod 0400 /opt/conga/config/$AGENT_NAME.env
 
-cat > /opt/openclaw/config/$AGENT_NAME-openclaw.json << OCCONFIG
+cat > /opt/conga/config/$AGENT_NAME-config.json << OCCONFIG
 {
   "agents": {
     "defaults": {
@@ -96,48 +96,48 @@ cat > /opt/openclaw/config/$AGENT_NAME-openclaw.json << OCCONFIG
 }
 OCCONFIG
 
-if [ ! -d /opt/openclaw/data/$AGENT_NAME ]; then
-  mkdir -p /opt/openclaw/data/$AGENT_NAME/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
-  chown -R 1000:1000 /opt/openclaw/data/$AGENT_NAME
+if [ ! -d /opt/conga/data/$AGENT_NAME ]; then
+  mkdir -p /opt/conga/data/$AGENT_NAME/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
+  chown -R 1000:1000 /opt/conga/data/$AGENT_NAME
 fi
-cp /opt/openclaw/config/$AGENT_NAME-openclaw.json /opt/openclaw/data/$AGENT_NAME/openclaw.json
-chown 1000:1000 /opt/openclaw/data/$AGENT_NAME/openclaw.json
+cp /opt/conga/config/$AGENT_NAME-config.json /opt/conga/data/$AGENT_NAME/openclaw.json
+chown 1000:1000 /opt/conga/data/$AGENT_NAME/openclaw.json
 
-sha256sum /opt/openclaw/config/$AGENT_NAME-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$AGENT_NAME-openclaw.json.sha256
-chmod 0444 /opt/openclaw/config/$AGENT_NAME-openclaw.json.sha256
+sha256sum /opt/conga/config/$AGENT_NAME-config.json | cut -d' ' -f1 > /opt/conga/config/$AGENT_NAME-config.json.sha256
+chmod 0444 /opt/conga/config/$AGENT_NAME-config.json.sha256
 
 # Store agent metadata for behavior deployment
-echo "team" > /opt/openclaw/config/$AGENT_NAME.type
-echo "$SLACK_CHANNEL" > /opt/openclaw/config/$AGENT_NAME.slack-id
+echo "team" > /opt/conga/config/$AGENT_NAME.type
+echo "$SLACK_CHANNEL" > /opt/conga/config/$AGENT_NAME.slack-id
 
 # Sync and deploy behavior files
-aws s3 sync "s3://{{.StateBucket}}/openclaw/behavior/" /opt/openclaw/behavior/ --region "$AWS_REGION" 2>/dev/null || true
-if [ -x /opt/openclaw/bin/deploy-behavior.sh ]; then
-  /opt/openclaw/bin/deploy-behavior.sh "$AGENT_NAME" "team"
+aws s3 sync "s3://{{.StateBucket}}/conga/behavior/" /opt/conga/behavior/ --region "$AWS_REGION" 2>/dev/null || true
+if [ -x /opt/conga/bin/deploy-behavior.sh ]; then
+  /opt/conga/bin/deploy-behavior.sh "$AGENT_NAME" "team"
 fi
 
-docker network create --driver bridge "openclaw-$AGENT_NAME" || true
+docker network create --driver bridge "conga-$AGENT_NAME" || true
 
 ENV_FLAGS=""
 while IFS="=" read -r key value; do
   [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
-done < /opt/openclaw/config/$AGENT_NAME.env
+done < /opt/conga/config/$AGENT_NAME.env
 
-cat > /etc/systemd/system/openclaw-$AGENT_NAME.service << UNIT
+cat > /etc/systemd/system/conga-$AGENT_NAME.service << UNIT
 [Unit]
 Description=OpenClaw Gateway ($AGENT_NAME)
-After=docker.service openclaw-router.service
+After=docker.service conga-router.service
 Requires=docker.service
 
 [Service]
 Type=simple
-EnvironmentFile=/opt/openclaw/config/$AGENT_NAME.env
-ExecStartPre=-/usr/bin/docker rm -f openclaw-$AGENT_NAME
-ExecStart=/usr/bin/docker run --name openclaw-$AGENT_NAME --network openclaw-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $OPENCLAW_IMAGE
-ExecStartPost=-/usr/bin/docker network connect openclaw-$AGENT_NAME openclaw-router
-ExecStop=/usr/bin/docker stop openclaw-$AGENT_NAME
-StandardOutput=append:/var/log/openclaw-$AGENT_NAME.log
-StandardError=append:/var/log/openclaw-$AGENT_NAME.log
+EnvironmentFile=/opt/conga/config/$AGENT_NAME.env
+ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
+ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE
+ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
+ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
+StandardOutput=append:/var/log/conga-$AGENT_NAME.log
+StandardError=append:/var/log/conga-$AGENT_NAME.log
 Restart=always
 RestartSec=10
 TimeoutStartSec=120
@@ -148,23 +148,23 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable openclaw-$AGENT_NAME.service
-systemctl start openclaw-$AGENT_NAME.service
+systemctl enable conga-$AGENT_NAME.service
+systemctl start conga-$AGENT_NAME.service
 
 # Update routing config with the team's channel entry (channel routing only)
 # Initialize routing.json if it does not exist (first agent on fresh host)
-[ -f /opt/openclaw/config/routing.json ] || echo '{"channels":{},"members":{}}' > /opt/openclaw/config/routing.json
+[ -f /opt/conga/config/routing.json ] || echo '{"channels":{},"members":{}}' > /opt/conga/config/routing.json
 node -e "
   const fs = require('fs');
-  const cfg = JSON.parse(fs.readFileSync('/opt/openclaw/config/routing.json', 'utf-8'));
-  cfg.channels['$SLACK_CHANNEL'] = 'http://openclaw-$AGENT_NAME:18789/slack/events';
-  fs.writeFileSync('/opt/openclaw/config/routing.json', JSON.stringify(cfg, null, 2));
+  const cfg = JSON.parse(fs.readFileSync('/opt/conga/config/routing.json', 'utf-8'));
+  cfg.channels['$SLACK_CHANNEL'] = 'http://conga-$AGENT_NAME:18789/slack/events';
+  fs.writeFileSync('/opt/conga/config/routing.json', JSON.stringify(cfg, null, 2));
 "
 
 # Connect router to the agent's network
-docker network connect "openclaw-$AGENT_NAME" openclaw-router 2>/dev/null || true
+docker network connect "conga-$AGENT_NAME" conga-router 2>/dev/null || true
 
 # Update CloudWatch dashboard with all agents
-/opt/openclaw/bin/update-dashboard.sh || echo "WARNING: Dashboard update failed"
+/opt/conga/bin/update-dashboard.sh || echo "WARNING: Dashboard update failed"
 
 echo "=== Team agent $AGENT_NAME setup complete ==="

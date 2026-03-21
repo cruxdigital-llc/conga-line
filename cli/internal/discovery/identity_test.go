@@ -62,7 +62,7 @@ func TestResolveIdentity_AssumedRoleWithSession(t *testing.T) {
 			return &ssm.GetParametersByPathOutput{
 				Parameters: []ssmtypes.Parameter{
 					{
-						Name:  aws.String("/openclaw/agents/myagent"),
+						Name:  aws.String("/conga/agents/myagent"),
 						Value: aws.String(`{"type":"user","slack_member_id":"U0123456789","gateway_port":18789,"iam_identity":"user@example.com"}`),
 					},
 				},

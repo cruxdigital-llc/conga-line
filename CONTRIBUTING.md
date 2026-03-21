@@ -1,10 +1,10 @@
-# Contributing to OpenClaw on AWS
+# Contributing to Conga Line
 
 Thanks for your interest in contributing! This guide covers how to get involved.
 
 ## Reporting Bugs and Requesting Features
 
-Open a [GitHub Issue](https://github.com/cruxdigital-llc/crux-claw/issues). Include steps to reproduce for bugs.
+Open a [GitHub Issue](https://github.com/cruxdigital-llc/conga-line/issues). Include steps to reproduce for bugs.
 
 ## Development Setup
 

@@ -6,8 +6,8 @@ import (
 	"os"
 	"sort"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +19,7 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Read the setup manifest from SSM
-	manifestJSON, err := awsutil.GetParameter(ctx, clients.SSM, "/openclaw/config/setup-manifest")
+	manifestJSON, err := awsutil.GetParameter(ctx, clients.SSM, "/conga/config/setup-manifest")
 	if err != nil {
 		return fmt.Errorf("setup manifest not found in SSM. Run `terraform apply` first to create infrastructure")
 	}
@@ -44,7 +44,7 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 	sort.Strings(configKeys)
 	for _, key := range configKeys {
 		description := manifest.Config[key]
-		paramName := fmt.Sprintf("/openclaw/config/%s", key)
+		paramName := fmt.Sprintf("/conga/config/%s", key)
 		current, err := awsutil.GetParameter(ctx, clients.SSM, paramName)
 		if err != nil {
 			// GetParameter wraps "not found" errors; any error means we couldn't read it.
@@ -125,7 +125,7 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if changed > 0 {
-		fmt.Printf("\n%d value(s) updated. Run `cruxclaw admin cycle-host` to apply.\n", changed)
+		fmt.Printf("\n%d value(s) updated. Run `conga admin cycle-host` to apply.\n", changed)
 	} else {
 		fmt.Println("\nAll values already configured. No changes needed.")
 	}

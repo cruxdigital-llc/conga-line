@@ -6,16 +6,16 @@ data "aws_ssm_parameter" "al2023_arm64" {
 
 # --- Launch Template ---
 
-resource "aws_launch_template" "openclaw" {
+resource "aws_launch_template" "conga" {
   name_prefix   = "${var.project_name}-"
   image_id      = data.aws_ssm_parameter.al2023_arm64.value
   instance_type = var.instance_type
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.openclaw_host.name
+    name = aws_iam_instance_profile.conga_host.name
   }
 
-  vpc_security_group_ids = [aws_security_group.openclaw_host.id]
+  vpc_security_group_ids = [aws_security_group.conga_host.id]
 
   block_device_mappings {
     device_name = "/dev/xvda"
@@ -78,11 +78,11 @@ resource "aws_ebs_volume" "data" {
 
 # --- EC2 Instance ---
 
-resource "aws_instance" "openclaw" {
+resource "aws_instance" "conga" {
   subnet_id = aws_subnet.private.id
 
   launch_template {
-    id      = aws_launch_template.openclaw.id
+    id      = aws_launch_template.conga.id
     version = "$Latest"
   }
 
@@ -94,5 +94,5 @@ resource "aws_instance" "openclaw" {
 resource "aws_volume_attachment" "data" {
   device_name = "/dev/xvdf"
   volume_id   = aws_ebs_volume.data.id
-  instance_id = aws_instance.openclaw.id
+  instance_id = aws_instance.conga.id
 }

@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/tunnel"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/tunnel"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +63,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fetch gateway token
-	tokenScript := fmt.Sprintf(`python3 -c "import json; c=json.load(open('/opt/openclaw/data/%s/openclaw.json')); print(c.get('gateway',{}).get('auth',{}).get('token','NOT_FOUND'))"`, agentName)
+	tokenScript := fmt.Sprintf(`python3 -c "import json; c=json.load(open('/opt/conga/data/%s/openclaw.json')); print(c.get('gateway',{}).get('auth',{}).get('token','NOT_FOUND'))"`, agentName)
 
 	spin := ui.NewSpinner("Fetching gateway token...")
 	result, err := awsutil.RunCommand(setupCtx, clients.SSM, instanceID, tokenScript, 30*time.Second)
@@ -74,7 +74,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 
 	token := strings.TrimSpace(result.Stdout)
 	if token == "" || token == "NOT_FOUND" {
-		return fmt.Errorf("gateway token not found. Container may not have started yet.\nTry: cruxclaw status")
+		return fmt.Errorf("gateway token not found. Container may not have started yet.\nTry: conga status")
 	}
 
 	// Default local port to the agent's gateway port for stable per-agent URLs
@@ -137,7 +137,7 @@ func pollDevicePairing(ctx context.Context, instanceID, agentName string, verbos
 			return
 		}
 
-		listScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices list --json 2>&1", agentName)
+		listScript := fmt.Sprintf("docker exec conga-%s npx openclaw devices list --json 2>&1", agentName)
 		result, err := awsutil.RunCommand(ctx, clients.SSM, instanceID, listScript, 30*time.Second)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -162,7 +162,7 @@ func pollDevicePairing(ctx context.Context, instanceID, agentName string, verbos
 			continue
 		}
 
-		approveScript := fmt.Sprintf("docker exec openclaw-%s npx openclaw devices approve --latest 2>&1", agentName)
+		approveScript := fmt.Sprintf("docker exec conga-%s npx openclaw devices approve --latest 2>&1", agentName)
 		result, err = awsutil.RunCommand(ctx, clients.SSM, instanceID, approveScript, 30*time.Second)
 		if err != nil {
 			if verbose {

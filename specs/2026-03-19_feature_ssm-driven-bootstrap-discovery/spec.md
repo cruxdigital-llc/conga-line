@@ -8,27 +8,27 @@ The **agent name** is the universal identifier. All infrastructure — container
 
 ### Single agent namespace
 
-All agents live under `/openclaw/agents/<name>`:
+All agents live under `/conga/agents/<name>`:
 
 ```
-/openclaw/agents/myagent   → {"type":"user","slack_member_id":"UEXAMPLE01","gateway_port":18789,"iam_identity":"exampleuser"}
-/openclaw/agents/zach    → {"type":"user","slack_member_id":"UEXAMPLE02","gateway_port":18790,"iam_identity":"zachhendershot"}
-/openclaw/agents/devops  → {"type":"team","slack_channel":"CEXAMPLE01","gateway_port":18800}
+/conga/agents/myagent   → {"type":"user","slack_member_id":"UEXAMPLE01","gateway_port":18789,"iam_identity":"exampleuser"}
+/conga/agents/zach    → {"type":"user","slack_member_id":"UEXAMPLE02","gateway_port":18790,"iam_identity":"zachhendershot"}
+/conga/agents/devops  → {"type":"team","slack_channel":"CEXAMPLE01","gateway_port":18800}
 ```
 
 ### Config namespace
 
 ```
-/openclaw/config/openclaw-image → "123456789012.dkr.ecr.us-east-2.amazonaws.com/openclaw:latest"
+/conga/config/conga-image → "123456789012.dkr.ecr.us-east-2.amazonaws.com/conga:latest"
 ```
 
 ### Removed paths
 
 | Old path | Replacement |
 |----------|------------|
-| `/openclaw/users/<member_id>` | `/openclaw/agents/<name>` with `type: "user"` |
-| `/openclaw/teams/<team_name>` | `/openclaw/agents/<name>` with `type: "team"` |
-| `/openclaw/users/by-iam/<sso_name>` | `iam_identity` field inside agent param value |
+| `/conga/users/<member_id>` | `/conga/agents/<name>` with `type: "user"` |
+| `/conga/teams/<team_name>` | `/conga/agents/<name>` with `type: "team"` |
+| `/conga/users/by-iam/<sso_name>` | `iam_identity` field inside agent param value |
 
 ### Agent param value schema
 
@@ -57,17 +57,17 @@ The container ID is the agent name for all agent types. No derivation logic need
 
 | Agent | Name | Container | Data dir | Docker network | Systemd unit |
 |-------|------|-----------|----------|---------------|--------------|
-| myagent | `myagent` | `openclaw-myagent` | `/opt/openclaw/data/myagent/` | `openclaw-myagent` | `openclaw-myagent.service` |
-| devops | `devops` | `openclaw-devops` | `/opt/openclaw/data/devops/` | `openclaw-devops` | `openclaw-devops.service` |
+| myagent | `myagent` | `conga-myagent` | `/opt/conga/data/myagent/` | `conga-myagent` | `conga-myagent.service` |
+| devops | `devops` | `conga-devops` | `/opt/conga/data/devops/` | `conga-devops` | `conga-devops.service` |
 
 ### Per-agent secrets
 
 Unified path for all agent types:
-- `openclaw/agents/<name>/<secret_name>` (e.g., `openclaw/agents/myagent/anthropic-api-key`)
+- `conga/agents/<name>/<secret_name>` (e.g., `conga/agents/myagent/anthropic-api-key`)
 
 This replaces the previous split:
-- ~~`openclaw/<member_id>/`~~ (user secrets)
-- ~~`openclaw/teams/<team_name>/`~~ (team secrets)
+- ~~`conga/<member_id>/`~~ (user secrets)
+- ~~`conga/teams/<team_name>/`~~ (team secrets)
 
 ## Terraform Changes
 
@@ -102,7 +102,7 @@ Replace three resources with two:
 ```hcl
 resource "aws_ssm_parameter" "agent_config" {
   for_each = var.agents
-  name     = "/openclaw/agents/${each.key}"
+  name     = "/conga/agents/${each.key}"
   type     = "String"
   value = jsonencode(merge(
     { type = each.value.type, gateway_port = each.value.gateway_port },
@@ -117,29 +117,29 @@ resource "aws_ssm_parameter" "agent_config" {
   tags = { Project = var.project_name }
 }
 
-resource "aws_ssm_parameter" "openclaw_image" {
-  name  = "/openclaw/config/openclaw-image"
+resource "aws_ssm_parameter" "conga_image" {
+  name  = "/conga/config/conga-image"
   type  = "String"
-  value = var.openclaw_image
+  value = var.conga_image
   tags  = { Project = var.project_name }
 }
 ```
 
 ### router.tf
 
-Remove `agents`, `agent_container_id`, `openclaw_image`, `routing_json` from `templatefile()`. Remaining: `aws_region`, `project_name`, `config_check_interval_minutes`, `state_bucket`.
+Remove `agents`, `agent_container_id`, `conga_image`, `routing_json` from `templatefile()`. Remaining: `aws_region`, `project_name`, `config_check_interval_minutes`, `state_bucket`.
 
 ### iam.tf
 
 Replace per-user secret ARN enumeration with:
 ```hcl
 Resource = [
-  "arn:aws:secretsmanager:...:secret:openclaw/shared/*",
-  "arn:aws:secretsmanager:...:secret:openclaw/agents/*"
+  "arn:aws:secretsmanager:...:secret:conga/shared/*",
+  "arn:aws:secretsmanager:...:secret:conga/agents/*"
 ]
 ```
 
-Simpler than the previous `openclaw/U*` + `openclaw/teams/*` approach — unified secrets path means a single wildcard.
+Simpler than the previous `conga/U*` + `conga/teams/*` approach — unified secrets path means a single wildcard.
 
 ### secrets.tf
 
@@ -152,7 +152,7 @@ resource "terraform_data" "user_secrets_cleanup" {
     region     = var.aws_region
     profile    = var.aws_profile
   }
-  # Cleanup path: openclaw/agents/<name>/
+  # Cleanup path: conga/agents/<name>/
 }
 ```
 
@@ -162,7 +162,7 @@ Replace `local.agent_container_id[name]` with just `name` (agent name = containe
 ```hcl
 metrics = [
   for name, cfg in var.agents : [
-    "OpenClaw", "SessionSizeKB", "UserId", name,
+    "Conga Line", "SessionSizeKB", "UserId", name,
     { label = name, stat = "Maximum", period = 300 }
   ]
 ]
@@ -174,7 +174,7 @@ Replace `agent_container_id` references with agent name directly:
 ```hcl
 for name, cfg in var.agents : name => join(" ", [
   "aws ssm start-session",
-  "--target ${aws_instance.openclaw.id}",
+  "--target ${aws_instance.conga.id}",
   "--document-name AWS-StartPortForwardingSession",
   "--parameters portNumber=${cfg.gateway_port},localPortNumber=18789",
   ...
@@ -236,7 +236,7 @@ dnf install -y docker nodejs npm jq
 
 **Section 4 (image pull):** Read from SSM:
 ```bash
-OPENCLAW_IMAGE=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" \
+CONGA_IMAGE=$(aws ssm get-parameter --name "/conga/config/conga-image" \
   --query "Parameter.Value" --output text --region "$AWS_REGION")
 ```
 
@@ -247,7 +247,7 @@ OPENCLAW_IMAGE=$(aws ssm get-parameter --name "/openclaw/config/openclaw-image" 
 ```bash
 setup_user_agent() {
   local AGENT_NAME="$1" SLACK_MEMBER_ID="$2" GATEWAY_PORT="$3"
-  # Secrets under openclaw/agents/<name>/
+  # Secrets under conga/agents/<name>/
   # Env file: shared + per-agent secrets
   # openclaw.json: groupPolicy=disabled, dmPolicy=allowlist, allowFrom=[slack_member_id]
   # Data dir, config hash, Docker network, systemd unit
@@ -256,7 +256,7 @@ setup_user_agent() {
 
 setup_team_agent() {
   local AGENT_NAME="$1" SLACK_CHANNEL="$2" GATEWAY_PORT="$3"
-  # Secrets under openclaw/agents/<name>/
+  # Secrets under conga/agents/<name>/
   # Env file: shared + per-agent secrets
   # openclaw.json: groupPolicy=allowlist, dmPolicy=disabled, channels={slack_channel}
   # Data dir, config hash, Docker network, systemd unit
@@ -264,7 +264,7 @@ setup_team_agent() {
 
 # Discover all agents
 AGENT_PARAMS=$(aws ssm get-parameters-by-path \
-  --path "/openclaw/agents/" \
+  --path "/conga/agents/" \
   --query "Parameters" \
   --output json --region "$AWS_REGION" 2>/dev/null || echo '[]')
 
@@ -284,14 +284,14 @@ for PARAM in $(echo "$AGENT_PARAMS" | jq -r '.[] | @base64'); do
     setup_user_agent "$AGENT_NAME" "$SLACK_MEMBER_ID" "$GATEWAY_PORT"
     ROUTING_MEMBERS=$(echo "$ROUTING_MEMBERS" | jq \
       --arg k "$SLACK_MEMBER_ID" \
-      --arg v "http://openclaw-$AGENT_NAME:18789/slack/events" \
+      --arg v "http://conga-$AGENT_NAME:18789/slack/events" \
       '. + {($k): $v}')
   elif [ "$AGENT_TYPE" = "team" ]; then
     SLACK_CHANNEL=$(echo "$PARAM_VALUE" | jq -r '.slack_channel')
     setup_team_agent "$AGENT_NAME" "$SLACK_CHANNEL" "$GATEWAY_PORT"
     ROUTING_CHANNELS=$(echo "$ROUTING_CHANNELS" | jq \
       --arg k "$SLACK_CHANNEL" \
-      --arg v "http://openclaw-$AGENT_NAME:18789/slack/events" \
+      --arg v "http://conga-$AGENT_NAME:18789/slack/events" \
       '. + {($k): $v}')
   else
     echo "WARNING: Unknown agent type '$AGENT_TYPE' for $AGENT_NAME, skipping"
@@ -303,7 +303,7 @@ done
 
 # Write routing.json
 jq -n --argjson channels "$ROUTING_CHANNELS" --argjson members "$ROUTING_MEMBERS" \
-  '{"channels": $channels, "members": $members}' > /opt/openclaw/config/routing.json
+  '{"channels": $channels, "members": $members}' > /opt/conga/config/routing.json
 
 if [ -z "$(echo "$ALL_AGENT_NAMES" | tr -d ' ')" ]; then
   echo "WARNING: No agents found in SSM. Router will start with empty routing config."
@@ -315,20 +315,20 @@ fi
 **Section 10 (service startup):**
 ```bash
 for AGENT_NAME in $ALL_AGENT_NAMES; do
-  docker network connect "openclaw-$AGENT_NAME" openclaw-router 2>/dev/null || true
+  docker network connect "conga-$AGENT_NAME" conga-router 2>/dev/null || true
 done
 for AGENT_NAME in $ALL_AGENT_NAMES; do
-  systemctl enable "openclaw-$AGENT_NAME.service"
-  systemctl start "openclaw-$AGENT_NAME.service"
+  systemctl enable "conga-$AGENT_NAME.service"
+  systemctl start "conga-$AGENT_NAME.service"
 done
 ```
 
 **Final status:**
 ```bash
-echo "=== OpenClaw Bootstrap Complete: $(date -u) ==="
-echo "Router: openclaw-router (Socket Mode -> HTTP forwarding)"
+echo "=== Conga Line Bootstrap Complete: $(date -u) ==="
+echo "Router: conga-router (Socket Mode -> HTTP forwarding)"
 for AGENT_NAME in $ALL_AGENT_NAMES; do
-  echo "Agent: $AGENT_NAME (container: openclaw-$AGENT_NAME)"
+  echo "Agent: $AGENT_NAME (container: conga-$AGENT_NAME)"
 done
 ```
 
@@ -350,36 +350,36 @@ done
 - 2 args: `<name>` and `<slack_member_id>`
 - Validate name with `validateAgentName` (lowercase alphanumeric + hyphens)
 - Validate slack_member_id starts with `U`
-- Write to `/openclaw/agents/<name>` with `{"type":"user","slack_member_id":"...","gateway_port":...,"iam_identity":"..."}`
+- Write to `/conga/agents/<name>` with `{"type":"user","slack_member_id":"...","gateway_port":...,"iam_identity":"..."}`
 - Remove `by-iam` parameter write
 
 **`adminAddTeamRun`:**
 - 2 args: `<name>` and `<slack_channel>`
 - Validate name, validate channel starts with `C`
-- Write to `/openclaw/agents/<name>` with `{"type":"team","slack_channel":"...","gateway_port":...}`
+- Write to `/conga/agents/<name>` with `{"type":"team","slack_channel":"...","gateway_port":...}`
 
 **`adminRemoveAgentRun` (replaces removeUser + removeTeam):**
 - 1 arg: `<name>`
-- Read `/openclaw/agents/<name>` to determine type (for user: offer `--delete-secrets`)
+- Read `/conga/agents/<name>` to determine type (for user: offer `--delete-secrets`)
 - Run `RemoveAgentScript` with `ContainerID = name`
-- Delete SSM parameter `/openclaw/agents/<name>`
-- If `--delete-secrets` and type=user: delete secrets under `openclaw/agents/<name>/`
+- Delete SSM parameter `/conga/agents/<name>`
+- If `--delete-secrets` and type=user: delete secrets under `conga/agents/<name>/`
 
 **`adminListAgentsRun`:**
-- Single `GetParametersByPath` on `/openclaw/agents/`
+- Single `GetParametersByPath` on `/conga/agents/`
 - Parse each value for `type`, display accordingly
 - Headers: `NAME`, `TYPE`, `IDENTIFIER`, `GATEWAY PORT`
 - User rows: name, "user", slack_member_id, port
 - Team rows: name, "team", slack_channel, port
 
 **`resolveGatewayPort`:**
-- Single `GetParametersByPath` on `/openclaw/agents/`
+- Single `GetParametersByPath` on `/conga/agents/`
 
 ### discovery/identity.go
 
 **`ResolveIdentity`:**
-- Remove `/openclaw/users/by-iam/` lookup
-- `GetParametersByPath` on `/openclaw/agents/`, iterate, find matching `iam_identity`
+- Remove `/conga/users/by-iam/` lookup
+- `GetParametersByPath` on `/conga/agents/`, iterate, find matching `iam_identity`
 - Return agent name + slack_member_id from matching entry
 
 ### discovery/user.go
@@ -397,9 +397,9 @@ type AgentConfig struct {
 }
 ```
 
-**`ResolveAgent(ctx, ssmClient, name)`** — direct lookup at `/openclaw/agents/<name>`.
+**`ResolveAgent(ctx, ssmClient, name)`** — direct lookup at `/conga/agents/<name>`.
 
-**`ResolveAgentByIAM(ctx, ssmClient, iamIdentity)`** — scan `/openclaw/agents/`, match `iam_identity`.
+**`ResolveAgentByIAM(ctx, ssmClient, iamIdentity)`** — scan `/conga/agents/`, match `iam_identity`.
 
 Remove `ResolveUser`, `ResolveTeam`, `UserConfig`, `TeamConfig`.
 
@@ -409,12 +409,12 @@ Remove `ResolveUser`, `ResolveTeam`, `UserConfig`, `TeamConfig`.
 - Template var `MemberID` → `AgentName` + `SlackMemberID`
 - All paths use `AgentName` (container, data dir, systemd, network, config files)
 - `SlackMemberID` used only in `openclaw.json` (`allowFrom`) and routing entry
-- Secrets path: `openclaw/agents/$AGENT_NAME/`
+- Secrets path: `conga/agents/$AGENT_NAME/`
 
 **`add-team.sh.tmpl`:**
 - Template var `TeamName` → `AgentName` (already human-readable, just rename for consistency)
 - `SlackChannel` stays as-is
-- Secrets path: `openclaw/agents/$AGENT_NAME/`
+- Secrets path: `conga/agents/$AGENT_NAME/`
 
 **`remove-agent.sh.tmpl`:** Already uses `ContainerID` which will be set to agent name. No change needed.
 
@@ -432,8 +432,8 @@ Remove `ResolveUser`, `ResolveTeam`, `UserConfig`, `TeamConfig`.
 
 ## Migration
 
-1. `terraform apply` creates new `/openclaw/agents/*` params and `/openclaw/config/openclaw-image`
+1. `terraform apply` creates new `/conga/agents/*` params and `/conga/config/conga-image`
 2. Deploy new bootstrap (static, SSM-driven) + updated CLI
-3. Cycle host — new bootstrap discovers agents from `/openclaw/agents/`
-4. Clean up old SSM params (`/openclaw/users/*`, `/openclaw/teams/*`) manually or via script
-5. Clean up old secrets paths (`openclaw/<member_id>/`) → migrate to `openclaw/agents/<name>/` if needed, or leave as-is and update on next `cruxclaw secrets set`
+3. Cycle host — new bootstrap discovers agents from `/conga/agents/`
+4. Clean up old SSM params (`/conga/users/*`, `/conga/teams/*`) manually or via script
+5. Clean up old secrets paths (`conga/<member_id>/`) → migrate to `conga/agents/<name>/` if needed, or leave as-is and update on next `conga secrets set`

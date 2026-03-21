@@ -15,10 +15,10 @@ MIME-Version: 1.0
 
 #!/bin/bash
 set -euxo pipefail
-exec > >(tee /var/log/openclaw-bootstrap.log) 2>&1
+exec > >(tee /var/log/conga-bootstrap.log) 2>&1
 
 # Download and run the full bootstrap script from S3
-aws s3 cp s3://${state_bucket}/openclaw/bootstrap/bootstrap.sh /tmp/bootstrap.sh --region ${aws_region}
+aws s3 cp s3://${state_bucket}/conga/bootstrap/bootstrap.sh /tmp/bootstrap.sh --region ${aws_region}
 chmod +x /tmp/bootstrap.sh
 /tmp/bootstrap.sh
 

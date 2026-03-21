@@ -11,7 +11,7 @@
 
 ## Task 2: Terraform — S3 upload + IAM
 - [x] Create `terraform/behavior.tf` — S3 object resources via `fileset()`
-- [x] Modify `terraform/iam.tf` — add `openclaw/behavior/*` to S3 read policy + s3:ListBucket for sync
+- [x] Modify `terraform/iam.tf` — add `conga/behavior/*` to S3 read policy + s3:ListBucket for sync
 - [x] Add `state-bucket` SSM parameter in `terraform/ssm-parameters.tf`
 
 ## Task 3: Deploy helper script

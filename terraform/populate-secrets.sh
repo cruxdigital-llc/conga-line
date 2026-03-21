@@ -4,7 +4,7 @@ set -euo pipefail
 AWS_PROFILE="${AWS_PROFILE:?Set AWS_PROFILE to your AWS CLI profile name}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 
-echo "Populate shared OpenClaw secrets"
+echo "Populate shared Conga Line secrets"
 echo "================================"
 echo ""
 
@@ -20,9 +20,9 @@ read_secret() {
   echo "  ✓ $name updated"
 }
 
-read_secret "openclaw/shared/slack-bot-token" "Slack Bot Token (xoxb-...)"
-read_secret "openclaw/shared/slack-app-token" "Slack App Token (xapp-...)"
-read_secret "openclaw/shared/slack-signing-secret" "Slack Signing Secret"
+read_secret "conga/shared/slack-bot-token" "Slack Bot Token (xoxb-...)"
+read_secret "conga/shared/slack-app-token" "Slack App Token (xapp-...)"
+read_secret "conga/shared/slack-signing-secret" "Slack Signing Secret"
 
 echo ""
 echo "Shared secrets populated."

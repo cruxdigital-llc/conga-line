@@ -272,20 +272,20 @@ func TestGetParametersByPath_Pagination(t *testing.T) {
 			if callCount == 1 {
 				return &ssm.GetParametersByPathOutput{
 					Parameters: []ssmtypes.Parameter{
-						{Name: aws.String("/openclaw/agents/myagent"), Value: aws.String(`{"type":"user"}`)},
+						{Name: aws.String("/conga/agents/myagent"), Value: aws.String(`{"type":"user"}`)},
 					},
 					NextToken: aws.String("page2"),
 				}, nil
 			}
 			return &ssm.GetParametersByPathOutput{
 				Parameters: []ssmtypes.Parameter{
-					{Name: aws.String("/openclaw/agents/leadership"), Value: aws.String(`{"type":"team"}`)},
+					{Name: aws.String("/conga/agents/leadership"), Value: aws.String(`{"type":"team"}`)},
 				},
 			}, nil
 		},
 	}
 
-	entries, err := GetParametersByPath(context.Background(), mock, "/openclaw/agents/")
+	entries, err := GetParametersByPath(context.Background(), mock, "/conga/agents/")
 	if err != nil {
 		t.Fatalf("GetParametersByPath returned error: %v", err)
 	}
@@ -302,21 +302,21 @@ func TestGetParametersByPath_FiltersByIAM(t *testing.T) {
 		getParametersByPathFn: func(ctx context.Context, params *ssm.GetParametersByPathInput, optFns ...func(*ssm.Options)) (*ssm.GetParametersByPathOutput, error) {
 			return &ssm.GetParametersByPathOutput{
 				Parameters: []ssmtypes.Parameter{
-					{Name: aws.String("/openclaw/agents/myagent"), Value: aws.String(`{"type":"user"}`)},
-					{Name: aws.String("/openclaw/agents/by-iam/user@example.com"), Value: aws.String("myagent")},
+					{Name: aws.String("/conga/agents/myagent"), Value: aws.String(`{"type":"user"}`)},
+					{Name: aws.String("/conga/agents/by-iam/user@example.com"), Value: aws.String("myagent")},
 				},
 			}, nil
 		},
 	}
 
-	entries, err := GetParametersByPath(context.Background(), mock, "/openclaw/agents/")
+	entries, err := GetParametersByPath(context.Background(), mock, "/conga/agents/")
 	if err != nil {
 		t.Fatalf("GetParametersByPath returned error: %v", err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry (by-iam filtered), got %d", len(entries))
 	}
-	if entries[0].Name != "/openclaw/agents/myagent" {
+	if entries[0].Name != "/conga/agents/myagent" {
 		t.Errorf("expected agent entry, got %q", entries[0].Name)
 	}
 }

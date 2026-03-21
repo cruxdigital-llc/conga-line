@@ -1,8 +1,8 @@
-# Spec: CruxClaw CLI
+# Spec: Conga Line CLI
 
 ## Overview
 
-Cross-platform Go CLI (`cruxclaw`) enabling non-technical users to manage their OpenClaw deployment via AWS SSO + SSM. Discovers infrastructure through AWS APIs, embeds container management scripts, and handles SSM port forwarding for web UI access.
+Cross-platform Go CLI (`conga`) enabling non-technical users to manage their Conga Line deployment via AWS SSO + SSM. Discovers infrastructure through AWS APIs, embeds container management scripts, and handles SSM port forwarding for web UI access.
 
 ---
 
@@ -13,7 +13,7 @@ Cross-platform Go CLI (`cruxclaw`) enabling non-technical users to manage their 
 ```hcl
 resource "aws_ssm_parameter" "user_config" {
   for_each = var.users
-  name     = "/openclaw/users/${each.key}"
+  name     = "/conga/users/${each.key}"
   type     = "String"
   value = jsonencode({
     slack_channel = each.value.slack_channel
@@ -24,7 +24,7 @@ resource "aws_ssm_parameter" "user_config" {
 
 resource "aws_ssm_parameter" "user_iam_mapping" {
   for_each = var.users
-  name     = "/openclaw/users/by-iam/${each.value.iam_identity}"
+  name     = "/conga/users/by-iam/${each.value.iam_identity}"
   type     = "String"
   value    = each.key
   tags     = { Project = var.project_name }
@@ -62,7 +62,7 @@ Instance role already has `ssm:*` and `secretsmanager:GetSecretValue`. SSM Param
 
 ### 1d. `terraform/compute.tf` — verify tags
 
-Instance already tagged `Name=openclaw-host` via launch template. No changes needed.
+Instance already tagged `Name=conga-host` via launch template. No changes needed.
 
 ---
 
@@ -73,7 +73,7 @@ Instance already tagged `Name=openclaw-host` via launch template. No changes nee
 ```
 cli/
   main.go                              # cobra root command init + Execute()
-  go.mod                               # module: github.com/cruxdigital-llc/openclaw-template/cli
+  go.mod                               # module: github.com/cruxdigital-llc/conga-line/cli
   cmd/
     root.go                            # root command, persistent flags, AWS session init
     auth.go                            # auth login, auth status
@@ -86,7 +86,7 @@ cli/
     version.go                         # version command (set via ldflags at build time)
   internal/
     config/
-      config.go                        # Load/save ~/.cruxclaw/config.toml, defaults
+      config.go                        # Load/save ~/.conga/config.toml, defaults
     aws/
       session.go                       # AWS SDK v2 config, SSO credential provider, error wrapping
       ec2.go                           # DescribeInstances by tag, return instance ID
@@ -95,7 +95,7 @@ cli/
       secrets.go                       # CreateSecret, PutSecretValue, ListSecrets, DeleteSecret
     discovery/
       instance.go                      # FindInstance: EC2 tag lookup, cache result for session
-      user.go                          # ResolveUser: GetParameter /openclaw/users/{id}, parse JSON
+      user.go                          # ResolveUser: GetParameter /conga/users/{id}, parse JSON
       identity.go                      # WhoAmI: GetCallerIdentity → extract identity → lookup by-iam/
     tunnel/
       tunnel.go                        # PluginCheck, StartTunnel, WaitForExit — manages session-manager-plugin
@@ -136,23 +136,23 @@ var (
 )
 ```
 
-Build: `go build -ldflags "-X main.version=v1.0.0 -X main.commit=$(git rev-parse HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o cruxclaw .`
+Build: `go build -ldflags "-X main.version=v1.0.0 -X main.commit=$(git rev-parse HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o conga .`
 
 ---
 
 ## 3. Config Model
 
-### 3a. `~/.cruxclaw/config.toml`
+### 3a. `~/.conga/config.toml`
 
 ```toml
 # AWS SSO settings
 region         = "us-east-2"
 sso_start_url  = "https://example-sso.awsapps.com/start/"
 sso_account_id = "123456789012"
-sso_role_name  = "OpenClawUser"
+sso_role_name  = "Conga LineUser"
 
 # Infrastructure discovery
-instance_tag   = "openclaw-host"
+instance_tag   = "conga-host"
 ```
 
 ### 3b. `internal/config/config.go`
@@ -167,13 +167,13 @@ type Config struct {
 }
 ```
 
-Defaults baked in as struct literal. Config file loaded from `~/.cruxclaw/config.toml` if exists. CLI flags override all.
+Defaults baked in as struct literal. Config file loaded from `~/.conga/config.toml` if exists. CLI flags override all.
 
 ### 3c. Resolution Order
 
 1. Baked-in defaults (compile-time)
-2. `~/.cruxclaw/config.toml` (user-level)
-3. Environment variables: `CRUXCLAW_REGION`, `CRUXCLAW_SSO_START_URL`, etc.
+2. `~/.conga/config.toml` (user-level)
+3. Environment variables: `CONGA_REGION`, `CONGA_SSO_START_URL`, etc.
 4. CLI flags: `--region`, `--profile`
 
 ---
@@ -188,7 +188,7 @@ Defaults baked in as struct literal. Config file loaded from `~/.cruxclaw/config
 2. If valid token exists, use it
 3. If expired or missing:
    - If running `auth login`: initiate OIDC device authorization
-   - If running any other command: return error "Session expired. Run `cruxclaw auth login`"
+   - If running any other command: return error "Session expired. Run `conga auth login`"
 4. Create `aws.Config` with SSO credential provider
 5. Return typed clients (EC2, SSM, SecretsManager, STS)
 
@@ -205,8 +205,8 @@ Defaults baked in as struct literal. Config file loaded from `~/.cruxclaw/config
 
 | AWS Error | User-Facing Message |
 |-----------|-------------------|
-| `ExpiredTokenException` | "Session expired. Run `cruxclaw auth login` to re-authenticate." |
-| `UnrecognizedClientException` | "SSO client not recognized. Run `cruxclaw auth login` again." |
+| `ExpiredTokenException` | "Session expired. Run `conga auth login` to re-authenticate." |
+| `UnrecognizedClientException` | "SSO client not recognized. Run `conga auth login` again." |
 | `AccessDeniedException` | "Permission denied. Contact your admin to verify your SSO role." |
 | `AuthorizationPendingException` | (internal — continue polling during login) |
 | `SlowDownException` | (internal — increase poll interval during login) |
@@ -230,7 +230,7 @@ func FindInstance(ctx context.Context, ec2Client *ec2.Client, tag string) (strin
 
 ```go
 type ResolvedIdentity struct {
-    IAMArn      string  // e.g., arn:aws:sts::123456789012:assumed-role/OpenClawUser/user@example.com
+    IAMArn      string  // e.g., arn:aws:sts::123456789012:assumed-role/Conga LineUser/user@example.com
     AccountID   string
     UserID      string
     SessionName string  // e.g., user@example.com (extracted from ARN)
@@ -242,7 +242,7 @@ func ResolveIdentity(ctx context.Context, stsClient *sts.Client, ssmClient *ssm.
 
 1. `sts:GetCallerIdentity` → get ARN
 2. Parse ARN to extract role session name (the part after the last `/` in assumed-role ARNs)
-3. `ssm:GetParameter` at `/openclaw/users/by-iam/{sessionName}`
+3. `ssm:GetParameter` at `/conga/users/by-iam/{sessionName}`
 4. If found → set `MemberID`
 5. If not found → return error with guidance to use `--user` or ask admin
 
@@ -258,7 +258,7 @@ type UserConfig struct {
 func ResolveUser(ctx context.Context, ssmClient *ssm.Client, memberID string) (*UserConfig, error)
 ```
 
-- `ssm:GetParameter` at `/openclaw/users/{memberID}`
+- `ssm:GetParameter` at `/conga/users/{memberID}`
 - Parse JSON value → `UserConfig`
 
 ---
@@ -287,18 +287,18 @@ func RunCommand(ctx context.Context, client *ssm.Client, instanceID string, scri
 
 ## 7. Command Specifications
 
-### 7a. `cruxclaw auth login`
+### 7a. `conga auth login`
 
 **Flow:**
 1. Load config (baked defaults → config file → flags)
 2. Run OIDC device authorization flow (see Section 4a)
 3. After successful token, call `sts:GetCallerIdentity` to verify
-4. Resolve identity to OpenClaw user (if mapping exists)
-5. Print: "Logged in as {email}. OpenClaw user: {memberID}. Session expires: {expiry}"
+4. Resolve identity to Conga Line user (if mapping exists)
+5. Print: "Logged in as {email}. Conga Line user: {memberID}. Session expires: {expiry}"
 
 **Flags:** `--region`, `--sso-start-url` (override config)
 
-### 7b. `cruxclaw auth status`
+### 7b. `conga auth status`
 
 **Flow:**
 1. Load AWS session (fail if no cached token)
@@ -306,35 +306,35 @@ func RunCommand(ctx context.Context, client *ssm.Client, instanceID string, scri
 3. Resolve identity → member ID
 4. Print: identity, account, member ID, session expiry
 
-### 7c. `cruxclaw secrets set <name>`
+### 7c. `conga secrets set <name>`
 
 **Flow:**
 1. Resolve identity → member ID (or use `--user`)
 2. Prompt for secret value (hidden input via `huh.NewInput().EchoMode(huh.EchoModePassword)`)
-3. Try `secretsmanager:PutSecretValue` at `openclaw/{memberID}/{name}`
+3. Try `secretsmanager:PutSecretValue` at `conga/{memberID}/{name}`
 4. If `ResourceNotFoundException`, use `secretsmanager:CreateSecret` instead
 5. Print confirmation
 
 **Flags:** `--user` (override), `--value` (non-interactive, for scripting)
 
-### 7d. `cruxclaw secrets list`
+### 7d. `conga secrets list`
 
 **Flow:**
 1. Resolve identity → member ID
-2. `secretsmanager:ListSecrets` with filter `Key=name,Values=openclaw/{memberID}/`
+2. `secretsmanager:ListSecrets` with filter `Key=name,Values=conga/{memberID}/`
 3. Display as table: Name (strip prefix), Last Changed Date
 
-### 7e. `cruxclaw secrets delete <name>`
+### 7e. `conga secrets delete <name>`
 
 **Flow:**
 1. Resolve identity → member ID
 2. Confirm: "Delete secret '{name}' for user {memberID}?"
-3. `secretsmanager:DeleteSecret` at `openclaw/{memberID}/{name}`
+3. `secretsmanager:DeleteSecret` at `conga/{memberID}/{name}`
 4. Print confirmation
 
 **Flags:** `--force` (skip confirmation)
 
-### 7f. `cruxclaw connect`
+### 7f. `conga connect`
 
 **Flow:**
 1. Check `session-manager-plugin` on PATH:
@@ -345,7 +345,7 @@ func RunCommand(ctx context.Context, client *ssm.Client, instanceID string, scri
 3. Find instance by tag
 4. Fetch gateway token via SSM RunCommand:
    ```bash
-   python3 -c "import json; c=json.load(open('/opt/openclaw/data/{{.MemberID}}/openclaw.json')); print(c.get('gateway',{}).get('auth',{}).get('token','NOT_FOUND'))"
+   python3 -c "import json; c=json.load(open('/opt/conga/data/{{.MemberID}}/openclaw.json')); print(c.get('gateway',{}).get('auth',{}).get('token','NOT_FOUND'))"
    ```
 5. Display token (attempt clipboard copy via `pbcopy`/`xclip`/`clip.exe`)
 6. Call `ssm:StartSession` API with parameters:
@@ -364,8 +364,8 @@ func RunCommand(ctx context.Context, client *ssm.Client, instanceID string, scri
    ```
 8. Print: "Tunnel open. Visit http://localhost:18789"
 9. Start device pairing goroutine:
-   - Every 10 seconds, SSM RunCommand: `docker exec openclaw-{memberID} npx openclaw devices list 2>&1`
-   - If "Pending" found, extract UUID, SSM RunCommand: `docker exec openclaw-{memberID} npx openclaw devices approve {uuid} 2>&1`
+   - Every 10 seconds, SSM RunCommand: `docker exec conga-{memberID} npx openclaw devices list 2>&1`
+   - If "Pending" found, extract UUID, SSM RunCommand: `docker exec conga-{memberID} npx openclaw devices approve {uuid} 2>&1`
    - Print: "Device approved! Refresh your browser."
    - Stop polling after approval or 5 minutes
 10. `signal.Notify` on `SIGINT`, `SIGTERM` → kill plugin subprocess
@@ -373,7 +373,7 @@ func RunCommand(ctx context.Context, client *ssm.Client, instanceID string, scri
 
 **Flags:** `--local-port` (default 18789), `--user` (override), `--no-pairing` (skip device pairing poll)
 
-### 7g. `cruxclaw refresh`
+### 7g. `conga refresh`
 
 **Flow:**
 1. Resolve identity → member ID
@@ -395,13 +395,13 @@ get_secret() {
 }
 
 MEMBER_ID="{{.MemberID}}"
-SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
-SLACK_APP_TOKEN=$(get_secret "openclaw/shared/slack-app-token")
-SLACK_SIGNING_SECRET=$(get_secret "openclaw/shared/slack-signing-secret")
-GOOGLE_CLIENT_ID=$(get_secret "openclaw/shared/google-client-id")
-GOOGLE_CLIENT_SECRET=$(get_secret "openclaw/shared/google-client-secret")
+SLACK_BOT_TOKEN=$(get_secret "conga/shared/slack-bot-token")
+SLACK_APP_TOKEN=$(get_secret "conga/shared/slack-app-token")
+SLACK_SIGNING_SECRET=$(get_secret "conga/shared/slack-signing-secret")
+GOOGLE_CLIENT_ID=$(get_secret "conga/shared/google-client-id")
+GOOGLE_CLIENT_SECRET=$(get_secret "conga/shared/google-client-secret")
 
-cat > /opt/openclaw/config/$MEMBER_ID.env << EOF
+cat > /opt/conga/config/$MEMBER_ID.env << EOF
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
 SLACK_SIGNING_SECRET=$SLACK_SIGNING_SECRET
 GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
@@ -409,33 +409,33 @@ GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
 EOF
 
 USER_SECRETS=$(aws secretsmanager list-secrets \
-  --filter Key=name,Values="openclaw/$MEMBER_ID/" \
+  --filter Key=name,Values="conga/$MEMBER_ID/" \
   --query 'SecretList[].Name' --output text \
   --region "$AWS_REGION" 2>/dev/null || echo "")
 
 for SP in $USER_SECRETS; do
   SV=$(get_secret "$SP")
-  SN=$(echo "$SP" | sed "s|openclaw/$MEMBER_ID/||" | tr '[:lower:]-' '[:upper:]_')
-  echo "$SN=$SV" >> /opt/openclaw/config/$MEMBER_ID.env
+  SN=$(echo "$SP" | sed "s|conga/$MEMBER_ID/||" | tr '[:lower:]-' '[:upper:]_')
+  echo "$SN=$SV" >> /opt/conga/config/$MEMBER_ID.env
 done
 
-chmod 0400 /opt/openclaw/config/$MEMBER_ID.env
+chmod 0400 /opt/conga/config/$MEMBER_ID.env
 
 # Rebuild -e flags from env file
 ENV_FLAGS=""
 while IFS="=" read -r key value; do
   [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
-done < /opt/openclaw/config/$MEMBER_ID.env
+done < /opt/conga/config/$MEMBER_ID.env
 
 # Update systemd ExecStart with new env flags
-sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name openclaw-$MEMBER_ID --network openclaw-$MEMBER_ID -p 127.0.0.1:$(cat /opt/openclaw/users/$MEMBER_ID.port 2>/dev/null || echo 18789):18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/openclaw/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest|" /etc/systemd/system/openclaw-$MEMBER_ID.service
+sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name conga-$MEMBER_ID --network conga-$MEMBER_ID -p 127.0.0.1:$(cat /opt/conga/users/$MEMBER_ID.port 2>/dev/null || echo 18789):18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/conga/data/$MEMBER_ID:/home/node/.openclaw:rw $ENV_FLAGS ghcr.io/openclaw/openclaw:latest|" /etc/systemd/system/conga-$MEMBER_ID.service
 
 systemctl daemon-reload
-systemctl restart openclaw-$MEMBER_ID
+systemctl restart conga-$MEMBER_ID
 echo "Secrets refreshed and container restarted for $MEMBER_ID"
 ```
 
-### 7h. `cruxclaw status`
+### 7h. `conga status`
 
 **Flow:**
 1. Resolve identity → member ID
@@ -443,48 +443,48 @@ echo "Secrets refreshed and container restarted for $MEMBER_ID"
 3. SSM RunCommand:
    ```bash
    echo "=== Service Status ==="
-   systemctl is-active openclaw-{{.MemberID}} 2>/dev/null || echo "inactive"
+   systemctl is-active conga-{{.MemberID}} 2>/dev/null || echo "inactive"
    echo "=== Container Info ==="
-   docker inspect --format '{{`{{.State.Status}}`}} | Up since {{`{{.State.StartedAt}}`}} | Restarts: {{`{{.RestartCount}}`}}' openclaw-{{.MemberID}} 2>/dev/null || echo "Container not found"
+   docker inspect --format '{{`{{.State.Status}}`}} | Up since {{`{{.State.StartedAt}}`}} | Restarts: {{`{{.RestartCount}}`}}' conga-{{.MemberID}} 2>/dev/null || echo "Container not found"
    echo "=== Resource Usage ==="
-   docker stats --no-stream --format 'CPU: {{`{{.CPUPerc}}`}} | Mem: {{`{{.MemUsage}}`}} | PIDs: {{`{{.PIDs}}`}}' openclaw-{{.MemberID}} 2>/dev/null || echo "N/A"
+   docker stats --no-stream --format 'CPU: {{`{{.CPUPerc}}`}} | Mem: {{`{{.MemUsage}}`}} | PIDs: {{`{{.PIDs}}`}}' conga-{{.MemberID}} 2>/dev/null || echo "N/A"
    ```
 4. Parse output, display formatted
 
-### 7i. `cruxclaw logs`
+### 7i. `conga logs`
 
 **Flow:**
 1. Resolve identity → member ID
 2. Find instance by tag
-3. SSM RunCommand: `docker logs openclaw-{memberID} --tail {lines} 2>&1`
+3. SSM RunCommand: `docker logs conga-{memberID} --tail {lines} 2>&1`
 4. Print raw output
 
 **Flags:** `--lines N` (default 50)
 
-### 7j. `cruxclaw admin add-user <member_id> <slack_channel>`
+### 7j. `conga admin add-user <member_id> <slack_channel>`
 
 **Flow:**
-1. Read all existing user configs via `ssm:GetParametersByPath` on `/openclaw/users/`
+1. Read all existing user configs via `ssm:GetParametersByPath` on `/conga/users/`
 2. Auto-assign gateway port: find max existing port + 1 (start at 18789 if none)
 3. Prompt for IAM identity (SSO username/email) unless `--iam-identity` provided
 4. Create SSM parameters:
-   - `/openclaw/users/{memberID}` → `{"slack_channel": "...", "gateway_port": N}`
-   - `/openclaw/users/by-iam/{iamIdentity}` → `{memberID}`
+   - `/conga/users/{memberID}` → `{"slack_channel": "...", "gateway_port": N}`
+   - `/conga/users/by-iam/{iamIdentity}` → `{memberID}`
 5. Find instance by tag
 6. Render `add-user.sh.tmpl` with `{MemberID, SlackChannel, AWSRegion, GatewayPort}`
 7. SSM RunCommand with rendered script
 8. Show spinner, print result
-9. Print next steps: "User {memberID} provisioned. They should run: cruxclaw secrets set anthropic-api-key && cruxclaw refresh"
+9. Print next steps: "User {memberID} provisioned. They should run: conga secrets set anthropic-api-key && conga refresh"
 
 **Flags:** `--gateway-port N`, `--iam-identity`
 
 **Embedded template `scripts/add-user.sh.tmpl`** — extracted from `scripts/add-user.sh` lines 29-153, with template variables:
 - `{{.MemberID}}`, `{{.SlackChannel}}`, `{{.AWSRegion}}`, `{{.GatewayPort}}`
 
-### 7k. `cruxclaw admin list-users`
+### 7k. `conga admin list-users`
 
 **Flow:**
-1. `ssm:GetParametersByPath` on `/openclaw/users/` (non-recursive to avoid `by-iam/`)
+1. `ssm:GetParametersByPath` on `/conga/users/` (non-recursive to avoid `by-iam/`)
 2. Parse each parameter: extract member ID from name, parse JSON value
 3. Display as table:
 
@@ -494,27 +494,27 @@ UEXAMPLE01     CEXAMPLE01     18789
 UEXAMPLE02   CEXAMPLE02     18790
 ```
 
-### 7l. `cruxclaw admin remove-user <member_id>`
+### 7l. `conga admin remove-user <member_id>`
 
 **Flow:**
 1. Confirm: "Remove user {memberID}? This will stop their container and delete config."
 2. Find instance by tag
 3. SSM RunCommand with embedded `remove-user.sh.tmpl`:
    ```bash
-   systemctl stop openclaw-{{.MemberID}} || true
-   systemctl disable openclaw-{{.MemberID}} || true
-   rm -f /etc/systemd/system/openclaw-{{.MemberID}}.service
+   systemctl stop conga-{{.MemberID}} || true
+   systemctl disable conga-{{.MemberID}} || true
+   rm -f /etc/systemd/system/conga-{{.MemberID}}.service
    systemctl daemon-reload
-   docker network rm openclaw-{{.MemberID}} || true
+   docker network rm conga-{{.MemberID}} || true
    echo "User {{.MemberID}} removed from instance"
    ```
-4. Delete SSM parameters: `/openclaw/users/{memberID}`, `/openclaw/users/by-iam/*` (find matching)
-5. If `--delete-secrets`: `secretsmanager:DeleteSecret` for all `openclaw/{memberID}/*`
+4. Delete SSM parameters: `/conga/users/{memberID}`, `/conga/users/by-iam/*` (find matching)
+5. If `--delete-secrets`: `secretsmanager:DeleteSecret` for all `conga/{memberID}/*`
 6. Print confirmation
 
 **Flags:** `--force` (skip confirmation), `--delete-secrets` (also remove Secrets Manager entries)
 
-### 7m. `cruxclaw admin cycle-host`
+### 7m. `conga admin cycle-host`
 
 **Flow:**
 1. Confirm: "This will restart the EC2 instance and ALL user containers. Continue?"
@@ -615,11 +615,11 @@ func (t *Tunnel) Stop() error       // Send SIGTERM/kill to plugin
 
 ```yaml
 version: 2
-project_name: cruxclaw
+project_name: conga
 
 builds:
   - main: ./cli
-    binary: cruxclaw
+    binary: conga
     env:
       - CGO_ENABLED=0
     goos:
@@ -647,7 +647,7 @@ checksum:
 release:
   github:
     owner: cruxdigital-llc
-    name: openclaw-template
+    name: conga-line
 ```
 
 ### GitHub Actions: `.github/workflows/release.yml`
@@ -660,16 +660,16 @@ Triggered on tag push (`v*`). Runs GoReleaser to build and publish to GitHub Rel
 
 | Scenario | Detection | User Message |
 |----------|-----------|-------------|
-| SSO session expired | `ExpiredTokenException` from any AWS call | "Session expired. Run `cruxclaw auth login`." |
-| Instance not found | `DescribeInstances` returns 0 results | "No OpenClaw instance found (tag: openclaw-host). Is the infrastructure deployed?" |
-| Instance stopped | `DescribeInstances` returns instance in `stopped` state | "Instance is stopped. Run `cruxclaw admin cycle-host` or start it via AWS console." |
-| User not provisioned | `ssm:GetParameter` returns `ParameterNotFound` | "User {id} not found. Ask admin to run `cruxclaw admin add-user`." |
-| IAM identity not mapped | `by-iam/` lookup returns `ParameterNotFound` | "Your IAM identity is not mapped to an OpenClaw user. Use `--user <member_id>` or ask admin." |
+| SSO session expired | `ExpiredTokenException` from any AWS call | "Session expired. Run `conga auth login`." |
+| Instance not found | `DescribeInstances` returns 0 results | "No Conga Line instance found (tag: conga-host). Is the infrastructure deployed?" |
+| Instance stopped | `DescribeInstances` returns instance in `stopped` state | "Instance is stopped. Run `conga admin cycle-host` or start it via AWS console." |
+| User not provisioned | `ssm:GetParameter` returns `ParameterNotFound` | "User {id} not found. Ask admin to run `conga admin add-user`." |
+| IAM identity not mapped | `by-iam/` lookup returns `ParameterNotFound` | "Your IAM identity is not mapped to an Conga Line user. Use `--user <member_id>` or ask admin." |
 | `session-manager-plugin` missing | `exec.LookPath` fails | Platform-specific install instructions |
 | Port already in use | Plugin exits with non-zero immediately | "Port 18789 already in use. Use `--local-port <port>` or close the existing tunnel." |
 | SSM RunCommand timeout | Poll exceeds 120s | "Command timed out after 2 minutes. The instance may be under heavy load." |
-| Gateway token not found | SSM RunCommand returns "NOT_FOUND" | "Gateway token not found. Container may not have started yet. Try `cruxclaw status`." |
-| Multiple instances with same tag | `DescribeInstances` returns >1 | "Multiple instances found with tag openclaw-host. Use `--instance-id` to specify." |
+| Gateway token not found | SSM RunCommand returns "NOT_FOUND" | "Gateway token not found. Container may not have started yet. Try `conga status`." |
+| Multiple instances with same tag | `DescribeInstances` returns >1 | "Multiple instances found with tag conga-host. Use `--instance-id` to specify." |
 
 ---
 

@@ -10,7 +10,7 @@ Create IAM role with least-privilege + deny-dangerous policies, KMS key for EBS 
 ```hcl
 # --- Instance Role ---
 
-resource "aws_iam_role" "openclaw_host" {
+resource "aws_iam_role" "conga_host" {
   name_prefix = "${var.project_name}-host-"
 
   assume_role_policy = jsonencode({
@@ -29,15 +29,15 @@ resource "aws_iam_role" "openclaw_host" {
   }
 }
 
-resource "aws_iam_instance_profile" "openclaw_host" {
+resource "aws_iam_instance_profile" "conga_host" {
   name_prefix = "${var.project_name}-host-"
-  role        = aws_iam_role.openclaw_host.name
+  role        = aws_iam_role.conga_host.name
 }
 
 # --- SSM Access (AWS managed policy) ---
 
 resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.openclaw_host.name
+  role       = aws_iam_role.conga_host.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
@@ -45,7 +45,7 @@ resource "aws_iam_role_policy_attachment" "ssm" {
 
 resource "aws_iam_role_policy" "secrets_read" {
   name_prefix = "${var.project_name}-secrets-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -55,8 +55,8 @@ resource "aws_iam_role_policy" "secrets_read" {
         "secretsmanager:GetSecretValue"
       ]
       Resource = [
-        "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/shared/*",
-        "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/myagent/*"
+        "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/shared/*",
+        "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/myagent/*"
       ]
     }]
   })
@@ -66,7 +66,7 @@ resource "aws_iam_role_policy" "secrets_read" {
 
 resource "aws_iam_role_policy" "cloudwatch_logs" {
   name_prefix = "${var.project_name}-logs-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -88,7 +88,7 @@ resource "aws_iam_role_policy" "cloudwatch_logs" {
 
 resource "aws_iam_role_policy" "deny_dangerous" {
   name_prefix = "${var.project_name}-deny-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -133,7 +133,7 @@ resource "aws_cloudwatch_log_group" "gateway" {
 
 ```hcl
 resource "aws_kms_key" "ebs" {
-  description             = "OpenClaw EBS encryption key"
+  description             = "Conga Line EBS encryption key"
   deletion_window_in_days = 7
   enable_key_rotation     = true
 
@@ -153,7 +153,7 @@ resource "aws_kms_key" "ebs" {
         Sid    = "AllowInstanceRole"
         Effect = "Allow"
         Principal = {
-          AWS = aws_iam_role.openclaw_host.arn
+          AWS = aws_iam_role.conga_host.arn
         }
         Action = [
           "kms:Decrypt",
@@ -197,21 +197,21 @@ resource "aws_kms_alias" "ebs" {
 ```hcl
 locals {
   shared_secrets = {
-    "openclaw/shared/slack-bot-token" = "Slack bot token (xoxb-)"
-    "openclaw/shared/slack-app-token" = "Slack app token (xapp-)"
+    "conga/shared/slack-bot-token" = "Slack bot token (xoxb-)"
+    "conga/shared/slack-app-token" = "Slack app token (xapp-)"
   }
 
   myagent_secrets = {
-    "openclaw/myagent/anthropic-api-key" = "Anthropic API key"
-    "openclaw/myagent/gateway-token"     = "OpenClaw gateway auth token"
-    "openclaw/myagent/trello-api-key"    = "Trello API key"
-    "openclaw/myagent/trello-token"      = "Trello token"
+    "conga/myagent/anthropic-api-key" = "Anthropic API key"
+    "conga/myagent/gateway-token"     = "Conga Line gateway auth token"
+    "conga/myagent/trello-api-key"    = "Trello API key"
+    "conga/myagent/trello-token"      = "Trello token"
   }
 
   all_secrets = merge(local.shared_secrets, local.myagent_secrets)
 }
 
-resource "aws_secretsmanager_secret" "openclaw" {
+resource "aws_secretsmanager_secret" "conga" {
   for_each    = local.all_secrets
   name        = each.key
   description = each.value
@@ -221,9 +221,9 @@ resource "aws_secretsmanager_secret" "openclaw" {
   }
 }
 
-resource "aws_secretsmanager_secret_version" "openclaw" {
+resource "aws_secretsmanager_secret_version" "conga" {
   for_each      = local.all_secrets
-  secret_id     = aws_secretsmanager_secret.openclaw[each.key].id
+  secret_id     = aws_secretsmanager_secret.conga[each.key].id
   secret_string = "REPLACE_ME"
 
   lifecycle {
@@ -243,7 +243,7 @@ set -euo pipefail
 AWS_PROFILE="123456789012_AdministratorAccess"
 AWS_REGION="us-east-2"
 
-echo "Populate OpenClaw secrets in AWS Secrets Manager"
+echo "Populate Conga Line secrets in AWS Secrets Manager"
 echo "================================================"
 echo ""
 
@@ -263,19 +263,19 @@ read_secret() {
 }
 
 echo "--- Shared Secrets ---"
-read_secret "openclaw/shared/slack-bot-token" "Slack Bot Token (xoxb-...)"
-read_secret "openclaw/shared/slack-app-token" "Slack App Token (xapp-...)"
+read_secret "conga/shared/slack-bot-token" "Slack Bot Token (xoxb-...)"
+read_secret "conga/shared/slack-app-token" "Slack App Token (xapp-...)"
 
 echo ""
 echo "--- Aaron's Secrets ---"
-read_secret "openclaw/myagent/anthropic-api-key" "Anthropic API Key"
-read_secret "openclaw/myagent/gateway-token" "Gateway Auth Token"
-read_secret "openclaw/myagent/trello-api-key" "Trello API Key"
-read_secret "openclaw/myagent/trello-token" "Trello Token"
+read_secret "conga/myagent/anthropic-api-key" "Anthropic API Key"
+read_secret "conga/myagent/gateway-token" "Gateway Auth Token"
+read_secret "conga/myagent/trello-api-key" "Trello API Key"
+read_secret "conga/myagent/trello-token" "Trello Token"
 
 echo ""
 echo "All secrets populated. Verify with:"
-echo "  aws secretsmanager list-secrets --filter Key=name,Values=openclaw --profile $AWS_PROFILE --region $AWS_REGION --query 'SecretList[].Name' --output table"
+echo "  aws secretsmanager list-secrets --filter Key=name,Values=conga --profile $AWS_PROFILE --region $AWS_REGION --query 'SecretList[].Name' --output table"
 ```
 
 ### 5. Updated Outputs in `terraform/outputs.tf`
@@ -283,13 +283,13 @@ echo "  aws secretsmanager list-secrets --filter Key=name,Values=openclaw --prof
 Append:
 ```hcl
 output "instance_profile_arn" {
-  description = "IAM instance profile ARN for OpenClaw host"
-  value       = aws_iam_instance_profile.openclaw_host.arn
+  description = "IAM instance profile ARN for Conga Line host"
+  value       = aws_iam_instance_profile.conga_host.arn
 }
 
 output "instance_profile_name" {
-  description = "IAM instance profile name for OpenClaw host"
-  value       = aws_iam_instance_profile.openclaw_host.name
+  description = "IAM instance profile name for Conga Line host"
+  value       = aws_iam_instance_profile.conga_host.name
 }
 
 output "kms_key_arn" {

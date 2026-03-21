@@ -9,12 +9,12 @@ Aaron's secrets exist in Secrets Manager and are managed by Terraform. Removing 
 
 ```bash
 # Remove Aaron's secrets from Terraform state (preserves them in AWS)
-terraform state rm 'aws_secretsmanager_secret.openclaw["openclaw/myagent/anthropic-api-key"]'
-terraform state rm 'aws_secretsmanager_secret.openclaw["openclaw/myagent/trello-api-key"]'
-terraform state rm 'aws_secretsmanager_secret.openclaw["openclaw/myagent/trello-token"]'
-terraform state rm 'aws_secretsmanager_secret_version.openclaw["openclaw/myagent/anthropic-api-key"]'
-terraform state rm 'aws_secretsmanager_secret_version.openclaw["openclaw/myagent/trello-api-key"]'
-terraform state rm 'aws_secretsmanager_secret_version.openclaw["openclaw/myagent/trello-token"]'
+terraform state rm 'aws_secretsmanager_secret.conga["conga/myagent/anthropic-api-key"]'
+terraform state rm 'aws_secretsmanager_secret.conga["conga/myagent/trello-api-key"]'
+terraform state rm 'aws_secretsmanager_secret.conga["conga/myagent/trello-token"]'
+terraform state rm 'aws_secretsmanager_secret_version.conga["conga/myagent/anthropic-api-key"]'
+terraform state rm 'aws_secretsmanager_secret_version.conga["conga/myagent/trello-api-key"]'
+terraform state rm 'aws_secretsmanager_secret_version.conga["conga/myagent/trello-token"]'
 ```
 
 ## Deliverables
@@ -44,8 +44,8 @@ Keep only shared secrets:
 ```hcl
 locals {
   shared_secrets = {
-    "openclaw/shared/slack-bot-token" = "Slack bot token (xoxb-)"
-    "openclaw/shared/slack-app-token" = "Slack app token (xapp-)"
+    "conga/shared/slack-bot-token" = "Slack bot token (xoxb-)"
+    "conga/shared/slack-app-token" = "Slack app token (xapp-)"
   }
 }
 
@@ -70,20 +70,20 @@ resource "aws_secretsmanager_secret_version" "shared" {
 }
 ```
 
-Note: Rename resource from `aws_secretsmanager_secret.openclaw` to `aws_secretsmanager_secret.shared`. Need to move state for the shared secrets:
+Note: Rename resource from `aws_secretsmanager_secret.conga` to `aws_secretsmanager_secret.shared`. Need to move state for the shared secrets:
 ```bash
 terraform state mv \
-  'aws_secretsmanager_secret.openclaw["openclaw/shared/slack-bot-token"]' \
-  'aws_secretsmanager_secret.shared["openclaw/shared/slack-bot-token"]'
+  'aws_secretsmanager_secret.conga["conga/shared/slack-bot-token"]' \
+  'aws_secretsmanager_secret.shared["conga/shared/slack-bot-token"]'
 terraform state mv \
-  'aws_secretsmanager_secret.openclaw["openclaw/shared/slack-app-token"]' \
-  'aws_secretsmanager_secret.shared["openclaw/shared/slack-app-token"]'
+  'aws_secretsmanager_secret.conga["conga/shared/slack-app-token"]' \
+  'aws_secretsmanager_secret.shared["conga/shared/slack-app-token"]'
 terraform state mv \
-  'aws_secretsmanager_secret_version.openclaw["openclaw/shared/slack-bot-token"]' \
-  'aws_secretsmanager_secret_version.shared["openclaw/shared/slack-bot-token"]'
+  'aws_secretsmanager_secret_version.conga["conga/shared/slack-bot-token"]' \
+  'aws_secretsmanager_secret_version.shared["conga/shared/slack-bot-token"]'
 terraform state mv \
-  'aws_secretsmanager_secret_version.openclaw["openclaw/shared/slack-app-token"]' \
-  'aws_secretsmanager_secret_version.shared["openclaw/shared/slack-app-token"]'
+  'aws_secretsmanager_secret_version.conga["conga/shared/slack-app-token"]' \
+  'aws_secretsmanager_secret_version.shared["conga/shared/slack-app-token"]'
 ```
 
 ### 3. Updated `terraform/iam.tf`
@@ -93,7 +93,7 @@ Dynamic secrets read policy covering all user paths:
 ```hcl
 resource "aws_iam_role_policy" "secrets_read" {
   name_prefix = "${var.project_name}-secrets-"
-  role        = aws_iam_role.openclaw_host.id
+  role        = aws_iam_role.conga_host.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -104,8 +104,8 @@ resource "aws_iam_role_policy" "secrets_read" {
         "secretsmanager:ListSecrets"
       ]
       Resource = concat(
-        ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/shared/*"],
-        [for uid in keys(var.users) : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/${uid}/*"]
+        ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/shared/*"],
+        [for uid in keys(var.users) : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/${uid}/*"]
       )
     }]
   })
@@ -120,8 +120,8 @@ Note: Added `secretsmanager:ListSecrets` — needed for the dynamic secret disco
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = concat(
-          ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/shared/*"],
-          [for uid in keys(var.users) : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:openclaw/${uid}/*"]
+          ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/shared/*"],
+          [for uid in keys(var.users) : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:conga/${uid}/*"]
         )
       },
       {
@@ -153,8 +153,8 @@ Major rewrite — loops over users. Key sections:
 #!/bin/bash
 set -euxo pipefail
 
-exec > >(tee /var/log/openclaw-bootstrap.log) 2>&1
-echo "=== OpenClaw Bootstrap Start: $(date -u) ==="
+exec > >(tee /var/log/conga-bootstrap.log) 2>&1
+echo "=== Conga Line Bootstrap Start: $(date -u) ==="
 
 AWS_REGION="${aws_region}"
 PROJECT_NAME="${project_name}"
@@ -171,8 +171,8 @@ USERS_${upper(user_id)}_CHANNEL="${user_config.slack_channel}"
 get_secret() { ... }  # unchanged
 
 # Shared secrets
-SLACK_BOT_TOKEN=$(get_secret "openclaw/shared/slack-bot-token")
-SLACK_APP_TOKEN=$(get_secret "openclaw/shared/slack-app-token")
+SLACK_BOT_TOKEN=$(get_secret "conga/shared/slack-bot-token")
+SLACK_APP_TOKEN=$(get_secret "conga/shared/slack-app-token")
 
 # --- Section 4-8: Per-User Loop ---
 
@@ -184,26 +184,26 @@ SLACK_CHANNEL="${user_config.slack_channel}"
 
 # Discover and fetch this user's secrets
 USER_SECRETS=$(aws secretsmanager list-secrets \
-  --filter Key=name,Values=openclaw/$USER_ID/ \
+  --filter Key=name,Values=conga/$USER_ID/ \
   --query 'SecretList[].Name' --output text \
   --region "$AWS_REGION")
 
 # Build env file: shared secrets + user secrets
-cat > /opt/openclaw/config/$USER_ID.env << ENVFILE
+cat > /opt/conga/config/$USER_ID.env << ENVFILE
 SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
 SLACK_APP_TOKEN=$SLACK_APP_TOKEN
 ENVFILE
 
 for SECRET_PATH in $USER_SECRETS; do
   SECRET_VALUE=$(get_secret "$SECRET_PATH")
-  # Convert secret name to env var: openclaw/myagent/anthropic-api-key → ANTHROPIC_API_KEY
-  SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|openclaw/$USER_ID/||" | tr '[:lower:]-' '[:upper:]_')
-  echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/openclaw/config/$USER_ID.env
+  # Convert secret name to env var: conga/myagent/anthropic-api-key → ANTHROPIC_API_KEY
+  SECRET_NAME=$(echo "$SECRET_PATH" | sed "s|conga/$USER_ID/||" | tr '[:lower:]-' '[:upper:]_')
+  echo "$SECRET_NAME=$SECRET_VALUE" >> /opt/conga/config/$USER_ID.env
 done
-chmod 0400 /opt/openclaw/config/$USER_ID.env
+chmod 0400 /opt/conga/config/$USER_ID.env
 
 # Generate generic config with user's channel
-cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
+cat > /opt/conga/config/$USER_ID-openclaw.json << OCCONFIG
 {
   "agents": {
     "defaults": {
@@ -238,29 +238,29 @@ cat > /opt/openclaw/config/$USER_ID-openclaw.json << OCCONFIG
 OCCONFIG
 
 # Create persistent storage
-mkdir -p /opt/openclaw/data/$USER_ID/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
-chown -R 1000:1000 /opt/openclaw/data/$USER_ID
-cp /opt/openclaw/config/$USER_ID-openclaw.json /opt/openclaw/data/$USER_ID/openclaw.json
-chown 1000:1000 /opt/openclaw/data/$USER_ID/openclaw.json
+mkdir -p /opt/conga/data/$USER_ID/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
+chown -R 1000:1000 /opt/conga/data/$USER_ID
+cp /opt/conga/config/$USER_ID-openclaw.json /opt/conga/data/$USER_ID/openclaw.json
+chown 1000:1000 /opt/conga/data/$USER_ID/openclaw.json
 
 # Docker network
-docker network create --driver bridge "openclaw-$USER_ID" || true
+docker network create --driver bridge "conga-$USER_ID" || true
 
 # Systemd unit — dynamically pass all env vars from the env file
-cat > /etc/systemd/system/openclaw-$USER_ID.service << UNIT
+cat > /etc/systemd/system/conga-$USER_ID.service << UNIT
 [Unit]
-Description=OpenClaw Gateway ($USER_ID)
+Description=Conga Line Gateway ($USER_ID)
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=simple
-EnvironmentFile=/opt/openclaw/config/$USER_ID.env
-ExecStartPre=-/usr/bin/docker rm -f openclaw-$USER_ID
-ExecStart=/bin/bash -c 'ENV_ARGS=""; while IFS="=" read -r key value; do ENV_ARGS="$$ENV_ARGS -e $$key"; done < /opt/openclaw/config/$USER_ID.env; /usr/bin/docker run --name openclaw-$USER_ID --network openclaw-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/openclaw/data/$USER_ID:/home/node/.openclaw:rw $$ENV_ARGS ghcr.io/openclaw/openclaw:latest'
-ExecStop=/usr/bin/docker stop openclaw-$USER_ID
-StandardOutput=append:/var/log/openclaw-$USER_ID.log
-StandardError=append:/var/log/openclaw-$USER_ID.log
+EnvironmentFile=/opt/conga/config/$USER_ID.env
+ExecStartPre=-/usr/bin/docker rm -f conga-$USER_ID
+ExecStart=/bin/bash -c 'ENV_ARGS=""; while IFS="=" read -r key value; do ENV_ARGS="$$ENV_ARGS -e $$key"; done < /opt/conga/config/$USER_ID.env; /usr/bin/docker run --name conga-$USER_ID --network conga-$USER_ID --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 1.5 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$USER_ID:/home/node/.openclaw:rw $$ENV_ARGS ghcr.io/openclaw/openclaw:latest'
+ExecStop=/usr/bin/docker stop conga-$USER_ID
+StandardOutput=append:/var/log/conga-$USER_ID.log
+StandardError=append:/var/log/conga-$USER_ID.log
 Restart=always
 RestartSec=10
 TimeoutStartSec=120
@@ -281,19 +281,19 @@ Key change in the systemd unit: instead of hardcoding `-e ANTHROPIC_API_KEY -e T
 The check script needs to handle multiple users:
 
 ```bash
-cat > /opt/openclaw/scripts/check-config-integrity.sh << 'CHECKSCRIPT'
+cat > /opt/conga/scripts/check-config-integrity.sh << 'CHECKSCRIPT'
 #!/bin/bash
-LOGFILE="/var/log/openclaw-integrity.log"
+LOGFILE="/var/log/conga-integrity.log"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-for HASHFILE in /opt/openclaw/config/*-openclaw.json.sha256; do
+for HASHFILE in /opt/conga/config/*-openclaw.json.sha256; do
   [ -f "$HASHFILE" ] || continue
   USER_ID=$(basename "$HASHFILE" | sed 's/-openclaw.json.sha256//')
   EXPECTED_HASH=$(cat "$HASHFILE")
-  CURRENT_HASH=$(sha256sum "/opt/openclaw/data/$USER_ID/openclaw.json" | cut -d' ' -f1)
+  CURRENT_HASH=$(sha256sum "/opt/conga/data/$USER_ID/openclaw.json" | cut -d' ' -f1)
   if [ "$EXPECTED_HASH" != "$CURRENT_HASH" ]; then
     MSG="$TIMESTAMP CONFIG_INTEGRITY_VIOLATION user=$USER_ID expected=$EXPECTED_HASH actual=$CURRENT_HASH"
     echo "$MSG" >> "$LOGFILE"
-    echo "$MSG" | systemd-cat -t openclaw-integrity -p warning
+    echo "$MSG" | systemd-cat -t conga-integrity -p warning
   else
     MSG="$TIMESTAMP Config integrity OK user=$USER_ID hash=$CURRENT_HASH"
     echo "$MSG" >> "$LOGFILE"
@@ -304,8 +304,8 @@ CHECKSCRIPT
 
 And the hash baseline stored per-user:
 ```bash
-sha256sum /opt/openclaw/config/$USER_ID-openclaw.json | cut -d' ' -f1 > /opt/openclaw/config/$USER_ID-openclaw.json.sha256
-chmod 0444 /opt/openclaw/config/$USER_ID-openclaw.json.sha256
+sha256sum /opt/conga/config/$USER_ID-openclaw.json | cut -d' ' -f1 > /opt/conga/config/$USER_ID-openclaw.json.sha256
+chmod 0444 /opt/conga/config/$USER_ID-openclaw.json.sha256
 ```
 
 ### 7. `scripts/onboard-user.sh`
@@ -319,7 +319,7 @@ USER_ID="${1:?Usage: $0 <user_id> [aws_profile] [aws_region]}"
 AWS_PROFILE="${2:-default}"
 AWS_REGION="${3:-us-east-2}"
 
-echo "OpenClaw User Onboarding: $USER_ID"
+echo "Conga Line User Onboarding: $USER_ID"
 echo "===================================="
 echo ""
 
@@ -360,12 +360,12 @@ add_secret() {
 
 # Required secret
 echo "--- Required ---"
-add_secret "openclaw/$USER_ID/anthropic-api-key" "Anthropic API Key (sk-ant-...)" "required"
+add_secret "conga/$USER_ID/anthropic-api-key" "Anthropic API Key (sk-ant-...)" "required"
 
 # Optional secrets
 echo ""
 echo "--- Optional Secrets ---"
-echo "Add any additional secrets your OpenClaw skills need."
+echo "Add any additional secrets your Conga Line skills need."
 echo "Secret names will be converted to env vars (e.g., 'trello-api-key' → TRELLO_API_KEY)"
 echo "Enter 'done' when finished."
 echo ""
@@ -375,14 +375,14 @@ while true; do
   read -r secret_name
   [ "$secret_name" = "done" ] && break
   [ -z "$secret_name" ] && continue
-  add_secret "openclaw/$USER_ID/$secret_name" "$secret_name" "optional"
+  add_secret "conga/$USER_ID/$secret_name" "$secret_name" "optional"
 done
 
 # List all secrets
 echo ""
 echo "--- Your Secrets ---"
 aws secretsmanager list-secrets \
-  --filter Key=name,Values="openclaw/$USER_ID/" \
+  --filter Key=name,Values="conga/$USER_ID/" \
   --profile "$AWS_PROFILE" \
   --region "$AWS_REGION" \
   --query 'SecretList[].Name' --output table
@@ -390,7 +390,7 @@ aws secretsmanager list-secrets \
 echo ""
 echo "Onboarding complete!"
 echo "Ask your admin to run 'terraform apply' to deploy your container."
-echo "Your container will automatically pick up all secrets under openclaw/$USER_ID/."
+echo "Your container will automatically pick up all secrets under conga/$USER_ID/."
 ```
 
 ### 8. Updated `terraform/populate-secrets.sh`
@@ -404,7 +404,7 @@ set -euo pipefail
 AWS_PROFILE="123456789012_AdministratorAccess"
 AWS_REGION="us-east-2"
 
-echo "Populate shared OpenClaw secrets"
+echo "Populate shared Conga Line secrets"
 echo "================================"
 
 read_secret() {
@@ -419,8 +419,8 @@ read_secret() {
   echo "  ✓ $name updated"
 }
 
-read_secret "openclaw/shared/slack-bot-token" "Slack Bot Token (xoxb-...)"
-read_secret "openclaw/shared/slack-app-token" "Slack App Token (xapp-...)"
+read_secret "conga/shared/slack-bot-token" "Slack Bot Token (xoxb-...)"
+read_secret "conga/shared/slack-app-token" "Slack App Token (xapp-...)"
 
 echo ""
 echo "Shared secrets populated."
@@ -433,7 +433,7 @@ echo "Users should run scripts/onboard-user.sh to add their own secrets."
 # AWS Configuration
 aws_region  = "us-east-2"
 aws_profile = "123456789012_AdministratorAccess"
-project_name = "openclaw"
+project_name = "conga"
 
 # Monitoring
 config_check_interval_minutes = 5
@@ -454,8 +454,8 @@ users = {
 
 | Scenario | Handling |
 |---|---|
-| User has no secrets yet | Container starts but OpenClaw fails (no Anthropic key). Systemd restarts it. Once user adds secrets and container restarts, it works. |
-| User adds a secret after deploy | Secret picked up on next container restart. Admin can trigger: `systemctl restart openclaw-{user_id}` via SSM, or redeploy. |
+| User has no secrets yet | Container starts but Conga Line fails (no Anthropic key). Systemd restarts it. Once user adds secrets and container restarts, it works. |
+| User adds a secret after deploy | Secret picked up on next container restart. Admin can trigger: `systemctl restart conga-{user_id}` via SSM, or redeploy. |
 | Secret name with special chars | `sed` conversion: lowercase + hyphens → uppercase + underscores. Other chars would break. Onboarding script should validate. |
 | Admin removes a user from tfvars | `terraform apply` replaces instance; removed user's container no longer created. Their secrets remain in Secrets Manager (not managed by TF). |
 | Two users on same channel | Both containers respond — misconfiguration. Admin responsibility to assign unique channels. |

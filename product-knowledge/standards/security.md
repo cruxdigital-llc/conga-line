@@ -4,7 +4,7 @@ Last Updated: 2026-03-15
 To modify: Edit directly. These standards are expected to evolve as we learn more.
 -->
 
-# Security Standards — OpenClaw AWS Deployment
+# Security Standards — Conga Line AWS Deployment
 
 > These standards represent our current best understanding. They should be reviewed
 > and updated as we gain operational experience and discover new threat vectors.
@@ -43,7 +43,7 @@ To modify: Edit directly. These standards are expected to evolve as we learn mor
 
 | Control | Implementation | Rationale |
 |---|---|---|
-| Isolated Docker networks | Each container on its own bridge network (`--network=openclaw-user-N`) | Containers cannot communicate with each other |
+| Isolated Docker networks | Each container on its own bridge network (`--network=conga-user-N`) | Containers cannot communicate with each other |
 | Per-container resource limits | `--memory`, `--cpus`, `--pids-limit` flags | Prevents one user from starving the other |
 | Non-root container | Each container runs as uid 1000 | Limits blast radius of container compromise |
 | Per-container env vars | Secrets injected as env vars per container, not shared | One container cannot read another's API keys |
@@ -67,7 +67,7 @@ To modify: Edit directly. These standards are expected to evolve as we learn mor
 
 | Control | Implementation | Rationale |
 |---|---|---|
-| Single instance IAM role | Role scoped to read all user secrets under `openclaw/*` path | Host fetches secrets at boot and injects per-container |
+| Single instance IAM role | Role scoped to read all user secrets under `conga/*` path | Host fetches secrets at boot and injects per-container |
 | Explicit deny policy | Denies `iam:*`, `ec2:RunInstances`, `lambda:*`, `s3:DeleteBucket`, etc. | Even if the role is expanded, dangerous actions are blocked |
 | Containers have no IAM access | IMDSv2 hop limit 1 blocks container metadata access | Containers cannot assume the host's IAM role |
 

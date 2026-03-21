@@ -12,6 +12,6 @@
 - [x] Task 10: Run `terraform init` and `terraform plan` to confirm
 
 ## Notes
-- Bucket name `openclaw-terraform-state` was taken globally; used `openclaw-terraform-state-123456789012` (account ID suffix)
+- Bucket name `conga-terraform-state` was taken globally; used `conga-terraform-state-123456789012` (account ID suffix)
 - AWS provider v5.100.0 installed
 - `terraform plan` shows only output values (no resources yet) — correct for empty state

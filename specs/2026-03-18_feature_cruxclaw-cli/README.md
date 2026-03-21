@@ -1,4 +1,4 @@
-# Feature: CruxClaw CLI — Trace Log
+# Feature: Conga Line CLI — Trace Log
 
 **Started**: 2026-03-18
 **Status**: ✅ Verified and closed
@@ -14,11 +14,11 @@
 
 ## Decisions
 - **Language**: Go (Cobra CLI, AWS SDK v2) — mature SDK, single static binary, easy cross-compilation
-- **Name**: `cruxclaw` — distinct from upstream `openclaw`
+- **Name**: `conga` — distinct from upstream `conga`
 - **Location**: `cli/` directory in this repo, shell scripts coexist for power users
 - **Auth**: AWS IAM Identity Center (SSO), start URL `https://example-sso.awsapps.com/start/`
-- **Discovery**: EC2 tags (`Name=openclaw-host`) + SSM Parameter Store (`/openclaw/users/*`) — no Terraform state access required
-- **User resolution**: Automatic via IAM identity → SSM Parameter mapping (`/openclaw/users/by-iam/{identity}`); `--user` is optional override
+- **Discovery**: EC2 tags (`Name=conga-host`) + SSM Parameter Store (`/conga/users/*`) — no Terraform state access required
+- **User resolution**: Automatic via IAM identity → SSM Parameter mapping (`/conga/users/by-iam/{identity}`); `--user` is optional override
 - **Script embedding**: Bash scripts embedded in Go binary via `//go:embed`, accepting duplication with Terraform user-data as trade-off for self-contained binary
 - **Distribution**: GoReleaser only (GitHub Releases)
 
@@ -35,7 +35,7 @@
 
 ## Persona Review
 
-**Product Manager**: Clear user value — non-technical users go from "impossible" to a 5-step onboarding flow. Name `cruxclaw` is distinct and memorable. Scope confirmed: full CLI including admin commands. Success metric: new team member at web UI with only AWS SSO + `brew install` + 3 commands.
+**Product Manager**: Clear user value — non-technical users go from "impossible" to a 5-step onboarding flow. Name `conga` is distinct and memorable. Scope confirmed: full CLI including admin commands. Success metric: new team member at web UI with only AWS SSO + `brew install` + 3 commands.
 
 **Architect**: Go + AWS SDK v2 is appropriate for CLI tooling. SSM Parameter Store for discovery is clean — no new infrastructure, just metadata. Embedded bash scripts duplicate logic from `user-data.sh.tftpl` but the trade-off (self-contained binary vs network dependency) is correct. `session-manager-plugin` is an unavoidable external dependency for port forwarding. No breaking changes to existing infrastructure — all Terraform additions are purely additive.
 
@@ -54,7 +54,7 @@
 
 **Product Manager**: All 13 commands specified with clear flows, flags, and error messages. The user journey is smooth: `auth login` → `secrets set` → `connect`. Admin flow is complete: `add-user` auto-assigns ports and creates mappings. The `--user` flag as optional override is good UX — users don't need to know implementation details. Non-goals are clearly defined (no Homebrew, no TUI, no self-update).
 
-**QA**: Edge cases are comprehensive — 10 failure scenarios with specific error messages. The connect command's device pairing poll (goroutine, 10s interval, 5min timeout) is well-defined. Signal handling for tunnel cleanup is specified. Cross-platform concerns addressed (browser open, clipboard copy, signal handling). Missing edge case: what if the user's container is in a restart loop? `cruxclaw status` should detect and surface this.
+**QA**: Edge cases are comprehensive — 10 failure scenarios with specific error messages. The connect command's device pairing poll (goroutine, 10s interval, 5min timeout) is well-defined. Signal handling for tunnel cleanup is specified. Cross-platform concerns addressed (browser open, clipboard copy, signal handling). Missing edge case: what if the user's container is in a restart loop? `conga status` should detect and surface this.
 
 ### Pre-Implementation Standards Gate Report
 
@@ -92,7 +92,7 @@
   - `scripts/embed.go`, `scripts/add-user.sh.tmpl`, `scripts/refresh-user.sh.tmpl`, `scripts/remove-user.sh.tmpl`
 - `cli/.goreleaser.yaml` — GoReleaser config for 5 build targets
 - `.github/workflows/release.yml` — tag-triggered release workflow
-- `go build` — successful, binary at `cli/cruxclaw`
+- `go build` — successful, binary at `cli/conga`
 - `go vet` — clean
 - `gofmt` — clean
 - All 13 commands registered and help text verified
@@ -106,7 +106,7 @@
 - `go vet ./...` — ✅ no issues
 - `gofmt` — ✅ all formatted
 - `terraform validate` — ✅ valid
-- `./cruxclaw version` — ✅ runs, all 13 commands registered
+- `./conga version` — ✅ runs, all 13 commands registered
 
 ### Security Fix Applied During Verification
 - Added `validateMemberID()` and `validateChannelID()` to `cmd/root.go` — uppercase alphanumeric regex validation

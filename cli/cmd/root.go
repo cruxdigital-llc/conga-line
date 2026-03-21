@@ -7,12 +7,12 @@ import (
 	"regexp"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/openclaw-template/cli/internal/aws"
-	"github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
 	"github.com/spf13/cobra"
 )
 
-const defaultInstanceTag = "openclaw-host"
+const defaultInstanceTag = "conga-host"
 
 var validMemberIDPattern = regexp.MustCompile(`^U[A-Z0-9]{10}$`)
 var validChannelIDPattern = regexp.MustCompile(`^C[A-Z0-9]{10}$`)
@@ -33,8 +33,8 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "cruxclaw",
-	Short: "CruxClaw — manage your OpenClaw deployment",
+	Use:   "conga",
+	Short: "Conga Line — manage your OpenClaw deployment",
 	Long:  "Cross-platform CLI for managing OpenClaw containers on AWS via SSM.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		resolvedProfile, resolvedProfileInfo = resolveProfile()
@@ -132,7 +132,7 @@ func resolveAgentName(ctx context.Context) (string, error) {
 	}
 
 	if identity.AgentName == "" {
-		return "", fmt.Errorf("your IAM identity (%s) is not mapped to an agent.\nUse --agent <name> or ask admin to run `cruxclaw admin add-user`", identity.SessionName)
+		return "", fmt.Errorf("your IAM identity (%s) is not mapped to an agent.\nUse --agent <name> or ask admin to run `conga admin add-user`", identity.SessionName)
 	}
 	return identity.AgentName, nil
 }
