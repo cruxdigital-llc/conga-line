@@ -21,15 +21,50 @@ func (p *LocalProvider) agentSecretsDir(agentName string) string {
 	return filepath.Join(p.dataDir, "secrets", "agents", agentName)
 }
 
-// writeSecret writes a secret value to a file with mode 0400.
+// writeSecret writes a secret value to a file with mode 0400 using
+// atomic write (temp file + rename) to prevent momentary exposure.
 func writeSecret(path, value string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(value), 0400); err != nil {
-		return err
+
+	// Write to a temp file in the same directory (same filesystem for atomic rename)
+	tmp, err := os.CreateTemp(dir, ".secret-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	return os.Chmod(path, 0400) // belt and suspenders
+	tmpPath := tmp.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	// Set restrictive permissions before writing content
+	if err := tmp.Chmod(0400); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to set permissions: %w", err)
+	}
+
+	if _, err := tmp.Write([]byte(value)); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to write secret: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Atomic rename (POSIX guarantees atomicity on the same filesystem)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	success = true
+	return nil
 }
 
 // readSecret reads a secret value from a file.

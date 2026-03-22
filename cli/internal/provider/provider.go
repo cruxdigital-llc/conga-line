@@ -113,6 +113,10 @@ type Provider interface {
 	// RefreshAll restarts all agent containers.
 	RefreshAll(ctx context.Context) error
 
+	// ContainerExec runs a command inside the agent's container and returns stdout.
+	// On AWS this uses SSM RunCommand; on local this uses docker exec.
+	ContainerExec(ctx context.Context, agentName string, command []string) (string, error)
+
 	// --- Secrets ---
 
 	// SetSecret creates or updates a secret for the given agent.

@@ -111,7 +111,8 @@ Goal: Decouple deployment from AWS so Conga Line can be deployed locally for dev
 - [x] **Common package**: Config generation, routing, behavior composition extracted from shell templates into Go
 - [x] **AWS provider**: Wraps existing code with zero behavioral change
 - [x] **Local Docker provider**: File-based discovery/secrets, Docker CLI operations, same container isolation
-- [x] **Network isolation**: `--internal` Docker networks + egress proxy (nginx stream: 443/53 only)
+- [x] **Network isolation**: Per-agent bridge networks (no inter-container routing), localhost-only port bindings
+- [ ] **Egress restriction**: Proxy infrastructure deployed (`deploy/egress-proxy/`) but not wired — needs `HTTPS_PROXY`/`--dns` or iptables rules; `--internal` networks break `-p` port publishing
 - [x] **Config integrity**: SHA256 hash monitoring for openclaw.json
 - [x] **CLI integration**: `--provider aws|local` flag, persistent config at `~/.conga/config.json`
 

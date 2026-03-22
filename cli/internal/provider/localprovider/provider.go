@@ -198,7 +198,8 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		}
 	}
 
-	// 6. Connect egress proxy to agent network (for outbound HTTPS/DNS)
+	// 6. Connect egress proxy to agent network (infrastructure only — traffic
+	// is not yet routed through it; see ROADMAP.md egress restriction item)
 	if containerExists(ctx, egressProxyContainer) {
 		connectNetwork(ctx, netName, egressProxyContainer)
 	}
@@ -313,6 +314,11 @@ func (p *LocalProvider) GetLogs(ctx context.Context, agentName string, lines int
 	return containerLogs(ctx, containerName(agentName), lines)
 }
 
+func (p *LocalProvider) ContainerExec(ctx context.Context, agentName string, command []string) (string, error) {
+	args := append([]string{"exec", containerName(agentName)}, command...)
+	return dockerRun(ctx, args...)
+}
+
 func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) error {
 	cfg, err := p.GetAgent(ctx, agentName)
 	if err != nil {
@@ -322,9 +328,16 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	shared, _ := p.readSharedSecrets()
 	perAgent, _ := p.readAgentSecrets(agentName)
 
-	// Preserve existing gateway auth token before regenerating config
+	// Check config integrity before trusting the existing token
 	dataDir := p.dataSubDir(agentName)
-	existingToken := readExistingGatewayToken(filepath.Join(dataDir, "openclaw.json"))
+	existingToken := ""
+	if err := p.checkConfigIntegrity(agentName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Generating fresh gateway token instead of preserving existing one.\n")
+		existingToken = generateToken()
+	} else {
+		existingToken = readExistingGatewayToken(filepath.Join(dataDir, "openclaw.json"))
+	}
 
 	// Regenerate openclaw.json with current config format
 	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken)
@@ -335,6 +348,9 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	if err := os.WriteFile(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
 		return err
 	}
+
+	// Update baseline hash after writing new config
+	p.saveConfigBaseline(agentName)
 
 	// Regenerate env file
 	envContent := common.GenerateEnvFile(*cfg, shared, perAgent)

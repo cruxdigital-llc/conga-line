@@ -304,6 +304,30 @@ func (p *AWSProvider) GetLogs(ctx context.Context, agentName string, lines int) 
 	return result.Stdout, nil
 }
 
+func (p *AWSProvider) ContainerExec(ctx context.Context, agentName string, command []string) (string, error) {
+	instanceID, err := p.findInstance(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Build shell command: docker exec conga-<name> <args...>
+	// Arguments are controlled (OpenClaw CLI commands), not user input.
+	quoted := make([]string, len(command))
+	for i, arg := range command {
+		quoted[i] = "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
+	}
+	script := fmt.Sprintf("docker exec conga-%s %s 2>&1", agentName, strings.Join(quoted, " "))
+
+	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, script, 30*time.Second)
+	if err != nil {
+		return "", err
+	}
+	if result.Status != "Success" {
+		return "", fmt.Errorf("command failed: %s", result.Stderr)
+	}
+	return result.Stdout, nil
+}
+
 func (p *AWSProvider) RefreshAgent(ctx context.Context, agentName string) error {
 	instanceID, err := p.findInstance(ctx)
 	if err != nil {

@@ -1,17 +1,16 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -54,13 +53,12 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	defer sessionCancel()
 
-	// Start device pairing poll in background
+	// Start device pairing poll in background (works on both providers)
 	if !connectNoPairing {
-		go pollDevicePairing(sessionCtx, agentName)
+		go pollDevicePairing(sessionCtx, prov, agentName)
 	}
 
 	if info.Waiter != nil {
-		// AWS: block on tunnel
 		select {
 		case <-sigCh:
 			fmt.Println("\nClosing connection...")
@@ -71,7 +69,6 @@ func connectRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 	} else {
-		// Local: stay alive for pairing and UX
 		<-sigCh
 		fmt.Println("\nDisconnected.")
 	}
@@ -80,8 +77,8 @@ func connectRun(cmd *cobra.Command, args []string) error {
 }
 
 // pollDevicePairing watches for pending device pairing requests and auto-approves them.
-func pollDevicePairing(ctx context.Context, agentName string) {
-	container := "conga-" + agentName
+// Uses the Provider's ContainerExec so it works on both AWS (via SSM) and local (via docker exec).
+func pollDevicePairing(ctx context.Context, p provider.Provider, agentName string) {
 	fmt.Println("Watching for device pairing requests...")
 
 	for i := 0; i < 60; i++ {
@@ -91,8 +88,7 @@ func pollDevicePairing(ctx context.Context, agentName string) {
 		case <-time.After(3 * time.Second):
 		}
 
-		// List pending devices
-		output, err := dockerExec(ctx, container, "npx", "openclaw", "devices", "list", "--json")
+		output, err := p.ContainerExec(ctx, agentName, []string{"npx", "openclaw", "devices", "list", "--json"})
 		if err != nil {
 			continue
 		}
@@ -107,8 +103,7 @@ func pollDevicePairing(ctx context.Context, agentName string) {
 			continue
 		}
 
-		// Approve latest pending device
-		output, err = dockerExec(ctx, container, "npx", "openclaw", "devices", "approve", "--latest")
+		output, err = p.ContainerExec(ctx, agentName, []string{"npx", "openclaw", "devices", "approve", "--latest"})
 		if err != nil {
 			continue
 		}
@@ -118,17 +113,4 @@ func pollDevicePairing(ctx context.Context, agentName string) {
 			return
 		}
 	}
-}
-
-// dockerExec runs a command inside a Docker container and returns stdout.
-func dockerExec(ctx context.Context, container string, args ...string) (string, error) {
-	cmdArgs := append([]string{"exec", container}, args...)
-	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("docker exec: %s (%w)", strings.TrimSpace(stderr.String()), err)
-	}
-	return stdout.String(), nil
 }

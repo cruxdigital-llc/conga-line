@@ -42,9 +42,11 @@ func networkName(agentName string) string {
 }
 
 // createNetwork creates a Docker bridge network for agent isolation.
-// We don't use --internal because it prevents -p port publishing to localhost.
-// Isolation is enforced by: no inter-container routing (separate networks),
-// egress proxy for restricted outbound, and localhost-only port bindings.
+// Each agent gets its own network to prevent inter-container communication.
+// Note: We don't use --internal because it prevents -p port publishing for the
+// gateway web UI. As a result, containers can still reach the internet directly.
+// Full egress restriction requires explicit proxy wiring (HTTPS_PROXY/--dns)
+// or iptables rules — tracked as a deferred item in ROADMAP.md.
 func createNetwork(ctx context.Context, name string) error {
 	_, err := dockerRun(ctx, "network", "create", name, "--driver", "bridge")
 	return err
