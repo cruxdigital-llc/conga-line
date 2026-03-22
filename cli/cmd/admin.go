@@ -80,7 +80,21 @@ func init() {
 	}
 	teardownCmd.Flags().BoolVar(&adminForce, "force", false, "Skip confirmation")
 
-	adminCmd.AddCommand(setupCmd, addUserCmd, addTeamCmd, listAgentsCmd, removeAgentCmd, cycleHostCmd, refreshAllCmd, teardownCmd)
+	pauseCmd := &cobra.Command{
+		Use:   "pause <name>",
+		Short: "Temporarily stop an agent (preserves all data)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  adminPauseRun,
+	}
+
+	unpauseCmd := &cobra.Command{
+		Use:   "unpause <name>",
+		Short: "Resume a paused agent",
+		Args:  cobra.ExactArgs(1),
+		RunE:  adminUnpauseRun,
+	}
+
+	adminCmd.AddCommand(setupCmd, addUserCmd, addTeamCmd, listAgentsCmd, removeAgentCmd, cycleHostCmd, refreshAllCmd, teardownCmd, pauseCmd, unpauseCmd)
 	rootCmd.AddCommand(adminCmd)
 }
 
@@ -98,14 +112,18 @@ func adminListAgentsRun(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	headers := []string{"NAME", "TYPE", "IDENTIFIER", "GATEWAY PORT"}
+	headers := []string{"NAME", "TYPE", "STATUS", "IDENTIFIER", "GATEWAY PORT"}
 	var rows [][]string
 	for _, a := range agents {
 		identifier := a.SlackMemberID
 		if a.Type == "team" {
 			identifier = a.SlackChannel
 		}
-		rows = append(rows, []string{a.Name, string(a.Type), identifier, strconv.Itoa(a.GatewayPort)})
+		status := "active"
+		if a.Paused {
+			status = "paused"
+		}
+		rows = append(rows, []string{a.Name, string(a.Type), status, identifier, strconv.Itoa(a.GatewayPort)})
 	}
 
 	ui.PrintTable(headers, rows)

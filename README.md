@@ -238,10 +238,12 @@ conga connect --agent myagent
 | `conga admin setup` | Configure shared secrets and settings |
 | `conga admin add-user <name> [slack_member_id]` | Provision a user agent (Slack ID optional for gateway-only) |
 | `conga admin add-team <name> [slack_channel]` | Provision a team agent (Slack channel optional for gateway-only) |
-| `conga admin list-agents` | List all provisioned agents |
+| `conga admin list-agents` | List all provisioned agents (shows status: active/paused) |
 | `conga admin remove-agent <name>` | Remove an agent |
+| `conga admin pause <name>` | Temporarily stop an agent (preserves all data) |
+| `conga admin unpause <name>` | Resume a paused agent |
 | `conga admin cycle-host` | Restart the deployment environment |
-| `conga admin refresh-all` | Restart all agent containers |
+| `conga admin refresh-all` | Restart all agent containers (skips paused) |
 | `conga admin teardown` | Remove the entire deployment (local only; AWS: use `terraform destroy`) |
 
 ### Global Flags

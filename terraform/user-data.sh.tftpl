@@ -521,6 +521,12 @@ for PARAM in $(echo "$AGENT_PARAMS" | jq -r '.[] | @base64'); do
     continue
   fi
 
+  AGENT_PAUSED=$(echo "$PARAM_VALUE" | jq -r '.paused // false')
+  if [ "$AGENT_PAUSED" = "true" ]; then
+    echo "=== Skipping paused agent: $AGENT_NAME ==="
+    continue
+  fi
+
   echo "=== Setting up agent: $AGENT_NAME (type: $AGENT_TYPE) ==="
 
   if [ "$AGENT_TYPE" = "user" ]; then

@@ -31,6 +31,38 @@ func TestGenerateRoutingJSON(t *testing.T) {
 	}
 }
 
+func TestGenerateRoutingJSON_PausedExcluded(t *testing.T) {
+	agents := []provider.AgentConfig{
+		{Name: "aaron", Type: provider.AgentTypeUser, SlackMemberID: "U0123456789"},
+		{Name: "paused-user", Type: provider.AgentTypeUser, SlackMemberID: "U9999999999", Paused: true},
+		{Name: "leadership", Type: provider.AgentTypeTeam, SlackChannel: "C9876543210"},
+		{Name: "paused-team", Type: provider.AgentTypeTeam, SlackChannel: "C0000000000", Paused: true},
+	}
+
+	data, err := GenerateRoutingJSON(agents)
+	if err != nil {
+		t.Fatalf("GenerateRoutingJSON() error: %v", err)
+	}
+
+	var cfg RoutingConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+
+	if len(cfg.Members) != 1 {
+		t.Errorf("expected 1 member, got %d", len(cfg.Members))
+	}
+	if len(cfg.Channels) != 1 {
+		t.Errorf("expected 1 channel, got %d", len(cfg.Channels))
+	}
+	if _, ok := cfg.Members["U9999999999"]; ok {
+		t.Error("paused user should not be in routing")
+	}
+	if _, ok := cfg.Channels["C0000000000"]; ok {
+		t.Error("paused team should not be in routing")
+	}
+}
+
 func TestGenerateRoutingJSON_Empty(t *testing.T) {
 	data, err := GenerateRoutingJSON(nil)
 	if err != nil {

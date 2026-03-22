@@ -16,3 +16,9 @@ var RemoveAgentScript string
 
 //go:embed refresh-all.sh.tmpl
 var RefreshAllScript string
+
+//go:embed pause-agent.sh.tmpl
+var PauseAgentScript string
+
+//go:embed unpause-agent.sh.tmpl
+var UnpauseAgentScript string
