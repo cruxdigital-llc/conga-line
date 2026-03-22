@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
@@ -334,7 +333,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	if err := p.checkConfigIntegrity(agentName); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Generating fresh gateway token instead of preserving existing one.\n")
-		existingToken = generateToken()
+		existingToken, _ = generateToken()
 	} else {
 		existingToken = readExistingGatewayToken(filepath.Join(dataDir, "openclaw.json"))
 	}
@@ -698,8 +697,8 @@ func (p *LocalProvider) Setup(ctx context.Context) error {
 		fmt.Println("\nAll values already configured.")
 	}
 	fmt.Println("\nLocal deployment ready! Next steps:")
-	fmt.Println("  conga admin add-user <name> <slack_member_id>")
-	fmt.Println("  conga admin add-team <name> <slack_channel_id>")
+	fmt.Println("  conga admin add-user <name> [slack_member_id]    # Slack ID optional for gateway-only mode")
+	fmt.Println("  conga admin add-team <name> [slack_channel]      # Slack channel optional for gateway-only mode")
 	return nil
 }
 
@@ -717,7 +716,6 @@ func (p *LocalProvider) CycleHost(ctx context.Context) error {
 	stopContainer(ctx, egressProxyContainer)
 
 	fmt.Println("Restarting...")
-	time.Sleep(2 * time.Second)
 
 	// Restart infrastructure containers
 	p.ensureEgressProxy(ctx)
@@ -1017,10 +1015,12 @@ func readExistingGatewayToken(configPath string) string {
 	return ""
 }
 
-func generateToken() string {
+func generateToken() (string, error) {
 	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // detectRepoRoot tries to find the conga-line repo root from the current working directory.

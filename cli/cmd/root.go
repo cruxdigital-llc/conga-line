@@ -55,9 +55,9 @@ var rootCmd = &cobra.Command{
 			cfg.DataDir = flagDataDir
 		}
 
-		// Auto-detect provider if not set
+		// Default to local (works without cloud credentials)
 		if cfg.Provider == "" {
-			cfg.Provider = detectProvider()
+			cfg.Provider = "local"
 		}
 
 		// AWS-specific: resolve profile and region for provider init
@@ -88,7 +88,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagAgent, "agent", "", "Agent name (auto-detected from identity if omitted)")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Global timeout for operations")
-	rootCmd.PersistentFlags().StringVar(&flagProvider, "provider", "", "Deployment provider: aws, local (default: auto-detect)")
+	rootCmd.PersistentFlags().StringVar(&flagProvider, "provider", "", "Deployment provider: aws, local (default: local)")
 	rootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", "", "Data directory for local provider (default: ~/.conga/)")
 }
 
@@ -117,17 +117,6 @@ func resolveAgentName(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("could not determine agent name; use --agent flag")
 	}
 	return agent.Name, nil
-}
-
-// detectProvider returns the best default provider.
-func detectProvider() string {
-	// If local config exists with a provider set, it wins
-	cfg, err := provider.LoadConfig(provider.DefaultConfigPath())
-	if err == nil && cfg.Provider != "" {
-		return cfg.Provider
-	}
-	// Default to AWS (original behavior)
-	return "aws"
 }
 
 // resolveProfile returns the AWS profile to use and its parsed info.

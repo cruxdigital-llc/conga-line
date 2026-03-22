@@ -21,7 +21,7 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 - **AWS provider**: `cli/internal/provider/awsprovider/provider.go` — wraps existing `aws`, `discovery`, `tunnel` packages
 - **Local provider**: `cli/internal/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
 - **Common package**: `cli/internal/common/` — shared logic used by both providers: config generation (`GenerateOpenClawConfig`), routing (`GenerateRoutingJSON`), behavior file composition, port allocation, validation
-- **Provider selection**: `--provider aws|local` flag, persisted in `~/.conga/config.json`, auto-detected (config file → default aws)
+- **Provider selection**: `--provider aws|local` flag, persisted in `~/.conga/config.json` (default: `local`)
 - **Slack is optional**: When no Slack tokens are provided, openclaw.json omits the `channels` section and the agent runs in gateway-only mode. The router is only started when Slack is configured.
 
 ## Working with Terraform

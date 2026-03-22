@@ -248,7 +248,7 @@ conga connect --agent myagent
 
 | Flag | Description |
 |------|-------------|
-| `--provider` | Deployment provider: `aws`, `local` (default: auto-detect) |
+| `--provider` | Deployment provider: `aws`, `local` (default: `local`) |
 | `--data-dir` | Data directory for local provider (default: `~/.conga/`) |
 | `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var) |
 | `--region` | AWS region (default: from config) |
@@ -260,11 +260,12 @@ conga connect --agent myagent
 
 ### Provider Auto-Detection
 
-The CLI auto-detects which provider to use:
-1. If `~/.conga/config.json` exists with a `provider` field, use it
-2. Otherwise, default to `aws`
+The CLI selects a provider using:
+1. `--provider` flag if specified
+2. `~/.conga/config.json` `provider` field if set (persisted by `conga admin setup`)
+3. Default: `local`
 
-Use `--provider` to override, or run `conga admin setup --provider local` to persist the choice.
+Use `--provider aws` for AWS deployments, or run `conga admin setup` to persist the choice.
 
 ### AWS Provider
 

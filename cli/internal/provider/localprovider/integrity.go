@@ -1,6 +1,7 @@
 package localprovider
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -52,7 +53,7 @@ func (p *LocalProvider) saveConfigBaseline(agentName string) error {
 
 // RunIntegrityCheck checks all agent configs and logs results.
 func (p *LocalProvider) RunIntegrityCheck() error {
-	agents, err := p.ListAgents(nil)
+	agents, err := p.ListAgents(context.Background())
 	if err != nil {
 		return err
 	}
