@@ -266,6 +266,8 @@ ENVFILE
   chmod 0400 /opt/conga/config/$AGENT_NAME.env
 
   # Generate user-type openclaw.json (DM-only, restricted to owning user)
+  # NOTE: Static config structure (model, heartbeat, pruning, etc.) is canonically defined in
+  # cli/internal/common/openclaw-defaults.json — keep this heredoc in sync when updating.
   cat > /opt/conga/config/$AGENT_NAME-config.json << OCCONFIG
 {
   "agents": {
@@ -354,6 +356,8 @@ ENVFILE
   chmod 0400 /opt/conga/config/$AGENT_NAME.env
 
   # Generate team-type openclaw.json (channel-based, anyone in channel)
+  # NOTE: Static config structure (model, heartbeat, pruning, etc.) is canonically defined in
+  # cli/internal/common/openclaw-defaults.json — keep this heredoc in sync when updating.
   cat > /opt/conga/config/$AGENT_NAME-config.json << OCCONFIG
 {
   "agents": {

@@ -1,11 +1,15 @@
 package common
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
 )
+
+//go:embed openclaw-defaults.json
+var openclawDefaults []byte
 
 // SharedSecrets holds the shared secrets needed to generate agent config and env files.
 type SharedSecrets struct {
@@ -22,45 +26,22 @@ func (s SharedSecrets) HasSlack() bool {
 }
 
 // GenerateOpenClawConfig produces the openclaw.json content for an agent.
-// The format matches the working AWS bootstrap template in user-data.sh.tftpl.
-// When Slack credentials are not provided, the channels section is omitted
-// and the agent operates in gateway-only mode (web UI).
+// Static settings (model, heartbeat, pruning, etc.) are loaded from the embedded
+// openclaw-defaults.json — the single source of truth for OpenClaw config structure.
+// Dynamic fields (gateway, Slack channels, plugins) are overlaid per-agent.
 func GenerateOpenClawConfig(agent provider.AgentConfig, secrets SharedSecrets, gatewayToken string) ([]byte, error) {
-	config := map[string]interface{}{
-		"agents": map[string]interface{}{
-			"defaults": map[string]interface{}{
-				"model":     map[string]interface{}{"primary": "anthropic/claude-opus-4-6", "fallbacks": []string{}},
-				"models":    map[string]interface{}{"anthropic/claude-opus-4-6": map[string]interface{}{"params": map[string]interface{}{}}},
-				"workspace": "/home/node/.openclaw/data/workspace",
-				"heartbeat": map[string]interface{}{
-					"every":        "55m",
-					"lightContext": true,
-					"target":       "none",
-				},
-				"contextPruning": map[string]interface{}{
-					"mode": "cache-ttl",
-					"ttl":  "5m",
-				},
-				"compaction": map[string]interface{}{
-					"mode": "safeguard",
-				},
-			},
+	// Load static defaults from embedded JSON
+	var config map[string]interface{}
+	if err := json.Unmarshal(openclawDefaults, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse openclaw-defaults.json: %w", err)
+	}
+
+	// Overlay dynamic fields
+	config["gateway"] = buildGatewayConfig(agent.GatewayPort, gatewayToken)
+	config["plugins"] = map[string]interface{}{
+		"entries": map[string]interface{}{
+			"slack": map[string]interface{}{"enabled": secrets.HasSlack()},
 		},
-		"tools":    map[string]interface{}{"profile": "coding"},
-		"commands": map[string]interface{}{"native": "auto", "nativeSkills": "auto", "restart": true, "ownerDisplay": "raw"},
-		"session":  map[string]interface{}{"dmScope": "per-channel-peer"},
-		"hooks": map[string]interface{}{
-			"internal": map[string]interface{}{
-				"enabled": true,
-				"entries": map[string]interface{}{
-					"command-logger": map[string]interface{}{"enabled": true},
-					"session-memory": map[string]interface{}{"enabled": true},
-				},
-			},
-		},
-		"gateway": buildGatewayConfig(agent.GatewayPort, gatewayToken),
-		"skills":  map[string]interface{}{"install": map[string]interface{}{"nodeManager": "pnpm"}},
-		"plugins": map[string]interface{}{"entries": map[string]interface{}{"slack": map[string]interface{}{"enabled": secrets.HasSlack()}}},
 	}
 
 	// Only add Slack channel config when credentials are present
@@ -139,7 +120,6 @@ func buildGatewayConfig(port int, token string) map[string]interface{} {
 		},
 	}
 
-	// Preserve existing token if provided (OpenClaw generates on first boot)
 	if token != "" {
 		gw["auth"] = map[string]interface{}{
 			"mode":  "token",

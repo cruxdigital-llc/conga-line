@@ -1,0 +1,25 @@
+{
+  "agents": {
+    "defaults": {
+      "model": { "primary": "anthropic/claude-opus-4-6", "fallbacks": [] },
+      "models": { "anthropic/claude-opus-4-6": { "params": {} } },
+      "workspace": "/home/node/.openclaw/data/workspace",
+      "heartbeat": { "every": "55m", "lightContext": true, "target": "none" },
+      "contextPruning": { "mode": "cache-ttl", "ttl": "5m" },
+      "compaction": { "mode": "safeguard" }
+    }
+  },
+  "tools": { "profile": "coding" },
+  "commands": { "native": "auto", "nativeSkills": "auto", "restart": true, "ownerDisplay": "raw" },
+  "session": { "dmScope": "per-channel-peer" },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "command-logger": { "enabled": true },
+        "session-memory": { "enabled": true }
+      }
+    }
+  },
+  "skills": { "install": { "nodeManager": "pnpm" } }
+}
