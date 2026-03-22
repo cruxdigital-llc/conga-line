@@ -329,7 +329,101 @@ func (p *AWSProvider) ContainerExec(ctx context.Context, agentName string, comma
 	return result.Stdout, nil
 }
 
+func (p *AWSProvider) PauseAgent(ctx context.Context, name string) error {
+	agent, err := discovery.ResolveAgent(ctx, p.clients.SSM, name)
+	if err != nil {
+		return err
+	}
+	if agent.Paused {
+		fmt.Printf("Agent %s is already paused.\n", name)
+		return nil
+	}
+
+	instanceID, err := p.findInstance(ctx)
+	if err != nil {
+		return err
+	}
+
+	tmpl, err := template.New("pause").Parse(scripts.PauseAgentScript)
+	if err != nil {
+		return fmt.Errorf("failed to parse pause template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, struct{ AgentName string }{name}); err != nil {
+		return fmt.Errorf("failed to render pause script: %w", err)
+	}
+
+	spin := ui.NewSpinner(fmt.Sprintf("Pausing agent %s...", name))
+	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, buf.String(), 60*time.Second)
+	spin.Stop()
+	if err != nil {
+		return err
+	}
+	if result.Status != "Success" {
+		fmt.Fprintf(os.Stderr, "Output:\n%s\n%s\n", result.Stdout, result.Stderr)
+		return fmt.Errorf("pause failed on instance")
+	}
+
+	if err := p.setAgentPaused(ctx, name, agent, true); err != nil {
+		return fmt.Errorf("container stopped but failed to update SSM: %w", err)
+	}
+
+	return nil
+}
+
+func (p *AWSProvider) UnpauseAgent(ctx context.Context, name string) error {
+	agent, err := discovery.ResolveAgent(ctx, p.clients.SSM, name)
+	if err != nil {
+		return err
+	}
+	if !agent.Paused {
+		fmt.Printf("Agent %s is not paused.\n", name)
+		return nil
+	}
+
+	if err := p.setAgentPaused(ctx, name, agent, false); err != nil {
+		return err
+	}
+
+	instanceID, err := p.findInstance(ctx)
+	if err != nil {
+		return err
+	}
+
+	tmpl, err := template.New("unpause").Parse(scripts.UnpauseAgentScript)
+	if err != nil {
+		return fmt.Errorf("failed to parse unpause template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, struct{ AgentName string }{name}); err != nil {
+		return fmt.Errorf("failed to render unpause script: %w", err)
+	}
+
+	spin := ui.NewSpinner(fmt.Sprintf("Unpausing agent %s...", name))
+	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, buf.String(), 60*time.Second)
+	spin.Stop()
+	if err != nil {
+		return err
+	}
+	if result.Status != "Success" {
+		fmt.Fprintf(os.Stderr, "Output:\n%s\n%s\n", result.Stdout, result.Stderr)
+		return fmt.Errorf("unpause failed on instance")
+	}
+
+	return nil
+}
+
 func (p *AWSProvider) RefreshAgent(ctx context.Context, agentName string) error {
+	agent, err := discovery.ResolveAgent(ctx, p.clients.SSM, agentName)
+	if err != nil {
+		return err
+	}
+	if agent.Paused {
+		return fmt.Errorf("agent %s is paused. Use `conga admin unpause %s` first", agentName, agentName)
+	}
+
 	instanceID, err := p.findInstance(ctx)
 	if err != nil {
 		return err
@@ -364,6 +458,20 @@ func (p *AWSProvider) RefreshAll(ctx context.Context) error {
 		return err
 	}
 
+	var activeAgents []discovery.AgentConfig
+	for _, a := range agents {
+		if a.Paused {
+			fmt.Printf("Skipping paused agent: %s\n", a.Name)
+			continue
+		}
+		activeAgents = append(activeAgents, a)
+	}
+
+	if len(activeAgents) == 0 {
+		fmt.Println("No active agents to refresh.")
+		return nil
+	}
+
 	instanceID, err := p.findInstance(ctx)
 	if err != nil {
 		return err
@@ -378,7 +486,7 @@ func (p *AWSProvider) RefreshAll(ctx context.Context) error {
 	if err := tmpl.Execute(&buf, struct {
 		Agents    []discovery.AgentConfig
 		AWSRegion string
-	}{agents, p.region}); err != nil {
+	}{activeAgents, p.region}); err != nil {
 		return fmt.Errorf("failed to render refresh-all script: %w", err)
 	}
 
@@ -633,6 +741,31 @@ func (p *AWSProvider) findInstance(ctx context.Context) (string, error) {
 	return discovery.FindInstance(ctx, p.clients.EC2, defaultInstanceTag)
 }
 
+func (p *AWSProvider) setAgentPaused(ctx context.Context, name string, agent *discovery.AgentConfig, paused bool) error {
+	data := map[string]interface{}{
+		"type":         agent.Type,
+		"gateway_port": agent.GatewayPort,
+	}
+	if agent.SlackMemberID != "" {
+		data["slack_member_id"] = agent.SlackMemberID
+	}
+	if agent.SlackChannel != "" {
+		data["slack_channel"] = agent.SlackChannel
+	}
+	if agent.IAMIdentity != "" {
+		data["iam_identity"] = agent.IAMIdentity
+	}
+	if paused {
+		data["paused"] = true
+	}
+
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return awsutil.PutParameter(ctx, p.clients.SSM, fmt.Sprintf("/conga/agents/%s", name), string(jsonBytes))
+}
+
 func convertAgent(a discovery.AgentConfig) provider.AgentConfig {
 	return provider.AgentConfig{
 		Name:          a.Name,
@@ -641,6 +774,7 @@ func convertAgent(a discovery.AgentConfig) provider.AgentConfig {
 		SlackChannel:  a.SlackChannel,
 		GatewayPort:   a.GatewayPort,
 		IAMIdentity:   a.IAMIdentity,
+		Paused:        a.Paused,
 	}
 }
 

@@ -23,6 +23,7 @@ type AgentConfig struct {
 	SlackChannel  string    `json:"slack_channel,omitempty"`
 	GatewayPort   int       `json:"gateway_port"`
 	IAMIdentity   string    `json:"iam_identity,omitempty"`
+	Paused        bool      `json:"paused,omitempty"`
 }
 
 // AgentStatus is returned by GetStatus.
@@ -98,6 +99,13 @@ type Provider interface {
 
 	// RemoveAgent stops the container, removes network, cleans config.
 	RemoveAgent(ctx context.Context, name string, deleteSecrets bool) error
+
+	// PauseAgent stops an agent's container and removes it from routing.
+	// All configuration, secrets, and data are preserved.
+	PauseAgent(ctx context.Context, name string) error
+
+	// UnpauseAgent restarts a paused agent and restores routing.
+	UnpauseAgent(ctx context.Context, name string) error
 
 	// --- Container Operations ---
 

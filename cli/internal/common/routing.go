@@ -22,6 +22,9 @@ func GenerateRoutingJSON(agents []provider.AgentConfig) ([]byte, error) {
 	}
 
 	for _, a := range agents {
+		if a.Paused {
+			continue
+		}
 		url := fmt.Sprintf("http://conga-%s:18789/slack/events", a.Name)
 		switch a.Type {
 		case provider.AgentTypeUser:
