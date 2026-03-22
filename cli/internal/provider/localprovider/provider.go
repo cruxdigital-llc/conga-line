@@ -127,14 +127,7 @@ func (p *LocalProvider) ResolveAgentByIdentity(ctx context.Context) (*provider.A
 
 func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConfig) error {
 	// 1. Save agent config
-	if err := os.MkdirAll(p.agentsDir(), 0700); err != nil {
-		return err
-	}
-	agentJSON, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(p.agentsDir(), cfg.Name+".json"), agentJSON, 0600); err != nil {
+	if err := p.saveAgentConfig(&cfg); err != nil {
 		return err
 	}
 
@@ -270,7 +263,9 @@ func (p *LocalProvider) RemoveAgent(ctx context.Context, name string, deleteSecr
 		os.RemoveAll(p.agentSecretsDir(name))
 	}
 
-	p.regenerateRouting(ctx)
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
 	return nil
 }
 
@@ -318,10 +313,90 @@ func (p *LocalProvider) ContainerExec(ctx context.Context, agentName string, com
 	return dockerRun(ctx, args...)
 }
 
+func (p *LocalProvider) PauseAgent(ctx context.Context, name string) error {
+	cfg, err := p.GetAgent(ctx, name)
+	if err != nil {
+		return err
+	}
+	if cfg.Paused {
+		fmt.Printf("Agent %s is already paused.\n", name)
+		return nil
+	}
+
+	// Mark paused first so state is consistent even if container ops fail
+	cfg.Paused = true
+	if err := p.saveAgentConfig(cfg); err != nil {
+		return err
+	}
+
+	// Stop container (preserve data)
+	cName := containerName(name)
+	if containerExists(ctx, cName) {
+		stopContainer(ctx, cName)
+		removeContainer(ctx, cName)
+	}
+
+	// Disconnect router from agent network
+	netName := networkName(name)
+	if containerExists(ctx, routerContainer) {
+		disconnectNetwork(ctx, netName, routerContainer)
+	}
+
+	// Regenerate routing (excludes paused agents)
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
+
+	return nil
+}
+
+func (p *LocalProvider) UnpauseAgent(ctx context.Context, name string) error {
+	cfg, err := p.GetAgent(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !cfg.Paused {
+		fmt.Printf("Agent %s is not paused.\n", name)
+		return nil
+	}
+
+	// Update agent config first (so RefreshAgent sees active state)
+	cfg.Paused = false
+	if err := p.saveAgentConfig(cfg); err != nil {
+		return err
+	}
+
+	// Refresh agent (regenerates config, starts container, reconnects router)
+	if err := p.RefreshAgent(ctx, name); err != nil {
+		return err
+	}
+
+	// Regenerate routing (includes this agent again)
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
+
+	return nil
+}
+
+func (p *LocalProvider) saveAgentConfig(cfg *provider.AgentConfig) error {
+	if err := os.MkdirAll(p.agentsDir(), 0700); err != nil {
+		return err
+	}
+	agentJSON, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(p.agentsDir(), cfg.Name+".json"), agentJSON, 0600)
+}
+
 func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) error {
 	cfg, err := p.GetAgent(ctx, agentName)
 	if err != nil {
 		return err
+	}
+	if cfg.Paused {
+		return fmt.Errorf("agent %s is paused. Use `conga admin unpause %s` first", agentName, agentName)
 	}
 
 	shared, _ := p.readSharedSecrets()
@@ -405,6 +480,12 @@ func (p *LocalProvider) RefreshAll(ctx context.Context) error {
 
 	spin := ui.NewSpinner("Refreshing all agents...")
 	for _, a := range agents {
+		if a.Paused {
+			spin.Stop()
+			fmt.Printf("Skipping paused agent: %s\n", a.Name)
+			spin = ui.NewSpinner("Refreshing all agents...")
+			continue
+		}
 		if err := p.RefreshAgent(ctx, a.Name); err != nil {
 			spin.Stop()
 			return fmt.Errorf("failed to refresh %s: %w", a.Name, err)
@@ -710,7 +791,9 @@ func (p *LocalProvider) CycleHost(ctx context.Context) error {
 
 	fmt.Println("Stopping all containers...")
 	for _, a := range agents {
-		stopContainer(ctx, containerName(a.Name))
+		if !a.Paused {
+			stopContainer(ctx, containerName(a.Name))
+		}
 	}
 	stopContainer(ctx, routerContainer)
 	stopContainer(ctx, egressProxyContainer)
@@ -723,6 +806,10 @@ func (p *LocalProvider) CycleHost(ctx context.Context) error {
 
 	// Restart agents
 	for _, a := range agents {
+		if a.Paused {
+			fmt.Printf("Skipping paused agent: %s\n", a.Name)
+			continue
+		}
 		if err := p.RefreshAgent(ctx, a.Name); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to restart %s: %v\n", a.Name, err)
 		}

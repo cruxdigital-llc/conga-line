@@ -53,9 +53,25 @@ var statusCmd = &cobra.Command{
 		}
 
 		if status.Container.State == "not found" || status.Container.State == "" {
+			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
+				fmt.Println("Container:  stopped (agent paused)")
+				fmt.Printf("Service:    %s\n", status.ServiceState)
+				fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
+				return nil
+			}
 			fmt.Println("Container:  not found")
 			fmt.Printf("Service:    %s\n", status.ServiceState)
 			return nil
+		}
+
+		// Container exists but isn't running — check if agent is paused
+		if status.Container.State != "running" {
+			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
+				fmt.Println("Container:  stopped (agent paused)")
+				fmt.Printf("Service:    %s\n", status.ServiceState)
+				fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
+				return nil
+			}
 		}
 
 		fmt.Printf("Container:  %s\n", status.Container.State)

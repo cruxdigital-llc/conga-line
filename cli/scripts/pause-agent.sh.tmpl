@@ -1,0 +1,27 @@
+set -euo pipefail
+
+AGENT_NAME="{{.AgentName}}"
+CONTAINER="conga-$AGENT_NAME"
+NETWORK="conga-$AGENT_NAME"
+
+echo "Stopping $CONTAINER..."
+systemctl stop "conga-$AGENT_NAME" 2>/dev/null || true
+
+AGENT_TYPE="{{.AgentType}}"
+SLACK_ID="{{.SlackID}}"
+
+# Remove from routing.json (skipped for gateway-only agents where SlackID is empty)
+ROUTING="/opt/conga/config/routing.json"
+if [ -f "$ROUTING" ] && [ -n "$SLACK_ID" ]; then
+  if [ "$AGENT_TYPE" = "team" ]; then
+    jq --arg id "$SLACK_ID" 'del(.channels[$id])' "$ROUTING" > "$ROUTING.tmp" && mv "$ROUTING.tmp" "$ROUTING"
+  else
+    jq --arg id "$SLACK_ID" 'del(.members[$id])' "$ROUTING" > "$ROUTING.tmp" && mv "$ROUTING.tmp" "$ROUTING"
+  fi
+  echo "Removed $SLACK_ID from routing.json"
+fi
+
+# Disconnect router from agent network (non-fatal)
+docker network disconnect "$NETWORK" conga-router 2>/dev/null || true
+
+echo "Agent $AGENT_NAME paused"

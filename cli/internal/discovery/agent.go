@@ -17,6 +17,7 @@ type AgentConfig struct {
 	SlackChannel  string `json:"slack_channel,omitempty"`
 	GatewayPort   int    `json:"gateway_port"`
 	IAMIdentity   string `json:"iam_identity,omitempty"`
+	Paused        bool   `json:"paused,omitempty"`
 }
 
 // parseAgentConfig parses an agent config from its SSM parameter name and JSON value.

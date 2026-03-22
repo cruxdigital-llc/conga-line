@@ -1,0 +1,26 @@
+set -euo pipefail
+
+AGENT_NAME="{{.AgentName}}"
+CONTAINER="conga-$AGENT_NAME"
+NETWORK="conga-$AGENT_NAME"
+
+echo "Starting $CONTAINER..."
+systemctl start "conga-$AGENT_NAME"
+# ExecStartPost in the systemd unit reconnects the router to the agent's Docker network automatically
+
+AGENT_TYPE="{{.AgentType}}"
+SLACK_ID="{{.SlackID}}"
+
+# Re-add to routing.json (skipped for gateway-only agents where SlackID is empty)
+ROUTING="/opt/conga/config/routing.json"
+if [ -f "$ROUTING" ] && [ -n "$SLACK_ID" ]; then
+  URL="http://conga-$AGENT_NAME:18789/slack/events"
+  if [ "$AGENT_TYPE" = "team" ]; then
+    jq --arg id "$SLACK_ID" --arg url "$URL" '.channels[$id] = $url' "$ROUTING" > "$ROUTING.tmp" && mv "$ROUTING.tmp" "$ROUTING"
+  else
+    jq --arg id "$SLACK_ID" --arg url "$URL" '.members[$id] = $url' "$ROUTING" > "$ROUTING.tmp" && mv "$ROUTING.tmp" "$ROUTING"
+  fi
+  echo "Added $SLACK_ID back to routing.json"
+fi
+
+echo "Agent $AGENT_NAME unpaused"
