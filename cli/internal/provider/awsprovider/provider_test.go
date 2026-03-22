@@ -1,6 +1,16 @@
 package awsprovider
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmTypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
+)
 
 func TestParseKeyValues(t *testing.T) {
 	tests := []struct {
@@ -63,5 +73,75 @@ func TestBuildAgentStatus_Ready(t *testing.T) {
 	}
 	if status.Container.MemoryUsage != "256MiB / 2GiB" {
 		t.Errorf("expected mem '256MiB / 2GiB', got %q", status.Container.MemoryUsage)
+	}
+}
+
+// mockSSM is a minimal mock for testing setAgentPaused.
+type mockSSM struct {
+	awsutil.SSMClient
+	stored map[string]string
+}
+
+func (m *mockSSM) GetParameter(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+	val := m.stored[aws.ToString(params.Name)]
+	return &ssm.GetParameterOutput{
+		Parameter: &ssmTypes.Parameter{Value: aws.String(val)},
+	}, nil
+}
+
+func (m *mockSSM) PutParameter(ctx context.Context, params *ssm.PutParameterInput, optFns ...func(*ssm.Options)) (*ssm.PutParameterOutput, error) {
+	m.stored[aws.ToString(params.Name)] = aws.ToString(params.Value)
+	return &ssm.PutParameterOutput{}, nil
+}
+
+func TestSetAgentPaused_PreservesUnknownFields(t *testing.T) {
+	// SSM contains fields that aren't in the AgentConfig struct
+	original := `{"type":"user","slack_member_id":"U123","gateway_port":18790,"custom_field":"preserve_me","nested":{"key":"value"}}`
+
+	mock := &mockSSM{stored: map[string]string{
+		"/conga/agents/testuser": original,
+	}}
+	p := &AWSProvider{clients: &awsutil.Clients{SSM: mock}}
+	agent := &discovery.AgentConfig{
+		Name:          "testuser",
+		Type:          "user",
+		SlackMemberID: "U123",
+		GatewayPort:   18790,
+	}
+
+	// Pause: should add "paused":true and keep unknown fields
+	if err := p.setAgentPaused(context.Background(), "testuser", agent, true); err != nil {
+		t.Fatalf("setAgentPaused(true) error: %v", err)
+	}
+
+	var paused map[string]interface{}
+	if err := json.Unmarshal([]byte(mock.stored["/conga/agents/testuser"]), &paused); err != nil {
+		t.Fatalf("failed to parse paused JSON: %v", err)
+	}
+	if paused["paused"] != true {
+		t.Error("expected paused=true")
+	}
+	if paused["custom_field"] != "preserve_me" {
+		t.Errorf("custom_field lost: got %v", paused["custom_field"])
+	}
+	nested, ok := paused["nested"].(map[string]interface{})
+	if !ok || nested["key"] != "value" {
+		t.Errorf("nested field lost: got %v", paused["nested"])
+	}
+
+	// Unpause: should remove "paused" and keep unknown fields
+	if err := p.setAgentPaused(context.Background(), "testuser", agent, false); err != nil {
+		t.Fatalf("setAgentPaused(false) error: %v", err)
+	}
+
+	var unpaused map[string]interface{}
+	if err := json.Unmarshal([]byte(mock.stored["/conga/agents/testuser"]), &unpaused); err != nil {
+		t.Fatalf("failed to parse unpaused JSON: %v", err)
+	}
+	if _, exists := unpaused["paused"]; exists {
+		t.Error("expected paused field to be removed after unpause")
+	}
+	if unpaused["custom_field"] != "preserve_me" {
+		t.Errorf("custom_field lost after unpause: got %v", unpaused["custom_field"])
 	}
 }

@@ -10,7 +10,7 @@ systemctl stop "conga-$AGENT_NAME" 2>/dev/null || true
 AGENT_TYPE="{{.AgentType}}"
 SLACK_ID="{{.SlackID}}"
 
-# Remove from routing.json
+# Remove from routing.json (skipped for gateway-only agents where SlackID is empty)
 ROUTING="/opt/conga/config/routing.json"
 if [ -f "$ROUTING" ] && [ -n "$SLACK_ID" ]; then
   if [ "$AGENT_TYPE" = "team" ]; then

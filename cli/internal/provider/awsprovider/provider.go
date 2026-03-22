@@ -344,27 +344,13 @@ func (p *AWSProvider) PauseAgent(ctx context.Context, name string) error {
 		return err
 	}
 
-	tmpl, err := template.New("pause").Parse(scripts.PauseAgentScript)
+	script, err := p.renderAgentScript(scripts.PauseAgentScript, "pause", name, agent)
 	if err != nil {
-		return fmt.Errorf("failed to parse pause template: %w", err)
-	}
-
-	slackID := agent.SlackMemberID
-	if agent.Type == "team" {
-		slackID = agent.SlackChannel
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct {
-		AgentName string
-		AgentType string
-		SlackID   string
-	}{name, agent.Type, slackID}); err != nil {
-		return fmt.Errorf("failed to render pause script: %w", err)
+		return err
 	}
 
 	spin := ui.NewSpinner(fmt.Sprintf("Pausing agent %s...", name))
-	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, buf.String(), 60*time.Second)
+	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, script, 60*time.Second)
 	spin.Stop()
 	if err != nil {
 		return err
@@ -391,36 +377,18 @@ func (p *AWSProvider) UnpauseAgent(ctx context.Context, name string) error {
 		return nil
 	}
 
-	if err := p.setAgentPaused(ctx, name, agent, false); err != nil {
-		return err
-	}
-
 	instanceID, err := p.findInstance(ctx)
 	if err != nil {
 		return err
 	}
 
-	tmpl, err := template.New("unpause").Parse(scripts.UnpauseAgentScript)
+	script, err := p.renderAgentScript(scripts.UnpauseAgentScript, "unpause", name, agent)
 	if err != nil {
-		return fmt.Errorf("failed to parse unpause template: %w", err)
-	}
-
-	slackID := agent.SlackMemberID
-	if agent.Type == "team" {
-		slackID = agent.SlackChannel
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct {
-		AgentName string
-		AgentType string
-		SlackID   string
-	}{name, agent.Type, slackID}); err != nil {
-		return fmt.Errorf("failed to render unpause script: %w", err)
+		return err
 	}
 
 	spin := ui.NewSpinner(fmt.Sprintf("Unpausing agent %s...", name))
-	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, buf.String(), 60*time.Second)
+	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, script, 60*time.Second)
 	spin.Stop()
 	if err != nil {
 		return err
@@ -428,6 +396,10 @@ func (p *AWSProvider) UnpauseAgent(ctx context.Context, name string) error {
 	if result.Status != "Success" {
 		fmt.Fprintf(os.Stderr, "Output:\n%s\n%s\n", result.Stdout, result.Stderr)
 		return fmt.Errorf("unpause failed on instance")
+	}
+
+	if err := p.setAgentPaused(ctx, name, agent, false); err != nil {
+		return fmt.Errorf("agent started but failed to update SSM: %w", err)
 	}
 
 	return nil
@@ -757,6 +729,31 @@ func (p *AWSProvider) Teardown(ctx context.Context) error {
 
 func (p *AWSProvider) findInstance(ctx context.Context) (string, error) {
 	return discovery.FindInstance(ctx, p.clients.EC2, defaultInstanceTag)
+}
+
+// renderAgentScript parses a Go template script and renders it with the agent's
+// name, type, and Slack identifier. Gateway-only agents (no Slack) render with
+// an empty SlackID; the scripts guard routing updates with [ -n "$SLACK_ID" ].
+func (p *AWSProvider) renderAgentScript(tmplStr, tmplName, agentName string, agent *discovery.AgentConfig) (string, error) {
+	tmpl, err := template.New(tmplName).Parse(tmplStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse %s template: %w", tmplName, err)
+	}
+
+	slackID := agent.SlackMemberID
+	if agent.Type == "team" {
+		slackID = agent.SlackChannel
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, struct {
+		AgentName string
+		AgentType string
+		SlackID   string
+	}{agentName, agent.Type, slackID}); err != nil {
+		return "", fmt.Errorf("failed to render %s script: %w", tmplName, err)
+	}
+	return buf.String(), nil
 }
 
 func (p *AWSProvider) setAgentPaused(ctx context.Context, name string, agent *discovery.AgentConfig, paused bool) error {

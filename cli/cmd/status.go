@@ -54,7 +54,7 @@ var statusCmd = &cobra.Command{
 
 		if status.Container.State == "not found" || status.Container.State == "" {
 			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
-				fmt.Println("Container:  paused")
+				fmt.Println("Container:  stopped (agent paused)")
 				fmt.Printf("Service:    %s\n", status.ServiceState)
 				fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
 				return nil

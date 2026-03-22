@@ -323,6 +323,12 @@ func (p *LocalProvider) PauseAgent(ctx context.Context, name string) error {
 		return nil
 	}
 
+	// Mark paused first so state is consistent even if container ops fail
+	cfg.Paused = true
+	if err := p.saveAgentConfig(cfg); err != nil {
+		return err
+	}
+
 	// Stop container (preserve data)
 	cName := containerName(name)
 	if containerExists(ctx, cName) {
@@ -334,12 +340,6 @@ func (p *LocalProvider) PauseAgent(ctx context.Context, name string) error {
 	netName := networkName(name)
 	if containerExists(ctx, routerContainer) {
 		disconnectNetwork(ctx, netName, routerContainer)
-	}
-
-	// Update agent config
-	cfg.Paused = true
-	if err := p.saveAgentConfig(cfg); err != nil {
-		return err
 	}
 
 	// Regenerate routing (excludes paused agents)

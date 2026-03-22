@@ -11,7 +11,7 @@ systemctl start "conga-$AGENT_NAME"
 AGENT_TYPE="{{.AgentType}}"
 SLACK_ID="{{.SlackID}}"
 
-# Re-add to routing.json
+# Re-add to routing.json (skipped for gateway-only agents where SlackID is empty)
 ROUTING="/opt/conga/config/routing.json"
 if [ -f "$ROUTING" ] && [ -n "$SLACK_ID" ]; then
   URL="http://conga-$AGENT_NAME:18789/slack/events"
