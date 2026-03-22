@@ -127,14 +127,7 @@ func (p *LocalProvider) ResolveAgentByIdentity(ctx context.Context) (*provider.A
 
 func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConfig) error {
 	// 1. Save agent config
-	if err := os.MkdirAll(p.agentsDir(), 0700); err != nil {
-		return err
-	}
-	agentJSON, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(p.agentsDir(), cfg.Name+".json"), agentJSON, 0600); err != nil {
+	if err := p.saveAgentConfig(&cfg); err != nil {
 		return err
 	}
 
@@ -270,7 +263,9 @@ func (p *LocalProvider) RemoveAgent(ctx context.Context, name string, deleteSecr
 		os.RemoveAll(p.agentSecretsDir(name))
 	}
 
-	p.regenerateRouting(ctx)
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
 	return nil
 }
 
@@ -348,7 +343,9 @@ func (p *LocalProvider) PauseAgent(ctx context.Context, name string) error {
 	}
 
 	// Regenerate routing (excludes paused agents)
-	p.regenerateRouting(ctx)
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
 
 	return nil
 }
@@ -375,7 +372,9 @@ func (p *LocalProvider) UnpauseAgent(ctx context.Context, name string) error {
 	}
 
 	// Regenerate routing (includes this agent again)
-	p.regenerateRouting(ctx)
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
 
 	return nil
 }
@@ -792,7 +791,9 @@ func (p *LocalProvider) CycleHost(ctx context.Context) error {
 
 	fmt.Println("Stopping all containers...")
 	for _, a := range agents {
-		stopContainer(ctx, containerName(a.Name))
+		if !a.Paused {
+			stopContainer(ctx, containerName(a.Name))
+		}
 	}
 	stopContainer(ctx, routerContainer)
 	stopContainer(ctx, egressProxyContainer)

@@ -8,9 +8,8 @@ echo "Starting $CONTAINER..."
 systemctl start "conga-$AGENT_NAME"
 # ExecStartPost in the systemd unit reconnects the router to the agent's Docker network automatically
 
-# Read agent type and Slack ID for routing update
-AGENT_TYPE=$(cat "/opt/conga/config/$AGENT_NAME.type" 2>/dev/null || echo "user")
-SLACK_ID=$(cat "/opt/conga/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
+AGENT_TYPE="{{.AgentType}}"
+SLACK_ID="{{.SlackID}}"
 
 # Re-add to routing.json
 ROUTING="/opt/conga/config/routing.json"

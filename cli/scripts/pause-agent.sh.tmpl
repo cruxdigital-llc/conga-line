@@ -7,9 +7,8 @@ NETWORK="conga-$AGENT_NAME"
 echo "Stopping $CONTAINER..."
 systemctl stop "conga-$AGENT_NAME" 2>/dev/null || true
 
-# Read agent type and Slack ID for routing update
-AGENT_TYPE=$(cat "/opt/conga/config/$AGENT_NAME.type" 2>/dev/null || echo "user")
-SLACK_ID=$(cat "/opt/conga/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
+AGENT_TYPE="{{.AgentType}}"
+SLACK_ID="{{.SlackID}}"
 
 # Remove from routing.json
 ROUTING="/opt/conga/config/routing.json"

@@ -349,8 +349,17 @@ func (p *AWSProvider) PauseAgent(ctx context.Context, name string) error {
 		return fmt.Errorf("failed to parse pause template: %w", err)
 	}
 
+	slackID := agent.SlackMemberID
+	if agent.Type == "team" {
+		slackID = agent.SlackChannel
+	}
+
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct{ AgentName string }{name}); err != nil {
+	if err := tmpl.Execute(&buf, struct {
+		AgentName string
+		AgentType string
+		SlackID   string
+	}{name, agent.Type, slackID}); err != nil {
 		return fmt.Errorf("failed to render pause script: %w", err)
 	}
 
@@ -396,8 +405,17 @@ func (p *AWSProvider) UnpauseAgent(ctx context.Context, name string) error {
 		return fmt.Errorf("failed to parse unpause template: %w", err)
 	}
 
+	slackID := agent.SlackMemberID
+	if agent.Type == "team" {
+		slackID = agent.SlackChannel
+	}
+
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct{ AgentName string }{name}); err != nil {
+	if err := tmpl.Execute(&buf, struct {
+		AgentName string
+		AgentType string
+		SlackID   string
+	}{name, agent.Type, slackID}); err != nil {
 		return fmt.Errorf("failed to render unpause script: %w", err)
 	}
 
@@ -742,28 +760,30 @@ func (p *AWSProvider) findInstance(ctx context.Context) (string, error) {
 }
 
 func (p *AWSProvider) setAgentPaused(ctx context.Context, name string, agent *discovery.AgentConfig, paused bool) error {
-	data := map[string]interface{}{
-		"type":         agent.Type,
-		"gateway_port": agent.GatewayPort,
+	// Read-modify-write: read current JSON, toggle "paused", write back.
+	// This preserves any fields that exist in SSM but aren't in the AgentConfig struct.
+	paramName := fmt.Sprintf("/conga/agents/%s", name)
+	raw, err := awsutil.GetParameter(ctx, p.clients.SSM, paramName)
+	if err != nil {
+		return fmt.Errorf("failed to read agent parameter: %w", err)
 	}
-	if agent.SlackMemberID != "" {
-		data["slack_member_id"] = agent.SlackMemberID
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return fmt.Errorf("failed to parse agent parameter JSON: %w", err)
 	}
-	if agent.SlackChannel != "" {
-		data["slack_channel"] = agent.SlackChannel
-	}
-	if agent.IAMIdentity != "" {
-		data["iam_identity"] = agent.IAMIdentity
-	}
+
 	if paused {
 		data["paused"] = true
+	} else {
+		delete(data, "paused")
 	}
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	return awsutil.PutParameter(ctx, p.clients.SSM, fmt.Sprintf("/conga/agents/%s", name), string(jsonBytes))
+	return awsutil.PutParameter(ctx, p.clients.SSM, paramName, string(jsonBytes))
 }
 
 func convertAgent(a discovery.AgentConfig) provider.AgentConfig {

@@ -35,6 +35,10 @@ func connectRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if cfg, err := prov.GetAgent(setupCtx, agentName); err == nil && cfg != nil && cfg.Paused {
+		return fmt.Errorf("agent %s is paused. Use `conga admin unpause %s` first", agentName, agentName)
+	}
+
 	info, err := prov.Connect(setupCtx, agentName, 0)
 	if err != nil {
 		return err
