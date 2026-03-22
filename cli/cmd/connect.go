@@ -14,10 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	connectLocalPort int
-	connectNoPairing bool
-)
+var connectNoPairing bool
 
 func init() {
 	connectCmd := &cobra.Command{
@@ -25,7 +22,6 @@ func init() {
 		Short: "Connect to OpenClaw web UI",
 		RunE:  connectRun,
 	}
-	connectCmd.Flags().IntVar(&connectLocalPort, "local-port", 0, "Local port (default: agent's gateway port)")
 	connectCmd.Flags().BoolVar(&connectNoPairing, "no-pairing", false, "Skip device pairing poll")
 	rootCmd.AddCommand(connectCmd)
 }
@@ -39,7 +35,7 @@ func connectRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	info, err := prov.Connect(setupCtx, agentName, connectLocalPort)
+	info, err := prov.Connect(setupCtx, agentName, 0)
 	if err != nil {
 		return err
 	}
