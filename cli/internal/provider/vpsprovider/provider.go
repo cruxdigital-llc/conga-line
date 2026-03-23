@@ -37,21 +37,24 @@ func NewVPSProvider(cfg *provider.Config) (provider.Provider, error) {
 		dataDir = provider.DefaultDataDir()
 	}
 
-	host := cfg.SSHHost
-	if host == "" {
-		return nil, fmt.Errorf("SSH host not configured. Run `conga admin setup --provider vps`")
+	p := &VPSProvider{
+		dataDir:   dataDir,
+		remoteDir: "/opt/conga",
 	}
 
-	ssh, err := SSHConnect(host, cfg.SSHPort, cfg.SSHUser, cfg.SSHKeyPath)
+	// Allow creation without SSH connection for setup (which prompts for details)
+	host := cfg.SSHHost
+	if host == "" {
+		return p, nil
+	}
+
+	sshClient, err := SSHConnect(host, cfg.SSHPort, cfg.SSHUser, cfg.SSHKeyPath)
 	if err != nil {
 		return nil, err
 	}
+	p.ssh = sshClient
 
-	return &VPSProvider{
-		ssh:       ssh,
-		dataDir:   dataDir,
-		remoteDir: "/opt/conga",
-	}, nil
+	return p, nil
 }
 
 func init() {
@@ -73,9 +76,20 @@ func (p *VPSProvider) remoteEgressProxyDir() string {
 	return filepath.Join(p.remoteDir, "egress-proxy")
 }
 
+// requireSSH returns an error if the SSH connection is not established.
+func (p *VPSProvider) requireSSH() error {
+	if p.ssh == nil {
+		return fmt.Errorf("SSH not configured. Run `conga admin setup --provider vps` first")
+	}
+	return nil
+}
+
 // --- Identity & Discovery ---
 
 func (p *VPSProvider) WhoAmI(ctx context.Context) (*provider.Identity, error) {
+	if err := p.requireSSH(); err != nil {
+		return nil, err
+	}
 	user, err := p.ssh.Run(ctx, "whoami")
 	if err != nil {
 		return &provider.Identity{Name: fmt.Sprintf("%s@%s", p.ssh.user, p.ssh.host)}, nil

@@ -15,6 +15,43 @@ import (
 func (p *VPSProvider) Setup(ctx context.Context) error {
 	fmt.Println("Setting up VPS Conga Line deployment...")
 
+	// If no SSH connection yet (first-time setup), prompt for details and connect
+	if p.ssh == nil {
+		host, err := ui.TextPrompt("  SSH host (IP or hostname)")
+		if err != nil {
+			return err
+		}
+		if host == "" {
+			return fmt.Errorf("SSH host is required")
+		}
+
+		portStr, err := ui.TextPromptWithDefault("  SSH port", "22")
+		if err != nil {
+			return err
+		}
+		port := 22
+		if portStr != "" && portStr != "22" {
+			fmt.Sscanf(portStr, "%d", &port)
+		}
+
+		sshUser, err := ui.TextPromptWithDefault("  SSH user", "root")
+		if err != nil {
+			return err
+		}
+
+		keyPath, err := ui.TextPromptWithDefault("  SSH key path (leave empty to auto-detect)", "")
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("\nConnecting to %s@%s:%d...\n", sshUser, host, port)
+		sshClient, err := SSHConnect(host, port, sshUser, keyPath)
+		if err != nil {
+			return fmt.Errorf("SSH connection failed: %w", err)
+		}
+		p.ssh = sshClient
+	}
+
 	// Verify SSH connection
 	user, err := p.ssh.Run(ctx, "whoami")
 	if err != nil {
@@ -36,25 +73,31 @@ func (p *VPSProvider) Setup(ctx context.Context) error {
 	}
 
 	// Create remote directory structure
+	// Use sudo if available and needed (non-root user writing to /opt/)
 	fmt.Println("\nCreating directory structure...")
-	dirs := []struct {
-		path string
-		perm os.FileMode
-	}{
-		{filepath.Join(p.remoteDir, "agents"), 0700},
-		{filepath.Join(p.remoteDir, "secrets", "shared"), 0700},
-		{filepath.Join(p.remoteDir, "secrets", "agents"), 0700},
-		{filepath.Join(p.remoteDir, "data"), 0755},
-		{filepath.Join(p.remoteDir, "config"), 0700},
-		{filepath.Join(p.remoteDir, "router", "src"), 0755},
-		{filepath.Join(p.remoteDir, "behavior"), 0755},
-		{filepath.Join(p.remoteDir, "egress-proxy"), 0755},
-		{filepath.Join(p.remoteDir, "logs"), 0755},
-	}
-	for _, d := range dirs {
-		if err := p.ssh.MkdirAll(d.path, d.perm); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", d.path, err)
+	sshUser := strings.TrimSpace(user)
+	createDirsScript := fmt.Sprintf(`#!/bin/sh
+set -e
+SUDO=""
+if [ "$(id -u)" != "0" ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+    else
+        echo "NOT_ROOT_NO_SUDO" >&2
+        exit 1
+    fi
+fi
+$SUDO mkdir -p %s/{agents,secrets/{shared,agents},config,data,router/src,behavior,egress-proxy,logs}
+$SUDO chown -R %s:%s %s
+chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
+`, p.remoteDir, sshUser, sshUser, p.remoteDir, p.remoteDir, p.remoteDir, p.remoteDir, p.remoteDir)
+
+	_, err = p.ssh.Run(ctx, createDirsScript)
+	if err != nil {
+		if strings.Contains(err.Error(), "NOT_ROOT_NO_SUDO") {
+			return fmt.Errorf("cannot create /opt/conga: not root and sudo not available. Log in as root or install sudo")
 		}
+		return fmt.Errorf("failed to create directory structure: %w", err)
 	}
 	fmt.Println("  Directory structure created at /opt/conga/")
 

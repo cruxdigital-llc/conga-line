@@ -53,35 +53,45 @@ func SSHConnect(host string, port int, user, keyPath string) (*SSHClient, error)
 		user = "root"
 	}
 
-	var authMethods []ssh.AuthMethod
+	// Collect all available signers, then present them as a single auth method.
+	// This avoids the issue where Go's SSH library treats a rejected key from
+	// one auth method as a definitive failure instead of trying the next.
+	var signers []ssh.Signer
 
-	// 1. Explicit key path
+	// 1. Explicit key path (highest priority)
 	if keyPath != "" {
-		if method, err := keyFileAuth(keyPath); err == nil {
-			authMethods = append(authMethods, method)
+		if signer, err := keyFileSigner(keyPath); err == nil {
+			signers = append(signers, signer)
 		} else {
 			return nil, fmt.Errorf("failed to read SSH key %s: %w", keyPath, err)
 		}
 	}
 
-	// 2. SSH agent
-	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-		if conn, err := net.Dial("unix", sock); err == nil {
-			authMethods = append(authMethods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
-		}
-	}
-
-	// 3. Default key paths
+	// 2. Default key paths (ed25519 preferred over rsa)
 	if keyPath == "" {
 		home, _ := os.UserHomeDir()
 		if home != "" {
 			for _, name := range []string{"id_ed25519", "id_rsa"} {
 				p := filepath.Join(home, ".ssh", name)
-				if method, err := keyFileAuth(p); err == nil {
-					authMethods = append(authMethods, method)
+				if signer, err := keyFileSigner(p); err == nil {
+					signers = append(signers, signer)
 				}
 			}
 		}
+	}
+
+	// 3. SSH agent (adds any additional keys not already covered by files)
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		if conn, err := net.Dial("unix", sock); err == nil {
+			if agentSigners, err := agent.NewClient(conn).Signers(); err == nil {
+				signers = append(signers, agentSigners...)
+			}
+		}
+	}
+
+	var authMethods []ssh.AuthMethod
+	if len(signers) > 0 {
+		authMethods = append(authMethods, ssh.PublicKeys(signers...))
 	}
 
 	if len(authMethods) == 0 {
@@ -375,17 +385,13 @@ func (c *SSHClient) Close() error {
 
 // --- helpers ---
 
-// keyFileAuth creates an auth method from a private key file.
-func keyFileAuth(path string) (ssh.AuthMethod, error) {
+// keyFileSigner parses a private key file and returns a signer.
+func keyFileSigner(path string) (ssh.Signer, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	signer, err := ssh.ParsePrivateKey(data)
-	if err != nil {
-		return nil, err
-	}
-	return ssh.PublicKeys(signer), nil
+	return ssh.ParsePrivateKey(data)
 }
 
 // hostKeyVerifier returns a host key callback that checks ~/.ssh/known_hosts.
