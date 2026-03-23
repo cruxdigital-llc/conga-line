@@ -14,6 +14,7 @@ import (
 	// Register providers via init()
 	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/awsprovider"
 	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/localprovider"
+	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/vpsprovider"
 )
 
 var (
@@ -37,7 +38,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "conga",
 	Short: "Conga Line — manage your OpenClaw deployment",
-	Long:  "Cross-platform CLI for managing OpenClaw containers via pluggable providers (AWS, local Docker).",
+	Long:  "Cross-platform CLI for managing OpenClaw containers via pluggable providers (AWS, local Docker, VPS).",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Skip provider init for commands that don't need it
 		if cmd.Name() == "version" || cmd.Name() == "help" {
@@ -88,7 +89,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagAgent, "agent", "", "Agent name (auto-detected from identity if omitted)")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Global timeout for operations")
-	rootCmd.PersistentFlags().StringVar(&flagProvider, "provider", "", "Deployment provider: aws, local (default: local)")
+	rootCmd.PersistentFlags().StringVar(&flagProvider, "provider", "", "Deployment provider: aws, local, vps (default: local)")
 	rootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", "", "Data directory for local provider (default: ~/.conga/)")
 }
 

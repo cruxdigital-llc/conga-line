@@ -1,0 +1,861 @@
+package vpsprovider
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+)
+
+const (
+	egressProxyContainer = "conga-egress-proxy"
+	egressProxyImage     = "conga-egress-proxy"
+	egressNetwork        = "conga-egress"
+	routerContainer      = "conga-router"
+)
+
+// VPSProvider implements provider.Provider for VPS hosts via SSH.
+type VPSProvider struct {
+	ssh       *SSHClient
+	dataDir   string // local ~/.conga/ (for vps-config.json)
+	remoteDir string // /opt/conga/ on the VPS
+}
+
+// NewVPSProvider creates a VPS provider.
+func NewVPSProvider(cfg *provider.Config) (provider.Provider, error) {
+	dataDir := cfg.DataDir
+	if dataDir == "" {
+		dataDir = provider.DefaultDataDir()
+	}
+
+	host := cfg.SSHHost
+	if host == "" {
+		return nil, fmt.Errorf("SSH host not configured. Run `conga admin setup --provider vps`")
+	}
+
+	ssh, err := SSHConnect(host, cfg.SSHPort, cfg.SSHUser, cfg.SSHKeyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &VPSProvider{
+		ssh:       ssh,
+		dataDir:   dataDir,
+		remoteDir: "/opt/conga",
+	}, nil
+}
+
+func init() {
+	provider.Register("vps", NewVPSProvider)
+}
+
+func (p *VPSProvider) Name() string { return "vps" }
+
+// --- remote paths ---
+
+func (p *VPSProvider) remoteAgentsDir() string { return filepath.Join(p.remoteDir, "agents") }
+func (p *VPSProvider) remoteConfigDir() string { return filepath.Join(p.remoteDir, "config") }
+func (p *VPSProvider) remoteDataSubDir(name string) string {
+	return filepath.Join(p.remoteDir, "data", name)
+}
+func (p *VPSProvider) remoteRouterDir() string   { return filepath.Join(p.remoteDir, "router") }
+func (p *VPSProvider) remoteBehaviorDir() string { return filepath.Join(p.remoteDir, "behavior") }
+func (p *VPSProvider) remoteEgressProxyDir() string {
+	return filepath.Join(p.remoteDir, "egress-proxy")
+}
+
+// --- Identity & Discovery ---
+
+func (p *VPSProvider) WhoAmI(ctx context.Context) (*provider.Identity, error) {
+	user, err := p.ssh.Run(ctx, "whoami")
+	if err != nil {
+		return &provider.Identity{Name: fmt.Sprintf("%s@%s", p.ssh.user, p.ssh.host)}, nil
+	}
+	return &provider.Identity{Name: fmt.Sprintf("%s@%s", strings.TrimSpace(user), p.ssh.host)}, nil
+}
+
+func (p *VPSProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig, error) {
+	dir := p.remoteAgentsDir()
+	output, err := p.ssh.Run(ctx, fmt.Sprintf("ls %s/*.json 2>/dev/null || true", shellQuote(dir)))
+	if err != nil || strings.TrimSpace(output) == "" {
+		return nil, nil
+	}
+
+	var agents []provider.AgentConfig
+	for _, path := range strings.Split(strings.TrimSpace(output), "\n") {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		data, err := p.ssh.Download(path)
+		if err != nil {
+			continue
+		}
+		var cfg provider.AgentConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			continue
+		}
+		// Extract name from filename
+		base := filepath.Base(path)
+		cfg.Name = strings.TrimSuffix(base, ".json")
+		agents = append(agents, cfg)
+	}
+
+	sort.Slice(agents, func(i, j int) bool { return agents[i].Name < agents[j].Name })
+	return agents, nil
+}
+
+func (p *VPSProvider) GetAgent(ctx context.Context, name string) (*provider.AgentConfig, error) {
+	path := filepath.Join(p.remoteAgentsDir(), name+".json")
+	data, err := p.ssh.Download(path)
+	if err != nil {
+		return nil, fmt.Errorf("agent %q not found. Use `conga admin add-user` or `add-team` to provision", name)
+	}
+	var cfg provider.AgentConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	cfg.Name = name
+	return &cfg, nil
+}
+
+func (p *VPSProvider) ResolveAgentByIdentity(ctx context.Context) (*provider.AgentConfig, error) {
+	agents, err := p.ListAgents(ctx)
+	if err != nil || len(agents) != 1 {
+		return nil, nil
+	}
+	return &agents[0], nil
+}
+
+// --- Agent Lifecycle ---
+
+func (p *VPSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConfig) error {
+	// 1. Save agent config
+	if err := p.saveAgentConfig(&cfg); err != nil {
+		return err
+	}
+
+	// 2. Read secrets and generate config files
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return fmt.Errorf("failed to read shared secrets: %w", err)
+	}
+	perAgent, err := p.readAgentSecrets(cfg.Name)
+	if err != nil {
+		return fmt.Errorf("failed to read agent secrets: %w", err)
+	}
+
+	openClawJSON, err := common.GenerateOpenClawConfig(cfg, shared, "")
+	if err != nil {
+		return fmt.Errorf("failed to generate config: %w", err)
+	}
+
+	dataDir := p.remoteDataSubDir(cfg.Name)
+	// Create directory structure on remote
+	for _, sub := range []string{"data/workspace", "memory", "logs", "agents", "canvas", "cron", "devices", "identity", "media"} {
+		p.ssh.MkdirAll(filepath.Join(dataDir, sub), 0755)
+	}
+	// Create empty MEMORY.md
+	memoryPath := filepath.Join(dataDir, "data", "workspace", "MEMORY.md")
+	p.ssh.Run(ctx, fmt.Sprintf("test -f %s || echo '# Memory' > %s", shellQuote(memoryPath), shellQuote(memoryPath)))
+
+	if err := p.ssh.Upload(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
+		return err
+	}
+
+	envContent := common.GenerateEnvFile(cfg, shared, perAgent)
+	p.ssh.MkdirAll(p.remoteConfigDir(), 0700)
+	envPath := filepath.Join(p.remoteConfigDir(), cfg.Name+".env")
+	if err := p.ssh.Upload(envPath, envContent, 0400); err != nil {
+		return err
+	}
+
+	// 3. Deploy behavior files
+	if err := p.deployBehavior(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: behavior file deployment failed: %v\n", err)
+	}
+
+	// 4. Read image
+	image := p.getConfigValue("image")
+	if image == "" {
+		image = "ghcr.io/openclaw/openclaw:latest"
+	}
+
+	// 5. Create Docker network
+	netName := networkName(cfg.Name)
+	if !p.networkExists(ctx, netName) {
+		fmt.Printf("Creating network %s...\n", netName)
+		if err := p.createNetwork(ctx, netName); err != nil {
+			return fmt.Errorf("failed to create network: %w", err)
+		}
+	}
+
+	// 6. Connect egress proxy
+	if p.containerExists(ctx, egressProxyContainer) {
+		p.connectNetwork(ctx, netName, egressProxyContainer)
+	}
+
+	// 7. Start container
+	cName := containerName(cfg.Name)
+	if p.containerExists(ctx, cName) {
+		p.removeContainer(ctx, cName)
+	}
+
+	fmt.Printf("Starting container %s...\n", cName)
+	if err := p.runAgentContainer(ctx, agentContainerOpts{
+		Name:        cName,
+		AgentName:   cfg.Name,
+		Network:     netName,
+		EnvFile:     envPath,
+		DataDir:     dataDir,
+		GatewayPort: cfg.GatewayPort,
+		Image:       image,
+	}); err != nil {
+		return fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// 8. Update routing.json
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
+
+	// 9. Ensure router if Slack configured
+	if shared.HasSlack() {
+		p.ensureRouter(ctx)
+		if p.containerExists(ctx, routerContainer) {
+			p.connectNetwork(ctx, netName, routerContainer)
+		}
+	}
+
+	// 10. Save config hash baseline
+	p.saveConfigBaseline(cfg.Name)
+
+	return nil
+}
+
+func (p *VPSProvider) RemoveAgent(ctx context.Context, name string, deleteSecrets bool) error {
+	cName := containerName(name)
+	netName := networkName(name)
+
+	if p.containerExists(ctx, cName) {
+		p.stopContainer(ctx, cName)
+		p.removeContainer(ctx, cName)
+	}
+
+	if p.containerExists(ctx, routerContainer) {
+		p.disconnectNetwork(ctx, netName, routerContainer)
+	}
+	if p.containerExists(ctx, egressProxyContainer) {
+		p.disconnectNetwork(ctx, netName, egressProxyContainer)
+	}
+
+	if p.networkExists(ctx, netName) {
+		p.removeNetwork(ctx, netName)
+	}
+
+	// Remove remote config files
+	p.ssh.Run(ctx, fmt.Sprintf("rm -f %s %s %s",
+		shellQuote(filepath.Join(p.remoteAgentsDir(), name+".json")),
+		shellQuote(filepath.Join(p.remoteConfigDir(), name+".env")),
+		shellQuote(filepath.Join(p.remoteConfigDir(), name+".sha256")),
+	))
+
+	if deleteSecrets {
+		p.ssh.Run(ctx, fmt.Sprintf("rm -rf %s", shellQuote(p.agentSecretsDir(name))))
+	}
+
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
+	return nil
+}
+
+// --- Container Operations ---
+
+func (p *VPSProvider) GetStatus(ctx context.Context, agentName string) (*provider.AgentStatus, error) {
+	cName := containerName(agentName)
+	status := &provider.AgentStatus{
+		AgentName:    agentName,
+		ServiceState: "docker",
+	}
+
+	if !p.containerExists(ctx, cName) {
+		status.Container.State = "not found"
+		return status, nil
+	}
+
+	state, err := p.inspectState(ctx, cName)
+	if err != nil {
+		return nil, err
+	}
+	status.Container.State = state.Status
+	status.Container.StartedAt = state.StartedAt
+
+	if state.Running {
+		if stats, err := p.containerStats(ctx, cName); err == nil {
+			status.Container.CPUPercent = stats.CPUPercent
+			status.Container.MemoryUsage = stats.MemoryUsage
+		}
+		logs, _ := p.containerLogs(ctx, cName, 50)
+		status.ReadyPhase = detectReadyPhase(logs)
+	} else {
+		status.ReadyPhase = "stopped"
+	}
+
+	return status, nil
+}
+
+func (p *VPSProvider) GetLogs(ctx context.Context, agentName string, lines int) (string, error) {
+	return p.containerLogs(ctx, containerName(agentName), lines)
+}
+
+func (p *VPSProvider) ContainerExec(ctx context.Context, agentName string, command []string) (string, error) {
+	args := append([]string{"exec", containerName(agentName)}, command...)
+	return p.dockerRun(ctx, args...)
+}
+
+func (p *VPSProvider) PauseAgent(ctx context.Context, name string) error {
+	cfg, err := p.GetAgent(ctx, name)
+	if err != nil {
+		return err
+	}
+	if cfg.Paused {
+		fmt.Printf("Agent %s is already paused.\n", name)
+		return nil
+	}
+
+	cfg.Paused = true
+	if err := p.saveAgentConfig(cfg); err != nil {
+		return err
+	}
+
+	cName := containerName(name)
+	if p.containerExists(ctx, cName) {
+		p.stopContainer(ctx, cName)
+		p.removeContainer(ctx, cName)
+	}
+
+	netName := networkName(name)
+	if p.containerExists(ctx, routerContainer) {
+		p.disconnectNetwork(ctx, netName, routerContainer)
+	}
+
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
+
+	return nil
+}
+
+func (p *VPSProvider) UnpauseAgent(ctx context.Context, name string) error {
+	cfg, err := p.GetAgent(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !cfg.Paused {
+		fmt.Printf("Agent %s is not paused.\n", name)
+		return nil
+	}
+
+	cfg.Paused = false
+	if err := p.saveAgentConfig(cfg); err != nil {
+		return err
+	}
+
+	if err := p.RefreshAgent(ctx, name); err != nil {
+		return err
+	}
+
+	if err := p.regenerateRouting(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
+
+	return nil
+}
+
+func (p *VPSProvider) saveAgentConfig(cfg *provider.AgentConfig) error {
+	p.ssh.MkdirAll(p.remoteAgentsDir(), 0700)
+	agentJSON, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return p.ssh.Upload(filepath.Join(p.remoteAgentsDir(), cfg.Name+".json"), agentJSON, 0600)
+}
+
+func (p *VPSProvider) RefreshAgent(ctx context.Context, agentName string) error {
+	cfg, err := p.GetAgent(ctx, agentName)
+	if err != nil {
+		return err
+	}
+	if cfg.Paused {
+		return fmt.Errorf("agent %s is paused. Use `conga admin unpause %s` first", agentName, agentName)
+	}
+
+	shared, _ := p.readSharedSecrets()
+	perAgent, _ := p.readAgentSecrets(agentName)
+
+	dataDir := p.remoteDataSubDir(agentName)
+	existingToken := ""
+	if err := p.checkConfigIntegrity(agentName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Generating fresh gateway token instead of preserving existing one.\n")
+		existingToken, _ = generateToken()
+	} else {
+		existingToken = p.readExistingGatewayToken(filepath.Join(dataDir, "openclaw.json"))
+	}
+
+	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken)
+	if err != nil {
+		return fmt.Errorf("failed to generate config: %w", err)
+	}
+	p.ssh.MkdirAll(dataDir, 0755)
+	if err := p.ssh.Upload(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
+		return err
+	}
+
+	p.saveConfigBaseline(agentName)
+
+	envContent := common.GenerateEnvFile(*cfg, shared, perAgent)
+	envPath := filepath.Join(p.remoteConfigDir(), agentName+".env")
+	p.ssh.Run(ctx, fmt.Sprintf("rm -f %s", shellQuote(envPath)))
+	if err := p.ssh.Upload(envPath, envContent, 0400); err != nil {
+		return err
+	}
+
+	cName := containerName(agentName)
+	if p.containerExists(ctx, cName) {
+		p.stopContainer(ctx, cName)
+		p.removeContainer(ctx, cName)
+	}
+
+	image := p.getConfigValue("image")
+	if image == "" {
+		image = "ghcr.io/openclaw/openclaw:latest"
+	}
+
+	netName := networkName(agentName)
+	if !p.networkExists(ctx, netName) {
+		p.createNetwork(ctx, netName)
+	}
+
+	if err := p.runAgentContainer(ctx, agentContainerOpts{
+		Name:        cName,
+		AgentName:   agentName,
+		Network:     netName,
+		EnvFile:     envPath,
+		DataDir:     dataDir,
+		GatewayPort: cfg.GatewayPort,
+		Image:       image,
+	}); err != nil {
+		return fmt.Errorf("failed to restart container: %w", err)
+	}
+
+	if p.containerExists(ctx, egressProxyContainer) {
+		p.connectNetwork(ctx, netName, egressProxyContainer)
+	}
+	if p.containerExists(ctx, routerContainer) {
+		p.connectNetwork(ctx, netName, routerContainer)
+	}
+	return nil
+}
+
+func (p *VPSProvider) RefreshAll(ctx context.Context) error {
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		return err
+	}
+
+	spin := ui.NewSpinner("Refreshing all agents...")
+	for _, a := range agents {
+		if a.Paused {
+			spin.Stop()
+			fmt.Printf("Skipping paused agent: %s\n", a.Name)
+			spin = ui.NewSpinner("Refreshing all agents...")
+			continue
+		}
+		if err := p.RefreshAgent(ctx, a.Name); err != nil {
+			spin.Stop()
+			return fmt.Errorf("failed to refresh %s: %w", a.Name, err)
+		}
+	}
+	spin.Stop()
+	return nil
+}
+
+// --- Connectivity ---
+
+func (p *VPSProvider) Connect(ctx context.Context, agentName string, localPort int) (*provider.ConnectInfo, error) {
+	cfg, err := p.GetAgent(ctx, agentName)
+	if err != nil {
+		return nil, err
+	}
+
+	if localPort == 0 {
+		localPort = cfg.GatewayPort
+	}
+
+	// Read gateway token from remote config
+	token := p.readExistingGatewayToken(filepath.Join(p.remoteDataSubDir(agentName), "openclaw.json"))
+
+	// Fallback: try docker exec
+	if token == "" {
+		cName := containerName(agentName)
+		if p.containerExists(ctx, cName) {
+			output, err := p.dockerRun(ctx, "exec", cName, "node", "-e",
+				`try{const c=require('/home/node/.openclaw/openclaw.json');console.log(c.gateway?.token||c.gateway?.auth?.token||'')}catch(e){console.log('')}`)
+			if err == nil {
+				token = strings.TrimSpace(output)
+			}
+		}
+	}
+
+	// Start SSH tunnel
+	tunnel, err := p.ssh.ForwardPort(ctx, localPort, cfg.GatewayPort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SSH tunnel: %w", err)
+	}
+
+	waiter := make(chan error, 1)
+	go func() {
+		waiter <- tunnel.Wait()
+	}()
+
+	url := fmt.Sprintf("http://localhost:%d", localPort)
+	if token != "" {
+		url = fmt.Sprintf("http://localhost:%d#token=%s", localPort, token)
+	} else {
+		fmt.Println("Note: gateway token not found. The web UI may prompt for authentication.")
+	}
+
+	return &provider.ConnectInfo{
+		URL:       url,
+		LocalPort: localPort,
+		Token:     token,
+		Waiter:    waiter,
+	}, nil
+}
+
+// --- Environment Management ---
+
+func (p *VPSProvider) CycleHost(ctx context.Context) error {
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Stopping all containers...")
+	for _, a := range agents {
+		if !a.Paused {
+			p.stopContainer(ctx, containerName(a.Name))
+		}
+	}
+	p.stopContainer(ctx, routerContainer)
+	p.stopContainer(ctx, egressProxyContainer)
+
+	fmt.Println("Restarting...")
+
+	p.ensureEgressProxy(ctx)
+	p.ensureRouter(ctx)
+
+	for _, a := range agents {
+		if a.Paused {
+			fmt.Printf("Skipping paused agent: %s\n", a.Name)
+			continue
+		}
+		if err := p.RefreshAgent(ctx, a.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to restart %s: %v\n", a.Name, err)
+		}
+	}
+
+	fmt.Println("All containers restarted.")
+	return nil
+}
+
+func (p *VPSProvider) Teardown(ctx context.Context) error {
+	agents, _ := p.ListAgents(ctx)
+	for _, a := range agents {
+		fmt.Printf("Removing agent %s...\n", a.Name)
+		p.removeAgentDocker(ctx, a.Name)
+	}
+
+	p.cleanupDockerByPrefix(ctx)
+
+	// Remove all remote state
+	fmt.Printf("Removing %s...\n", p.remoteDir)
+	p.ssh.Run(ctx, fmt.Sprintf("rm -rf %s", shellQuote(p.remoteDir)))
+
+	// Clear local VPS config
+	os.Remove(filepath.Join(p.dataDir, "vps-config.json"))
+
+	fmt.Println("VPS deployment torn down.")
+	return nil
+}
+
+func (p *VPSProvider) removeAgentDocker(ctx context.Context, name string) {
+	cName := containerName(name)
+	netName := networkName(name)
+	if p.containerExists(ctx, cName) {
+		p.stopContainer(ctx, cName)
+		p.removeContainer(ctx, cName)
+	}
+	if p.networkExists(ctx, netName) {
+		p.removeNetwork(ctx, netName)
+	}
+}
+
+func (p *VPSProvider) cleanupDockerByPrefix(ctx context.Context) {
+	output, err := p.dockerRun(ctx, "ps", "-a", "--filter", "name=conga-", "--format", "{{.Names}}")
+	if err == nil {
+		for _, name := range strings.Split(strings.TrimSpace(output), "\n") {
+			if name == "" {
+				continue
+			}
+			fmt.Printf("Removing container %s...\n", name)
+			p.stopContainer(ctx, name)
+			p.removeContainer(ctx, name)
+		}
+	}
+
+	output, err = p.dockerRun(ctx, "network", "ls", "--filter", "name=conga-", "--format", "{{.Name}}")
+	if err == nil {
+		for _, name := range strings.Split(strings.TrimSpace(output), "\n") {
+			if name == "" {
+				continue
+			}
+			fmt.Printf("Removing network %s...\n", name)
+			p.removeNetwork(ctx, name)
+		}
+	}
+
+	if p.networkExists(ctx, egressNetwork) {
+		fmt.Printf("Removing network %s...\n", egressNetwork)
+		p.removeNetwork(ctx, egressNetwork)
+	}
+}
+
+// --- infrastructure helpers ---
+
+func (p *VPSProvider) ensureRouter(ctx context.Context) {
+	if p.containerExists(ctx, routerContainer) {
+		state, err := p.inspectState(ctx, routerContainer)
+		if err == nil && state.Running {
+			return
+		}
+		p.removeContainer(ctx, routerContainer)
+	}
+
+	routerEnvPath := filepath.Join(p.remoteConfigDir(), "router.env")
+	routingPath := filepath.Join(p.remoteConfigDir(), "routing.json")
+
+	// Check router source exists
+	_, err := p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
+		shellQuote(filepath.Join(p.remoteRouterDir(), "src", "index.js"))))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: router source not found on VPS — router not started\n")
+		return
+	}
+	// Check router env exists
+	_, err = p.ssh.Run(ctx, fmt.Sprintf("test -f %s", shellQuote(routerEnvPath)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: router.env not found — router not started\n")
+		return
+	}
+
+	fmt.Println("Starting router...")
+	if err := p.runRouterContainer(ctx, routerContainerOpts{
+		EnvFile:     routerEnvPath,
+		RouterDir:   p.remoteRouterDir(),
+		RoutingJSON: routingPath,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to start router: %v\n", err)
+		return
+	}
+
+	agents, _ := p.ListAgents(ctx)
+	for _, a := range agents {
+		p.connectNetwork(ctx, networkName(a.Name), routerContainer)
+	}
+
+	fmt.Println("  Router started.")
+}
+
+func (p *VPSProvider) ensureEgressProxy(ctx context.Context) {
+	if p.containerExists(ctx, egressProxyContainer) {
+		state, err := p.inspectState(ctx, egressProxyContainer)
+		if err == nil && state.Running {
+			return
+		}
+		p.removeContainer(ctx, egressProxyContainer)
+	}
+
+	if !p.imageExists(ctx, egressProxyImage) {
+		// Check if Dockerfile exists on remote
+		_, err := p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
+			shellQuote(filepath.Join(p.remoteEgressProxyDir(), "Dockerfile"))))
+		if err == nil {
+			p.buildImage(ctx, p.remoteEgressProxyDir(), egressProxyImage)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: egress proxy image not found and Dockerfile not available — proxy not started\n")
+			return
+		}
+	}
+
+	if !p.networkExists(ctx, egressNetwork) {
+		p.dockerRun(ctx, "network", "create", egressNetwork, "--driver", "bridge")
+	}
+
+	fmt.Println("Starting egress proxy...")
+	_, err := p.dockerRun(ctx, "run", "-d",
+		"--name", egressProxyContainer,
+		"--network", egressNetwork,
+		"--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges",
+		"--memory", "64m",
+		"--read-only",
+		egressProxyImage,
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to start egress proxy: %v\n", err)
+		return
+	}
+
+	agents, _ := p.ListAgents(ctx)
+	for _, a := range agents {
+		p.connectNetwork(ctx, networkName(a.Name), egressProxyContainer)
+	}
+
+	fmt.Println("  Egress proxy started.")
+}
+
+// --- file helpers ---
+
+func (p *VPSProvider) regenerateRouting(ctx context.Context) error {
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		return err
+	}
+	data, err := common.GenerateRoutingJSON(agents)
+	if err != nil {
+		return err
+	}
+	p.ssh.MkdirAll(p.remoteConfigDir(), 0700)
+	return p.ssh.Upload(filepath.Join(p.remoteConfigDir(), "routing.json"), data, 0644)
+}
+
+func (p *VPSProvider) deployBehavior(cfg provider.AgentConfig) error {
+	// Read behavior files from local repo (stored in vps-config.json repo_path)
+	repoPath := p.getConfigValue("repo_path")
+	if repoPath == "" {
+		return nil
+	}
+	behaviorDir := filepath.Join(repoPath, "behavior")
+	if _, err := os.Stat(behaviorDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	files, err := common.ComposeBehaviorFiles(behaviorDir, cfg)
+	if err != nil {
+		return err
+	}
+
+	targetDir := filepath.Join(p.remoteDataSubDir(cfg.Name), "data", "workspace")
+	p.ssh.MkdirAll(targetDir, 0755)
+
+	for name, content := range files {
+		if err := p.ssh.Upload(filepath.Join(targetDir, name), content, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *VPSProvider) getConfigValue(key string) string {
+	extraPath := filepath.Join(p.dataDir, "vps-config.json")
+	data, err := os.ReadFile(extraPath)
+	if err != nil {
+		return ""
+	}
+	var extra map[string]string
+	if err := json.Unmarshal(data, &extra); err != nil {
+		return ""
+	}
+	return extra[key]
+}
+
+func (p *VPSProvider) setConfigValue(key, value string) error {
+	if err := os.MkdirAll(p.dataDir, 0700); err != nil {
+		return err
+	}
+	extraPath := filepath.Join(p.dataDir, "vps-config.json")
+	extra := make(map[string]string)
+	if data, err := os.ReadFile(extraPath); err == nil {
+		json.Unmarshal(data, &extra)
+	}
+	extra[key] = value
+	data, err := json.MarshalIndent(extra, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(extraPath, data, 0600)
+}
+
+// --- utility functions ---
+
+func detectReadyPhase(logs string) string {
+	phase := "starting"
+	if strings.Contains(logs, "[gateway] listening") {
+		phase = "gateway up, waiting for plugins"
+	}
+	if strings.Contains(logs, "[slack]") && strings.Contains(logs, "starting provider") {
+		phase = "slack plugin loading"
+	}
+	if strings.Contains(logs, "[slack] http mode listening") {
+		phase = "slack endpoint ready, resolving channels"
+	}
+	if strings.Contains(logs, "[slack] channels resolved") {
+		phase = "ready"
+	}
+	if strings.Contains(strings.ToLower(logs), "error") || strings.Contains(strings.ToLower(logs), "fatal") {
+		phase += " (errors in logs — check `conga logs`)"
+	}
+	return phase
+}
+
+func (p *VPSProvider) readExistingGatewayToken(remotePath string) string {
+	data, err := p.ssh.Download(remotePath)
+	if err != nil {
+		return ""
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return ""
+	}
+	if gw, ok := config["gateway"].(map[string]interface{}); ok {
+		if auth, ok := gw["auth"].(map[string]interface{}); ok {
+			if t, ok := auth["token"].(string); ok {
+				return t
+			}
+		}
+		if t, ok := gw["token"].(string); ok {
+			return t
+		}
+	}
+	return ""
+}
+
+func generateToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
