@@ -4,16 +4,17 @@ This document reflects the *current state* of the codebase and project.
 It should be updated whenever a significant change occurs in the architecture, roadmap, or standards.
 
 ## Project Overview
-**Mission**: Hardened, per-user-isolated AWS deployment of OpenClaw for internal team use. See [MISSION.md](MISSION.md).
-**Current Phase**: Planning
+**Mission**: Hardened, per-user-isolated deployment of OpenClaw via pluggable providers. See [MISSION.md](MISSION.md).
+**Current Phase**: Active Development
 
 ## Architecture
-Pure infrastructure project — no application code. Terraform + shell bootstrap scripts deploying OpenClaw as a Docker container on AWS.
+Pure infrastructure project — no application code. Go CLI + Terraform deploying OpenClaw as Docker containers via pluggable providers.
 
-- **Single EC2 host (t4g.medium)** with per-user Docker containers (isolated networks, separate configs/secrets)
-- **fck-nat (t4g.nano)** for cost-optimized egress (~$3/mo vs $33/mo NAT Gateway)
-- **Zero ingress**, SSM-only access, secrets off-disk, encrypted EBS
-- **~$10/mo total** for 2 users
+- **Provider model**: CLI uses `Provider` interface with implementations for AWS, local Docker, and VPS (in progress)
+- **AWS**: Single EC2 host with per-agent Docker containers, SSM access, Secrets Manager, zero ingress (~$10/mo)
+- **Local**: Per-agent Docker containers on local machine, file-based secrets, no cloud services
+- **VPS** (planned): Per-agent Docker containers on any VPS, SSH access, file-based secrets (~$5-10/mo)
+- **Common**: Per-agent network isolation, optional Slack router, cap-drop ALL hardening
 
 See [TECH_STACK.md](TECH_STACK.md) for full details.
 
@@ -64,7 +65,23 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 8. Agent Pause / Unpause — Verified Complete
 *See `specs/2026-03-21_feature_agent-pause/` for full trace*
 
-### 9. Backlog / Upcoming
+### 9. VPS Provider — Specified, Ready for Implementation
+*Lead: Architect + Product Manager + QA*
+*See `specs/2026-03-22_feature_vps-provider/` for full trace*
+- [x] Requirements defined: `specs/2026-03-22_feature_vps-provider/requirements.md`
+- [x] Plan defined: `specs/2026-03-22_feature_vps-provider/plan.md`
+- [x] Spec defined: `specs/2026-03-22_feature_vps-provider/spec.md`
+- [x] Persona review passed (Architect + Product Manager + QA)
+- [x] Standards gate passed (2 warnings: config immutability + secrets on disk — accepted, same as local provider)
+- [ ] Phase 1: SSH foundation (`ssh.go`)
+- [ ] Phase 2: Docker helpers (`docker.go`)
+- [ ] Phase 3: Core provider + agent lifecycle (`provider.go`)
+- [ ] Phase 4: Secrets + integrity (`secrets.go`, `integrity.go`)
+- [ ] Phase 5: Setup wizard (`setup.go`)
+- [ ] Phase 6: Config + wiring (`config.go`, `root.go`, `go.mod`)
+- [ ] Phase 7: Documentation
+
+### 10. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
 
