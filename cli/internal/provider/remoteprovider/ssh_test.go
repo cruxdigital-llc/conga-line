@@ -1,4 +1,4 @@
-package vpsprovider
+package remoteprovider
 
 import "testing"
 

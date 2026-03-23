@@ -1,4 +1,4 @@
-package vpsprovider
+package remoteprovider
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 )
 
-// Setup runs the initial VPS environment setup wizard.
-func (p *VPSProvider) Setup(ctx context.Context) error {
-	fmt.Println("Setting up VPS Conga Line deployment...")
+// Setup runs the initial remote environment setup wizard.
+func (p *RemoteProvider) Setup(ctx context.Context) error {
+	fmt.Println("Setting up remote Conga Line deployment...")
 
 	// If no SSH connection yet (first-time setup), prompt for details and connect
 	if p.ssh == nil {
@@ -229,18 +229,18 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 
 	// --- Pull images on remote ---
 	if image != "" {
-		fmt.Printf("\nPulling OpenClaw image %s on VPS...\n", image)
+		fmt.Printf("\nPulling OpenClaw image %s on remote host...\n", image)
 		spin := ui.NewSpinner("Pulling Docker image...")
 		err := p.pullImage(ctx, image)
 		spin.Stop()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to pull image: %v\nYou can pull it manually on the VPS: docker pull %s\n", err, image)
+			fmt.Fprintf(os.Stderr, "Warning: failed to pull image: %v\nYou can pull it manually on the remote host: docker pull %s\n", err, image)
 		} else {
 			fmt.Println("  Image pulled.")
 		}
 	}
 
-	fmt.Println("Pulling node:22-alpine on VPS...")
+	fmt.Println("Pulling node:22-alpine on remote host...")
 	spin := ui.NewSpinner("Pulling router image...")
 	p.pullImage(ctx, "node:22-alpine")
 	spin.Stop()
@@ -249,7 +249,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 	_, err = p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
 		shellQuote(filepath.Join(p.remoteEgressProxyDir(), "Dockerfile"))))
 	if err == nil {
-		fmt.Println("Building egress proxy image on VPS...")
+		fmt.Println("Building egress proxy image on remote host...")
 		spin := ui.NewSpinner("Building egress proxy...")
 		err := p.buildImage(ctx, p.remoteEgressProxyDir(), egressProxyImage)
 		spin.Stop()
@@ -285,7 +285,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 
 	// --- Save provider config ---
 	provCfg := &provider.Config{
-		Provider: "vps",
+		Provider: "remote",
 		DataDir:  p.dataDir,
 		SSHHost:  p.ssh.host,
 		SSHPort:  p.ssh.port,
@@ -300,14 +300,14 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 	} else {
 		fmt.Println("\nAll values already configured.")
 	}
-	fmt.Println("\nVPS deployment ready! Next steps:")
+	fmt.Println("\nRemote deployment ready! Next steps:")
 	fmt.Println("  conga admin add-user <name> [slack_member_id]    # Slack ID optional for gateway-only mode")
 	fmt.Println("  conga admin add-team <name> [slack_channel]      # Slack channel optional for gateway-only mode")
 	return nil
 }
 
 // installDocker installs Docker on the remote host by detecting the package manager.
-func (p *VPSProvider) installDocker(ctx context.Context) error {
+func (p *RemoteProvider) installDocker(ctx context.Context) error {
 	script := `#!/bin/sh
 set -e
 if command -v apt-get >/dev/null 2>&1; then
