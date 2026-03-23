@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +15,9 @@ import (
 // Setup runs the initial remote environment setup wizard.
 func (p *RemoteProvider) Setup(ctx context.Context) error {
 	fmt.Println("Setting up remote Conga Line deployment...")
+
+	// Track SSH key path for config persistence
+	var sshKeyPath string
 
 	// If no SSH connection yet (first-time setup), prompt for details and connect
 	if p.ssh == nil {
@@ -43,6 +47,7 @@ func (p *RemoteProvider) Setup(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		sshKeyPath = keyPath
 
 		fmt.Printf("\nConnecting to %s@%s:%d...\n", sshUser, host, port)
 		sshClient, err := SSHConnect(host, port, sshUser, keyPath)
@@ -62,7 +67,10 @@ func (p *RemoteProvider) Setup(ctx context.Context) error {
 	// Check/install Docker
 	fmt.Println("\nChecking Docker...")
 	if err := p.dockerCheck(ctx); err != nil {
-		fmt.Println("Docker not found. Installing...")
+		if !ui.Confirm("Docker not found on remote host. Install it?") {
+			return fmt.Errorf("Docker is required. Install it manually on the remote host and rerun setup")
+		}
+		fmt.Println("Installing Docker...")
 		if err := p.installDocker(ctx); err != nil {
 			return fmt.Errorf("failed to install Docker: %w", err)
 		}
@@ -162,7 +170,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 	fmt.Println("\nSlack integration is optional. Skip all Slack tokens to run in gateway-only mode (web UI).")
 
 	for _, item := range secretItems {
-		remotePath := filepath.Join(p.sharedSecretsDir(), item.name)
+		remotePath := posixpath.Join(p.sharedSecretsDir(), item.name)
 		current := ""
 		if data, err := p.ssh.Download(remotePath); err == nil {
 			current = string(data)
@@ -247,7 +255,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 
 	// --- Build egress proxy on remote ---
 	_, err = p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
-		shellQuote(filepath.Join(p.remoteEgressProxyDir(), "Dockerfile"))))
+		shellQuote(posixpath.Join(p.remoteEgressProxyDir(), "Dockerfile"))))
 	if err == nil {
 		fmt.Println("Building egress proxy image on remote host...")
 		spin := ui.NewSpinner("Building egress proxy...")
@@ -261,7 +269,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 	}
 
 	// --- Create initial routing.json ---
-	routingPath := filepath.Join(p.remoteConfigDir(), "routing.json")
+	routingPath := posixpath.Join(p.remoteConfigDir(), "routing.json")
 	_, err = p.ssh.Run(ctx, fmt.Sprintf("test -f %s", shellQuote(routingPath)))
 	if err != nil {
 		p.ssh.Upload(routingPath, []byte(`{"channels":{},"members":{}}`), 0644)
@@ -273,7 +281,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 	// --- Router (only if Slack configured) ---
 	shared, _ := p.readSharedSecrets()
 	if shared.HasSlack() {
-		routerEnvPath := filepath.Join(p.remoteConfigDir(), "router.env")
+		routerEnvPath := posixpath.Join(p.remoteConfigDir(), "router.env")
 		routerEnv := fmt.Sprintf("SLACK_APP_TOKEN=%s\nSLACK_SIGNING_SECRET=%s\n", shared.SlackAppToken, shared.SlackSigningSecret)
 		if err := p.ssh.Upload(routerEnvPath, []byte(routerEnv), 0400); err != nil {
 			return fmt.Errorf("failed to write router env file: %w", err)
@@ -285,11 +293,12 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 
 	// --- Save provider config ---
 	provCfg := &provider.Config{
-		Provider: "remote",
-		DataDir:  p.dataDir,
-		SSHHost:  p.ssh.host,
-		SSHPort:  p.ssh.port,
-		SSHUser:  p.ssh.user,
+		Provider:   "remote",
+		DataDir:    p.dataDir,
+		SSHHost:    p.ssh.host,
+		SSHPort:    p.ssh.port,
+		SSHUser:    p.ssh.user,
+		SSHKeyPath: sshKeyPath,
 	}
 	if err := provider.SaveConfig(provider.DefaultConfigPath(), provCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)

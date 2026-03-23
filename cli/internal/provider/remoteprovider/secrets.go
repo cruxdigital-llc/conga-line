@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
+	posixpath "path"
 	"strings"
 	"time"
 
@@ -14,12 +14,12 @@ import (
 
 // sharedSecretsDir returns the remote path to shared secrets.
 func (p *RemoteProvider) sharedSecretsDir() string {
-	return filepath.Join(p.remoteDir, "secrets", "shared")
+	return posixpath.Join(p.remoteDir, "secrets", "shared")
 }
 
 // agentSecretsDir returns the remote path to per-agent secrets.
 func (p *RemoteProvider) agentSecretsDir(agentName string) string {
-	return filepath.Join(p.remoteDir, "secrets", "agents", agentName)
+	return posixpath.Join(p.remoteDir, "secrets", "agents", agentName)
 }
 
 // readSharedSecrets loads all shared secrets from the remote host.
@@ -28,7 +28,7 @@ func (p *RemoteProvider) readSharedSecrets() (common.SharedSecrets, error) {
 	var s common.SharedSecrets
 
 	read := func(name string) string {
-		data, err := p.ssh.Download(filepath.Join(dir, name))
+		data, err := p.ssh.Download(posixpath.Join(dir, name))
 		if err != nil {
 			return ""
 		}
@@ -58,7 +58,7 @@ func (p *RemoteProvider) readAgentSecrets(agentName string) (map[string]string, 
 		if name == "" {
 			continue
 		}
-		data, err := p.ssh.Download(filepath.Join(dir, name))
+		data, err := p.ssh.Download(posixpath.Join(dir, name))
 		if err != nil {
 			continue
 		}
@@ -69,9 +69,9 @@ func (p *RemoteProvider) readAgentSecrets(agentName string) (map[string]string, 
 
 // SetSecret creates or updates a secret for an agent on the remote host.
 func (p *RemoteProvider) SetSecret(ctx context.Context, agentName, secretName, value string) error {
-	path := filepath.Join(p.agentSecretsDir(agentName), secretName)
+	path := posixpath.Join(p.agentSecretsDir(agentName), secretName)
 	// Ensure directory exists
-	p.ssh.MkdirAll(filepath.Dir(path), 0700)
+	p.ssh.MkdirAll(posixpath.Dir(path), 0700)
 	return p.ssh.Upload(path, []byte(value), 0400)
 }
 
@@ -106,7 +106,7 @@ func (p *RemoteProvider) ListSecrets(ctx context.Context, agentName string) ([]p
 		result = append(result, provider.SecretEntry{
 			Name:        name,
 			EnvVar:      common.SecretNameToEnvVar(name),
-			Path:        filepath.Join(dir, name),
+			Path:        posixpath.Join(dir, name),
 			LastChanged: lastChanged,
 		})
 	}
@@ -115,7 +115,7 @@ func (p *RemoteProvider) ListSecrets(ctx context.Context, agentName string) ([]p
 
 // DeleteSecret removes a secret file on the remote host.
 func (p *RemoteProvider) DeleteSecret(ctx context.Context, agentName, secretName string) error {
-	path := filepath.Join(p.agentSecretsDir(agentName), secretName)
+	path := posixpath.Join(p.agentSecretsDir(agentName), secretName)
 	_, err := p.ssh.Run(ctx, fmt.Sprintf("rm %s", shellQuote(path)))
 	if err != nil {
 		return fmt.Errorf("secret %q not found for agent %s", secretName, agentName)
@@ -128,6 +128,6 @@ func (p *RemoteProvider) writeSharedSecret(name, value string) error {
 	if value == "" {
 		return nil
 	}
-	path := filepath.Join(p.sharedSecretsDir(), name)
+	path := posixpath.Join(p.sharedSecretsDir(), name)
 	return p.ssh.Upload(path, []byte(value), os.FileMode(0400))
 }

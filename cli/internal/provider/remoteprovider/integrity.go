@@ -5,14 +5,15 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"path/filepath"
+	posixpath "path"
+	"strings"
 	"time"
 )
 
 // checkConfigIntegrity verifies openclaw.json hasn't been tampered with on the remote host.
 func (p *RemoteProvider) checkConfigIntegrity(agentName string) error {
-	configPath := filepath.Join(p.remoteDataSubDir(agentName), "openclaw.json")
-	baselinePath := filepath.Join(p.remoteConfigDir(), agentName+".sha256")
+	configPath := posixpath.Join(p.remoteDataSubDir(agentName), "openclaw.json")
+	baselinePath := posixpath.Join(p.remoteConfigDir(), agentName+".sha256")
 
 	data, err := p.ssh.Download(configPath)
 	if err != nil {
@@ -37,14 +38,14 @@ func (p *RemoteProvider) checkConfigIntegrity(agentName string) error {
 
 // saveConfigBaseline stores the SHA256 hash of the current openclaw.json on the remote host.
 func (p *RemoteProvider) saveConfigBaseline(agentName string) error {
-	configPath := filepath.Join(p.remoteDataSubDir(agentName), "openclaw.json")
+	configPath := posixpath.Join(p.remoteDataSubDir(agentName), "openclaw.json")
 	data, err := p.ssh.Download(configPath)
 	if err != nil {
 		return err
 	}
 
 	hash := fmt.Sprintf("%x", sha256.Sum256(data))
-	baselinePath := filepath.Join(p.remoteConfigDir(), agentName+".sha256")
+	baselinePath := posixpath.Join(p.remoteConfigDir(), agentName+".sha256")
 	return p.ssh.Upload(baselinePath, []byte(hash), 0600)
 }
 
@@ -55,7 +56,7 @@ func (p *RemoteProvider) RunIntegrityCheck() error {
 		return err
 	}
 
-	logPath := filepath.Join(p.remoteDir, "logs", "integrity.log")
+	logPath := posixpath.Join(p.remoteDir, "logs", "integrity.log")
 	now := time.Now().Format(time.RFC3339)
 
 	var logLines []string
@@ -68,23 +69,16 @@ func (p *RemoteProvider) RunIntegrityCheck() error {
 		}
 	}
 
-	// Append to remote log
+	// Append to remote log via stdin pipe (avoids shell interpretation of log content)
 	if len(logLines) > 0 {
-		content := fmt.Sprintf("%s\n", fmt.Sprintf("%s", joinLines(logLines)))
-		p.ssh.Run(context.Background(), fmt.Sprintf("echo %s >> %s",
-			shellQuote(content), shellQuote(logPath)))
+		content := strings.Join(logLines, "\n") + "\n"
+		session, err := p.ssh.client.NewSession()
+		if err == nil {
+			session.Stdin = strings.NewReader(content)
+			session.Run(fmt.Sprintf("cat >> %s", shellQuote(logPath)))
+			session.Close()
+		}
 	}
 
 	return nil
-}
-
-func joinLines(lines []string) string {
-	result := ""
-	for i, l := range lines {
-		if i > 0 {
-			result += "\n"
-		}
-		result += l
-	}
-	return result
 }

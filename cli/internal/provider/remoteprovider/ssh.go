@@ -1,4 +1,4 @@
-// Package vpsprovider implements the Provider interface for VPS hosts via SSH.
+// Package remoteprovider implements the Provider interface for SSH-accessible hosts.
 package remoteprovider
 
 import (
@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -166,6 +167,7 @@ func (c *SSHClient) RunWithStderr(ctx context.Context, cmd string) (string, stri
 
 // Upload writes content to a remote path with the specified permissions using SFTP.
 // Uses atomic write (temp + rename) for files with restrictive permissions.
+// TODO: Cache the SFTP client on SSHClient to avoid per-operation handshakes during setup.
 func (c *SSHClient) Upload(path string, content []byte, perm os.FileMode) error {
 	sftpClient, err := sftp.NewClient(c.client)
 	if err != nil {
@@ -173,7 +175,7 @@ func (c *SSHClient) Upload(path string, content []byte, perm os.FileMode) error 
 	}
 	defer sftpClient.Close()
 
-	dir := filepath.Dir(path)
+	dir := posixpath.Dir(path)
 	sftpClient.MkdirAll(dir)
 
 	// Atomic write: temp file + rename
@@ -208,7 +210,7 @@ func (c *SSHClient) Upload(path string, content []byte, perm os.FileMode) error 
 
 // uploadViaShell is a fallback when SFTP is not available.
 func (c *SSHClient) uploadViaShell(path string, content []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
+	dir := posixpath.Dir(path)
 	permStr := fmt.Sprintf("%04o", perm)
 
 	session, err := c.client.NewSession()
@@ -266,7 +268,7 @@ func (c *SSHClient) UploadDir(localDir, remotePath string) error {
 		if err != nil {
 			return err
 		}
-		dstPath := filepath.Join(remotePath, relPath)
+		dstPath := posixpath.Join(remotePath, relPath)
 
 		// Skip node_modules
 		if strings.Contains(relPath, "node_modules") {
@@ -395,15 +397,17 @@ func keyFileSigner(path string) (ssh.Signer, error) {
 }
 
 // hostKeyVerifier returns a host key callback that checks ~/.ssh/known_hosts.
-// If the file doesn't exist, it accepts all keys (for initial setup).
+// If the file doesn't exist, it falls back to accepting all keys with a warning.
 func hostKeyVerifier() (ssh.HostKeyCallback, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: cannot determine home directory — host key verification disabled. Connection may be insecure.\n")
 		return ssh.InsecureIgnoreHostKey(), nil
 	}
 
 	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
 	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "WARNING: %s not found — host key verification disabled. Connection may be insecure.\n", knownHostsPath)
 		return ssh.InsecureIgnoreHostKey(), nil
 	}
 
@@ -434,6 +438,7 @@ func shelljoin(args ...string) string {
 }
 
 // isSafeArg returns true if the string contains only safe shell characters.
+// '=' is included because Docker -e flags use KEY=VALUE (e.g. NODE_OPTIONS=--max-old-space-size=1536).
 func isSafeArg(s string) bool {
 	if s == "" {
 		return false

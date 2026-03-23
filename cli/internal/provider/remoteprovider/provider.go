@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -65,17 +66,25 @@ func init() {
 
 func (p *RemoteProvider) Name() string { return "remote" }
 
+// Close releases the SSH connection. TODO: wire into CLI framework shutdown.
+func (p *RemoteProvider) Close() error {
+	if p.ssh != nil {
+		return p.ssh.Close()
+	}
+	return nil
+}
+
 // --- remote paths ---
 
-func (p *RemoteProvider) remoteAgentsDir() string { return filepath.Join(p.remoteDir, "agents") }
-func (p *RemoteProvider) remoteConfigDir() string { return filepath.Join(p.remoteDir, "config") }
+func (p *RemoteProvider) remoteAgentsDir() string { return posixpath.Join(p.remoteDir, "agents") }
+func (p *RemoteProvider) remoteConfigDir() string { return posixpath.Join(p.remoteDir, "config") }
 func (p *RemoteProvider) remoteDataSubDir(name string) string {
-	return filepath.Join(p.remoteDir, "data", name)
+	return posixpath.Join(p.remoteDir, "data", name)
 }
-func (p *RemoteProvider) remoteRouterDir() string   { return filepath.Join(p.remoteDir, "router") }
-func (p *RemoteProvider) remoteBehaviorDir() string { return filepath.Join(p.remoteDir, "behavior") }
+func (p *RemoteProvider) remoteRouterDir() string   { return posixpath.Join(p.remoteDir, "router") }
+func (p *RemoteProvider) remoteBehaviorDir() string { return posixpath.Join(p.remoteDir, "behavior") }
 func (p *RemoteProvider) remoteEgressProxyDir() string {
-	return filepath.Join(p.remoteDir, "egress-proxy")
+	return posixpath.Join(p.remoteDir, "egress-proxy")
 }
 
 // requireSSH returns an error if the SSH connection is not established.
@@ -121,7 +130,7 @@ func (p *RemoteProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig
 			continue
 		}
 		// Extract name from filename
-		base := filepath.Base(path)
+		base := posixpath.Base(path)
 		cfg.Name = strings.TrimSuffix(base, ".json")
 		agents = append(agents, cfg)
 	}
@@ -131,7 +140,7 @@ func (p *RemoteProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig
 }
 
 func (p *RemoteProvider) GetAgent(ctx context.Context, name string) (*provider.AgentConfig, error) {
-	path := filepath.Join(p.remoteAgentsDir(), name+".json")
+	path := posixpath.Join(p.remoteAgentsDir(), name+".json")
 	data, err := p.ssh.Download(path)
 	if err != nil {
 		return nil, fmt.Errorf("agent %q not found. Use `conga admin add-user` or `add-team` to provision", name)
@@ -178,19 +187,19 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 	dataDir := p.remoteDataSubDir(cfg.Name)
 	// Create directory structure on remote
 	for _, sub := range []string{"data/workspace", "memory", "logs", "agents", "canvas", "cron", "devices", "identity", "media"} {
-		p.ssh.MkdirAll(filepath.Join(dataDir, sub), 0755)
+		p.ssh.MkdirAll(posixpath.Join(dataDir, sub), 0755)
 	}
 	// Create empty MEMORY.md
-	memoryPath := filepath.Join(dataDir, "data", "workspace", "MEMORY.md")
+	memoryPath := posixpath.Join(dataDir, "data", "workspace", "MEMORY.md")
 	p.ssh.Run(ctx, fmt.Sprintf("test -f %s || echo '# Memory' > %s", shellQuote(memoryPath), shellQuote(memoryPath)))
 
-	if err := p.ssh.Upload(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
+	if err := p.ssh.Upload(posixpath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
 		return err
 	}
 
 	envContent := common.GenerateEnvFile(cfg, shared, perAgent)
 	p.ssh.MkdirAll(p.remoteConfigDir(), 0700)
-	envPath := filepath.Join(p.remoteConfigDir(), cfg.Name+".env")
+	envPath := posixpath.Join(p.remoteConfigDir(), cfg.Name+".env")
 	if err := p.ssh.Upload(envPath, envContent, 0400); err != nil {
 		return err
 	}
@@ -280,9 +289,9 @@ func (p *RemoteProvider) RemoveAgent(ctx context.Context, name string, deleteSec
 
 	// Remove remote config files
 	p.ssh.Run(ctx, fmt.Sprintf("rm -f %s %s %s",
-		shellQuote(filepath.Join(p.remoteAgentsDir(), name+".json")),
-		shellQuote(filepath.Join(p.remoteConfigDir(), name+".env")),
-		shellQuote(filepath.Join(p.remoteConfigDir(), name+".sha256")),
+		shellQuote(posixpath.Join(p.remoteAgentsDir(), name+".json")),
+		shellQuote(posixpath.Join(p.remoteConfigDir(), name+".env")),
+		shellQuote(posixpath.Join(p.remoteConfigDir(), name+".sha256")),
 	))
 
 	if deleteSecrets {
@@ -404,7 +413,7 @@ func (p *RemoteProvider) saveAgentConfig(cfg *provider.AgentConfig) error {
 	if err != nil {
 		return err
 	}
-	return p.ssh.Upload(filepath.Join(p.remoteAgentsDir(), cfg.Name+".json"), agentJSON, 0600)
+	return p.ssh.Upload(posixpath.Join(p.remoteAgentsDir(), cfg.Name+".json"), agentJSON, 0600)
 }
 
 func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) error {
@@ -416,6 +425,8 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return fmt.Errorf("agent %s is paused. Use `conga admin unpause %s` first", agentName, agentName)
 	}
 
+	// Errors reading secrets are non-fatal — agent starts with whatever secrets are available.
+	// Missing secrets surface as runtime errors in the container (check via `conga logs`).
 	shared, _ := p.readSharedSecrets()
 	perAgent, _ := p.readAgentSecrets(agentName)
 
@@ -426,7 +437,7 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		fmt.Fprintf(os.Stderr, "Generating fresh gateway token instead of preserving existing one.\n")
 		existingToken, _ = generateToken()
 	} else {
-		existingToken = p.readExistingGatewayToken(filepath.Join(dataDir, "openclaw.json"))
+		existingToken = p.readExistingGatewayToken(posixpath.Join(dataDir, "openclaw.json"))
 	}
 
 	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken)
@@ -434,14 +445,14 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
 	p.ssh.MkdirAll(dataDir, 0755)
-	if err := p.ssh.Upload(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
+	if err := p.ssh.Upload(posixpath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
 		return err
 	}
 
 	p.saveConfigBaseline(agentName)
 
 	envContent := common.GenerateEnvFile(*cfg, shared, perAgent)
-	envPath := filepath.Join(p.remoteConfigDir(), agentName+".env")
+	envPath := posixpath.Join(p.remoteConfigDir(), agentName+".env")
 	p.ssh.Run(ctx, fmt.Sprintf("rm -f %s", shellQuote(envPath)))
 	if err := p.ssh.Upload(envPath, envContent, 0400); err != nil {
 		return err
@@ -520,7 +531,7 @@ func (p *RemoteProvider) Connect(ctx context.Context, agentName string, localPor
 	}
 
 	// Read gateway token from remote config
-	token := p.readExistingGatewayToken(filepath.Join(p.remoteDataSubDir(agentName), "openclaw.json"))
+	token := p.readExistingGatewayToken(posixpath.Join(p.remoteDataSubDir(agentName), "openclaw.json"))
 
 	// Fallback: try docker exec
 	if token == "" {
@@ -669,12 +680,12 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 		p.removeContainer(ctx, routerContainer)
 	}
 
-	routerEnvPath := filepath.Join(p.remoteConfigDir(), "router.env")
-	routingPath := filepath.Join(p.remoteConfigDir(), "routing.json")
+	routerEnvPath := posixpath.Join(p.remoteConfigDir(), "router.env")
+	routingPath := posixpath.Join(p.remoteConfigDir(), "routing.json")
 
 	// Check router source exists
 	_, err := p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
-		shellQuote(filepath.Join(p.remoteRouterDir(), "src", "index.js"))))
+		shellQuote(posixpath.Join(p.remoteRouterDir(), "src", "index.js"))))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: router source not found on remote host — router not started\n")
 		return
@@ -716,7 +727,7 @@ func (p *RemoteProvider) ensureEgressProxy(ctx context.Context) {
 	if !p.imageExists(ctx, egressProxyImage) {
 		// Check if Dockerfile exists on remote
 		_, err := p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
-			shellQuote(filepath.Join(p.remoteEgressProxyDir(), "Dockerfile"))))
+			shellQuote(posixpath.Join(p.remoteEgressProxyDir(), "Dockerfile"))))
 		if err == nil {
 			p.buildImage(ctx, p.remoteEgressProxyDir(), egressProxyImage)
 		} else {
@@ -764,7 +775,7 @@ func (p *RemoteProvider) regenerateRouting(ctx context.Context) error {
 		return err
 	}
 	p.ssh.MkdirAll(p.remoteConfigDir(), 0700)
-	return p.ssh.Upload(filepath.Join(p.remoteConfigDir(), "routing.json"), data, 0644)
+	return p.ssh.Upload(posixpath.Join(p.remoteConfigDir(), "routing.json"), data, 0644)
 }
 
 func (p *RemoteProvider) deployBehavior(cfg provider.AgentConfig) error {
@@ -783,11 +794,11 @@ func (p *RemoteProvider) deployBehavior(cfg provider.AgentConfig) error {
 		return err
 	}
 
-	targetDir := filepath.Join(p.remoteDataSubDir(cfg.Name), "data", "workspace")
+	targetDir := posixpath.Join(p.remoteDataSubDir(cfg.Name), "data", "workspace")
 	p.ssh.MkdirAll(targetDir, 0755)
 
 	for name, content := range files {
-		if err := p.ssh.Upload(filepath.Join(targetDir, name), content, 0644); err != nil {
+		if err := p.ssh.Upload(posixpath.Join(targetDir, name), content, 0644); err != nil {
 			return err
 		}
 	}

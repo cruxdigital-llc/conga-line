@@ -10,10 +10,10 @@ It should be updated whenever a significant change occurs in the architecture, r
 ## Architecture
 Pure infrastructure project — no application code. Go CLI + Terraform deploying OpenClaw as Docker containers via pluggable providers.
 
-- **Provider model**: CLI uses `Provider` interface with implementations for AWS, local Docker, and VPS (in progress)
+- **Provider model**: CLI uses `Provider` interface with implementations for AWS, local Docker, and remote (SSH)
 - **AWS**: Single EC2 host with per-agent Docker containers, SSM access, Secrets Manager, zero ingress (~$10/mo)
 - **Local**: Per-agent Docker containers on local machine, file-based secrets, no cloud services
-- **VPS** (planned): Per-agent Docker containers on any VPS, SSH access, file-based secrets (~$5-10/mo)
+- **Remote**: Per-agent Docker containers on any SSH host (VPS, bare metal, RPi), file-based secrets (~$5-10/mo)
 - **Common**: Per-agent network isolation, optional Slack router, cap-drop ALL hardening
 
 See [TECH_STACK.md](TECH_STACK.md) for full details.
@@ -90,6 +90,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-03-23: Remote Provider PR review fixes — 13 fixes across 7 files: `filepath.Join` → `posixpath.Join` for cross-platform remote path correctness, host key verification warning, shell injection fix in integrity log append, Docker install confirmation prompt, SSHKeyPath persistence, stale VPS naming cleanup, `Close()` method, `detectReadyPhase` tests. See `specs/2026-03-23_bugfix_remote-provider-pr-review/`.
 - 2026-03-23: Remote Provider (renamed from VPS) — third provider implementation for managing OpenClaw agent clusters on any SSH-accessible host (VPS, bare metal, Raspberry Pi, Mac Mini, etc.). 7 new files (~2,100 lines): SSH client (connect, exec, SFTP, tunnel), remote Docker CLI helpers, full Provider interface (17 methods), file-based secrets, config integrity monitoring, setup wizard with Docker auto-install. 29 unit tests + full E2E lifecycle verified on Raspberry Pi (Debian 13, ARM64, 905MB RAM). 3 bugs found and fixed during integration: SSH auth ordering, first-time setup chicken-and-egg, non-root sudo. See `specs/2026-03-22_feature_vps-provider/`.
 - 2026-03-21: Agent Pause / Unpause — per-agent pause/unpause via `conga admin pause/unpause`. Provider interface methods (`PauseAgent`, `UnpauseAgent`), both AWS (SSM scripts + parameter update) and local (Docker stop + JSON file). Routing excludes paused agents. `RefreshAll`, `CycleHost`, and bootstrap skip paused. `list-agents` shows STATUS column. See `specs/2026-03-21_feature_agent-pause/`.
 - 2026-03-21: Modular Deployment — refactored CLI from hardcoded AWS to pluggable Provider interface. 16 new files, 15 modified. Provider interface (16 methods), common package (config/routing/behavior generation), AWS provider (wraps existing code, zero behavioral change), local Docker provider (file-based discovery, Docker CLI operations, secrets with mode 0400, config integrity monitoring), egress proxy for network isolation. New flags: `--provider aws|local`, `--data-dir`. 33 test cases added for common package. All existing tests pass. See `specs/2026-03-21_feature_modular-deployment/`.
