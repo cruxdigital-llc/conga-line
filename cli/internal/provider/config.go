@@ -8,10 +8,15 @@ import (
 
 // Config holds provider-agnostic configuration.
 type Config struct {
-	Provider string `json:"provider"`           // "aws" or "local"
+	Provider string `json:"provider"`           // "aws", "local", or "vps"
 	DataDir  string `json:"data_dir,omitempty"` // override for ~/.conga/
 	Region   string `json:"region,omitempty"`   // AWS region (aws provider)
 	Profile  string `json:"profile,omitempty"`  // AWS profile (aws provider)
+	// VPS-specific
+	SSHHost    string `json:"ssh_host,omitempty"`     // VPS hostname or IP
+	SSHPort    int    `json:"ssh_port,omitempty"`     // SSH port (default 22)
+	SSHUser    string `json:"ssh_user,omitempty"`     // SSH user (default "root")
+	SSHKeyPath string `json:"ssh_key_path,omitempty"` // path to SSH private key
 }
 
 // DefaultDataDir returns ~/.conga/.

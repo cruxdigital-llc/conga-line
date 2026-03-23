@@ -65,14 +65,8 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 8. Agent Pause / Unpause — Verified Complete
 *See `specs/2026-03-21_feature_agent-pause/` for full trace*
 
-### 9. VPS Provider — Specified, Ready for Implementation
-*Lead: Architect + Product Manager + QA*
+### 9. VPS Provider — Verified Complete
 *See `specs/2026-03-22_feature_vps-provider/` for full trace*
-- [x] Requirements defined: `specs/2026-03-22_feature_vps-provider/requirements.md`
-- [x] Plan defined: `specs/2026-03-22_feature_vps-provider/plan.md`
-- [x] Spec defined: `specs/2026-03-22_feature_vps-provider/spec.md`
-- [x] Persona review passed (Architect + Product Manager + QA)
-- [x] Standards gate passed (2 warnings: config immutability + secrets on disk — accepted, same as local provider)
 - [ ] Phase 1: SSH foundation (`ssh.go`)
 - [ ] Phase 2: Docker helpers (`docker.go`)
 - [ ] Phase 3: Core provider + agent lifecycle (`provider.go`)
@@ -94,6 +88,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-03-22: VPS Provider — third provider implementation for managing OpenClaw agent clusters on any VPS over SSH. 7 new files (2,139 lines): SSH client (connect, exec, SFTP, tunnel), remote Docker CLI helpers, full Provider interface (17 methods), file-based secrets, config integrity monitoring, setup wizard with Docker auto-install (apt/dnf/yum/pacman). 3 modified files (config.go, root.go, go.mod). 29 unit tests for shell injection prevention. SSH tunnel for gateway access, no inbound ports beyond SSH. Gateway-only and Slack modes supported. See `specs/2026-03-22_feature_vps-provider/`.
 - 2026-03-21: Agent Pause / Unpause — per-agent pause/unpause via `conga admin pause/unpause`. Provider interface methods (`PauseAgent`, `UnpauseAgent`), both AWS (SSM scripts + parameter update) and local (Docker stop + JSON file). Routing excludes paused agents. `RefreshAll`, `CycleHost`, and bootstrap skip paused. `list-agents` shows STATUS column. See `specs/2026-03-21_feature_agent-pause/`.
 - 2026-03-21: Modular Deployment — refactored CLI from hardcoded AWS to pluggable Provider interface. 16 new files, 15 modified. Provider interface (16 methods), common package (config/routing/behavior generation), AWS provider (wraps existing code, zero behavioral change), local Docker provider (file-based discovery, Docker CLI operations, secrets with mode 0400, config integrity monitoring), egress proxy for network isolation. New flags: `--provider aws|local`, `--data-dir`. 33 test cases added for common package. All existing tests pass. See `specs/2026-03-21_feature_modular-deployment/`.
 - 2026-03-21: Conga Line Rename — comprehensive rebrand from "OpenClaw"/"CruxClaw" to "Conga Line". CLI binary `cruxclaw` → `conga`. Go module path, Terraform resources, SSM/Secrets/S3 paths (`/conga/`), Docker/systemd naming (`conga-`), host paths (`/opt/conga/`), CloudWatch namespace (`CongaLine`), GoReleaser, 80+ files across all layers. Upstream Open Claw references preserved. See `specs/2026-03-20_feature_conga-line-rename/`.

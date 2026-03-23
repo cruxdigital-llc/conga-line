@@ -116,6 +116,16 @@ Goal: Decouple deployment from AWS so Conga Line can be deployed locally for dev
 - [x] **Config integrity**: SHA256 hash monitoring for openclaw.json
 - [x] **CLI integration**: `--provider aws|local` flag, persistent config at `~/.conga/config.json`
 
+### VPS Provider ✅
+- [x] **SSH-based VPS provider**: Manage OpenClaw clusters on any VPS (Hetzner, DigitalOcean, Linode, etc.) over SSH
+- [x] SSH client with key auth, SFTP file transfer, SSH tunnel for gateway access
+- [x] Docker auto-install during setup (apt/dnf/yum/pacman)
+- [x] File-based secrets on remote host (mode 0400), same model as local provider
+- [x] Full Provider interface (17 methods): setup, add-user, add-team, status, logs, secrets, connect, pause/unpause, teardown
+- [x] No inbound ports beyond SSH (22) — gateway via SSH tunnel only
+- [ ] Real VPS end-to-end testing (Hetzner/DigitalOcean)
+- [ ] User-facing setup guide documentation
+
 ### Future Deployment Targets (not yet started)
 - [ ] **Kubernetes provider**: Helm chart + kubectl operations behind Provider interface
 - [ ] **ECS/Fargate provider**: Task definitions + AWS ECS API behind Provider interface
