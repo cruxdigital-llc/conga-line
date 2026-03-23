@@ -1,4 +1,4 @@
-package vpsprovider
+package remoteprovider
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 )
 
 // checkConfigIntegrity verifies openclaw.json hasn't been tampered with on the remote host.
-func (p *VPSProvider) checkConfigIntegrity(agentName string) error {
+func (p *RemoteProvider) checkConfigIntegrity(agentName string) error {
 	configPath := filepath.Join(p.remoteDataSubDir(agentName), "openclaw.json")
 	baselinePath := filepath.Join(p.remoteConfigDir(), agentName+".sha256")
 
@@ -36,7 +36,7 @@ func (p *VPSProvider) checkConfigIntegrity(agentName string) error {
 }
 
 // saveConfigBaseline stores the SHA256 hash of the current openclaw.json on the remote host.
-func (p *VPSProvider) saveConfigBaseline(agentName string) error {
+func (p *RemoteProvider) saveConfigBaseline(agentName string) error {
 	configPath := filepath.Join(p.remoteDataSubDir(agentName), "openclaw.json")
 	data, err := p.ssh.Download(configPath)
 	if err != nil {
@@ -49,7 +49,7 @@ func (p *VPSProvider) saveConfigBaseline(agentName string) error {
 }
 
 // RunIntegrityCheck checks all agent configs on the remote host and logs results.
-func (p *VPSProvider) RunIntegrityCheck() error {
+func (p *RemoteProvider) RunIntegrityCheck() error {
 	agents, err := p.ListAgents(context.Background())
 	if err != nil {
 		return err

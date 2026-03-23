@@ -1,4 +1,4 @@
-package vpsprovider
+package remoteprovider
 
 import (
 	"context"
@@ -23,21 +23,23 @@ const (
 	routerContainer      = "conga-router"
 )
 
-// VPSProvider implements provider.Provider for VPS hosts via SSH.
-type VPSProvider struct {
+// RemoteProvider implements provider.Provider for any SSH-accessible host.
+// Works with VPS instances, bare metal servers (Raspberry Pi, Mac Mini),
+// colocated servers, or any Linux machine reachable via SSH with Docker installed.
+type RemoteProvider struct {
 	ssh       *SSHClient
-	dataDir   string // local ~/.conga/ (for vps-config.json)
-	remoteDir string // /opt/conga/ on the VPS
+	dataDir   string // local ~/.conga/ (for remote-config.json)
+	remoteDir string // /opt/conga/ on the remote host
 }
 
-// NewVPSProvider creates a VPS provider.
-func NewVPSProvider(cfg *provider.Config) (provider.Provider, error) {
+// NewRemoteProvider creates a remote provider.
+func NewRemoteProvider(cfg *provider.Config) (provider.Provider, error) {
 	dataDir := cfg.DataDir
 	if dataDir == "" {
 		dataDir = provider.DefaultDataDir()
 	}
 
-	p := &VPSProvider{
+	p := &RemoteProvider{
 		dataDir:   dataDir,
 		remoteDir: "/opt/conga",
 	}
@@ -58,35 +60,35 @@ func NewVPSProvider(cfg *provider.Config) (provider.Provider, error) {
 }
 
 func init() {
-	provider.Register("vps", NewVPSProvider)
+	provider.Register("remote", NewRemoteProvider)
 }
 
-func (p *VPSProvider) Name() string { return "vps" }
+func (p *RemoteProvider) Name() string { return "remote" }
 
 // --- remote paths ---
 
-func (p *VPSProvider) remoteAgentsDir() string { return filepath.Join(p.remoteDir, "agents") }
-func (p *VPSProvider) remoteConfigDir() string { return filepath.Join(p.remoteDir, "config") }
-func (p *VPSProvider) remoteDataSubDir(name string) string {
+func (p *RemoteProvider) remoteAgentsDir() string { return filepath.Join(p.remoteDir, "agents") }
+func (p *RemoteProvider) remoteConfigDir() string { return filepath.Join(p.remoteDir, "config") }
+func (p *RemoteProvider) remoteDataSubDir(name string) string {
 	return filepath.Join(p.remoteDir, "data", name)
 }
-func (p *VPSProvider) remoteRouterDir() string   { return filepath.Join(p.remoteDir, "router") }
-func (p *VPSProvider) remoteBehaviorDir() string { return filepath.Join(p.remoteDir, "behavior") }
-func (p *VPSProvider) remoteEgressProxyDir() string {
+func (p *RemoteProvider) remoteRouterDir() string   { return filepath.Join(p.remoteDir, "router") }
+func (p *RemoteProvider) remoteBehaviorDir() string { return filepath.Join(p.remoteDir, "behavior") }
+func (p *RemoteProvider) remoteEgressProxyDir() string {
 	return filepath.Join(p.remoteDir, "egress-proxy")
 }
 
 // requireSSH returns an error if the SSH connection is not established.
-func (p *VPSProvider) requireSSH() error {
+func (p *RemoteProvider) requireSSH() error {
 	if p.ssh == nil {
-		return fmt.Errorf("SSH not configured. Run `conga admin setup --provider vps` first")
+		return fmt.Errorf("SSH not configured. Run `conga admin setup --provider remote` first")
 	}
 	return nil
 }
 
 // --- Identity & Discovery ---
 
-func (p *VPSProvider) WhoAmI(ctx context.Context) (*provider.Identity, error) {
+func (p *RemoteProvider) WhoAmI(ctx context.Context) (*provider.Identity, error) {
 	if err := p.requireSSH(); err != nil {
 		return nil, err
 	}
@@ -97,7 +99,7 @@ func (p *VPSProvider) WhoAmI(ctx context.Context) (*provider.Identity, error) {
 	return &provider.Identity{Name: fmt.Sprintf("%s@%s", strings.TrimSpace(user), p.ssh.host)}, nil
 }
 
-func (p *VPSProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig, error) {
+func (p *RemoteProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig, error) {
 	dir := p.remoteAgentsDir()
 	output, err := p.ssh.Run(ctx, fmt.Sprintf("ls %s/*.json 2>/dev/null || true", shellQuote(dir)))
 	if err != nil || strings.TrimSpace(output) == "" {
@@ -128,7 +130,7 @@ func (p *VPSProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig, e
 	return agents, nil
 }
 
-func (p *VPSProvider) GetAgent(ctx context.Context, name string) (*provider.AgentConfig, error) {
+func (p *RemoteProvider) GetAgent(ctx context.Context, name string) (*provider.AgentConfig, error) {
 	path := filepath.Join(p.remoteAgentsDir(), name+".json")
 	data, err := p.ssh.Download(path)
 	if err != nil {
@@ -142,7 +144,7 @@ func (p *VPSProvider) GetAgent(ctx context.Context, name string) (*provider.Agen
 	return &cfg, nil
 }
 
-func (p *VPSProvider) ResolveAgentByIdentity(ctx context.Context) (*provider.AgentConfig, error) {
+func (p *RemoteProvider) ResolveAgentByIdentity(ctx context.Context) (*provider.AgentConfig, error) {
 	agents, err := p.ListAgents(ctx)
 	if err != nil || len(agents) != 1 {
 		return nil, nil
@@ -152,7 +154,7 @@ func (p *VPSProvider) ResolveAgentByIdentity(ctx context.Context) (*provider.Age
 
 // --- Agent Lifecycle ---
 
-func (p *VPSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConfig) error {
+func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConfig) error {
 	// 1. Save agent config
 	if err := p.saveAgentConfig(&cfg); err != nil {
 		return err
@@ -256,7 +258,7 @@ func (p *VPSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 	return nil
 }
 
-func (p *VPSProvider) RemoveAgent(ctx context.Context, name string, deleteSecrets bool) error {
+func (p *RemoteProvider) RemoveAgent(ctx context.Context, name string, deleteSecrets bool) error {
 	cName := containerName(name)
 	netName := networkName(name)
 
@@ -295,7 +297,7 @@ func (p *VPSProvider) RemoveAgent(ctx context.Context, name string, deleteSecret
 
 // --- Container Operations ---
 
-func (p *VPSProvider) GetStatus(ctx context.Context, agentName string) (*provider.AgentStatus, error) {
+func (p *RemoteProvider) GetStatus(ctx context.Context, agentName string) (*provider.AgentStatus, error) {
 	cName := containerName(agentName)
 	status := &provider.AgentStatus{
 		AgentName:    agentName,
@@ -328,16 +330,16 @@ func (p *VPSProvider) GetStatus(ctx context.Context, agentName string) (*provide
 	return status, nil
 }
 
-func (p *VPSProvider) GetLogs(ctx context.Context, agentName string, lines int) (string, error) {
+func (p *RemoteProvider) GetLogs(ctx context.Context, agentName string, lines int) (string, error) {
 	return p.containerLogs(ctx, containerName(agentName), lines)
 }
 
-func (p *VPSProvider) ContainerExec(ctx context.Context, agentName string, command []string) (string, error) {
+func (p *RemoteProvider) ContainerExec(ctx context.Context, agentName string, command []string) (string, error) {
 	args := append([]string{"exec", containerName(agentName)}, command...)
 	return p.dockerRun(ctx, args...)
 }
 
-func (p *VPSProvider) PauseAgent(ctx context.Context, name string) error {
+func (p *RemoteProvider) PauseAgent(ctx context.Context, name string) error {
 	cfg, err := p.GetAgent(ctx, name)
 	if err != nil {
 		return err
@@ -370,7 +372,7 @@ func (p *VPSProvider) PauseAgent(ctx context.Context, name string) error {
 	return nil
 }
 
-func (p *VPSProvider) UnpauseAgent(ctx context.Context, name string) error {
+func (p *RemoteProvider) UnpauseAgent(ctx context.Context, name string) error {
 	cfg, err := p.GetAgent(ctx, name)
 	if err != nil {
 		return err
@@ -396,7 +398,7 @@ func (p *VPSProvider) UnpauseAgent(ctx context.Context, name string) error {
 	return nil
 }
 
-func (p *VPSProvider) saveAgentConfig(cfg *provider.AgentConfig) error {
+func (p *RemoteProvider) saveAgentConfig(cfg *provider.AgentConfig) error {
 	p.ssh.MkdirAll(p.remoteAgentsDir(), 0700)
 	agentJSON, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -405,7 +407,7 @@ func (p *VPSProvider) saveAgentConfig(cfg *provider.AgentConfig) error {
 	return p.ssh.Upload(filepath.Join(p.remoteAgentsDir(), cfg.Name+".json"), agentJSON, 0600)
 }
 
-func (p *VPSProvider) RefreshAgent(ctx context.Context, agentName string) error {
+func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) error {
 	cfg, err := p.GetAgent(ctx, agentName)
 	if err != nil {
 		return err
@@ -482,7 +484,7 @@ func (p *VPSProvider) RefreshAgent(ctx context.Context, agentName string) error 
 	return nil
 }
 
-func (p *VPSProvider) RefreshAll(ctx context.Context) error {
+func (p *RemoteProvider) RefreshAll(ctx context.Context) error {
 	agents, err := p.ListAgents(ctx)
 	if err != nil {
 		return err
@@ -507,7 +509,7 @@ func (p *VPSProvider) RefreshAll(ctx context.Context) error {
 
 // --- Connectivity ---
 
-func (p *VPSProvider) Connect(ctx context.Context, agentName string, localPort int) (*provider.ConnectInfo, error) {
+func (p *RemoteProvider) Connect(ctx context.Context, agentName string, localPort int) (*provider.ConnectInfo, error) {
 	cfg, err := p.GetAgent(ctx, agentName)
 	if err != nil {
 		return nil, err
@@ -560,7 +562,7 @@ func (p *VPSProvider) Connect(ctx context.Context, agentName string, localPort i
 
 // --- Environment Management ---
 
-func (p *VPSProvider) CycleHost(ctx context.Context) error {
+func (p *RemoteProvider) CycleHost(ctx context.Context) error {
 	agents, err := p.ListAgents(ctx)
 	if err != nil {
 		return err
@@ -594,7 +596,7 @@ func (p *VPSProvider) CycleHost(ctx context.Context) error {
 	return nil
 }
 
-func (p *VPSProvider) Teardown(ctx context.Context) error {
+func (p *RemoteProvider) Teardown(ctx context.Context) error {
 	agents, _ := p.ListAgents(ctx)
 	for _, a := range agents {
 		fmt.Printf("Removing agent %s...\n", a.Name)
@@ -607,14 +609,14 @@ func (p *VPSProvider) Teardown(ctx context.Context) error {
 	fmt.Printf("Removing %s...\n", p.remoteDir)
 	p.ssh.Run(ctx, fmt.Sprintf("rm -rf %s", shellQuote(p.remoteDir)))
 
-	// Clear local VPS config
-	os.Remove(filepath.Join(p.dataDir, "vps-config.json"))
+	// Clear local remote config
+	os.Remove(filepath.Join(p.dataDir, "remote-config.json"))
 
-	fmt.Println("VPS deployment torn down.")
+	fmt.Println("Remote deployment torn down.")
 	return nil
 }
 
-func (p *VPSProvider) removeAgentDocker(ctx context.Context, name string) {
+func (p *RemoteProvider) removeAgentDocker(ctx context.Context, name string) {
 	cName := containerName(name)
 	netName := networkName(name)
 	if p.containerExists(ctx, cName) {
@@ -626,7 +628,7 @@ func (p *VPSProvider) removeAgentDocker(ctx context.Context, name string) {
 	}
 }
 
-func (p *VPSProvider) cleanupDockerByPrefix(ctx context.Context) {
+func (p *RemoteProvider) cleanupDockerByPrefix(ctx context.Context) {
 	output, err := p.dockerRun(ctx, "ps", "-a", "--filter", "name=conga-", "--format", "{{.Names}}")
 	if err == nil {
 		for _, name := range strings.Split(strings.TrimSpace(output), "\n") {
@@ -658,7 +660,7 @@ func (p *VPSProvider) cleanupDockerByPrefix(ctx context.Context) {
 
 // --- infrastructure helpers ---
 
-func (p *VPSProvider) ensureRouter(ctx context.Context) {
+func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 	if p.containerExists(ctx, routerContainer) {
 		state, err := p.inspectState(ctx, routerContainer)
 		if err == nil && state.Running {
@@ -674,7 +676,7 @@ func (p *VPSProvider) ensureRouter(ctx context.Context) {
 	_, err := p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
 		shellQuote(filepath.Join(p.remoteRouterDir(), "src", "index.js"))))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: router source not found on VPS — router not started\n")
+		fmt.Fprintf(os.Stderr, "Warning: router source not found on remote host — router not started\n")
 		return
 	}
 	// Check router env exists
@@ -702,7 +704,7 @@ func (p *VPSProvider) ensureRouter(ctx context.Context) {
 	fmt.Println("  Router started.")
 }
 
-func (p *VPSProvider) ensureEgressProxy(ctx context.Context) {
+func (p *RemoteProvider) ensureEgressProxy(ctx context.Context) {
 	if p.containerExists(ctx, egressProxyContainer) {
 		state, err := p.inspectState(ctx, egressProxyContainer)
 		if err == nil && state.Running {
@@ -752,7 +754,7 @@ func (p *VPSProvider) ensureEgressProxy(ctx context.Context) {
 
 // --- file helpers ---
 
-func (p *VPSProvider) regenerateRouting(ctx context.Context) error {
+func (p *RemoteProvider) regenerateRouting(ctx context.Context) error {
 	agents, err := p.ListAgents(ctx)
 	if err != nil {
 		return err
@@ -765,8 +767,8 @@ func (p *VPSProvider) regenerateRouting(ctx context.Context) error {
 	return p.ssh.Upload(filepath.Join(p.remoteConfigDir(), "routing.json"), data, 0644)
 }
 
-func (p *VPSProvider) deployBehavior(cfg provider.AgentConfig) error {
-	// Read behavior files from local repo (stored in vps-config.json repo_path)
+func (p *RemoteProvider) deployBehavior(cfg provider.AgentConfig) error {
+	// Read behavior files from local repo (stored in remote-config.json repo_path)
 	repoPath := p.getConfigValue("repo_path")
 	if repoPath == "" {
 		return nil
@@ -792,8 +794,8 @@ func (p *VPSProvider) deployBehavior(cfg provider.AgentConfig) error {
 	return nil
 }
 
-func (p *VPSProvider) getConfigValue(key string) string {
-	extraPath := filepath.Join(p.dataDir, "vps-config.json")
+func (p *RemoteProvider) getConfigValue(key string) string {
+	extraPath := filepath.Join(p.dataDir, "remote-config.json")
 	data, err := os.ReadFile(extraPath)
 	if err != nil {
 		return ""
@@ -805,11 +807,11 @@ func (p *VPSProvider) getConfigValue(key string) string {
 	return extra[key]
 }
 
-func (p *VPSProvider) setConfigValue(key, value string) error {
+func (p *RemoteProvider) setConfigValue(key, value string) error {
 	if err := os.MkdirAll(p.dataDir, 0700); err != nil {
 		return err
 	}
-	extraPath := filepath.Join(p.dataDir, "vps-config.json")
+	extraPath := filepath.Join(p.dataDir, "remote-config.json")
 	extra := make(map[string]string)
 	if data, err := os.ReadFile(extraPath); err == nil {
 		json.Unmarshal(data, &extra)
@@ -844,7 +846,7 @@ func detectReadyPhase(logs string) string {
 	return phase
 }
 
-func (p *VPSProvider) readExistingGatewayToken(remotePath string) string {
+func (p *RemoteProvider) readExistingGatewayToken(remotePath string) string {
 	data, err := p.ssh.Download(remotePath)
 	if err != nil {
 		return ""

@@ -1,4 +1,4 @@
-package vpsprovider
+package remoteprovider
 
 import (
 	"context"
@@ -8,16 +8,16 @@ import (
 )
 
 // dockerRun executes a docker command on the remote host via SSH.
-func (p *VPSProvider) dockerRun(ctx context.Context, args ...string) (string, error) {
+func (p *RemoteProvider) dockerRun(ctx context.Context, args ...string) (string, error) {
 	cmd := "docker " + shelljoin(args...)
 	return p.ssh.Run(ctx, cmd)
 }
 
 // dockerCheck verifies Docker is available and running on the remote host.
-func (p *VPSProvider) dockerCheck(ctx context.Context) error {
+func (p *RemoteProvider) dockerCheck(ctx context.Context) error {
 	_, err := p.dockerRun(ctx, "info", "--format", "{{.ServerVersion}}")
 	if err != nil {
-		return fmt.Errorf("Docker is not available on the VPS. Run 'conga admin setup --provider vps' to install it.\n%w", err)
+		return fmt.Errorf("Docker is not available on the remote host. Run 'conga admin setup --provider remote' to install it.\n%w", err)
 	}
 	return nil
 }
@@ -33,25 +33,25 @@ func networkName(agentName string) string {
 }
 
 // createNetwork creates a Docker bridge network on the remote host.
-func (p *VPSProvider) createNetwork(ctx context.Context, name string) error {
+func (p *RemoteProvider) createNetwork(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "network", "create", name, "--driver", "bridge")
 	return err
 }
 
 // removeNetwork removes a Docker network on the remote host.
-func (p *VPSProvider) removeNetwork(ctx context.Context, name string) error {
+func (p *RemoteProvider) removeNetwork(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "network", "rm", name)
 	return err
 }
 
 // connectNetwork connects a container to a network on the remote host.
-func (p *VPSProvider) connectNetwork(ctx context.Context, network, container string) error {
+func (p *RemoteProvider) connectNetwork(ctx context.Context, network, container string) error {
 	_, err := p.dockerRun(ctx, "network", "connect", network, container)
 	return err
 }
 
 // disconnectNetwork disconnects a container from a network (best-effort).
-func (p *VPSProvider) disconnectNetwork(ctx context.Context, network, container string) {
+func (p *RemoteProvider) disconnectNetwork(ctx context.Context, network, container string) {
 	p.dockerRun(ctx, "network", "disconnect", network, container)
 }
 
@@ -67,7 +67,7 @@ type agentContainerOpts struct {
 }
 
 // runAgentContainer starts an agent container with full isolation on the remote host.
-func (p *VPSProvider) runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
+func (p *RemoteProvider) runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 	args := []string{
 		"run", "-d",
 		"--name", opts.Name,
@@ -96,7 +96,7 @@ type routerContainerOpts struct {
 }
 
 // runRouterContainer starts the router container on the remote host.
-func (p *VPSProvider) runRouterContainer(ctx context.Context, opts routerContainerOpts) error {
+func (p *RemoteProvider) runRouterContainer(ctx context.Context, opts routerContainerOpts) error {
 	args := []string{
 		"run", "-d",
 		"--name", "conga-router",
@@ -116,25 +116,25 @@ func (p *VPSProvider) runRouterContainer(ctx context.Context, opts routerContain
 }
 
 // stopContainer stops a container on the remote host.
-func (p *VPSProvider) stopContainer(ctx context.Context, name string) error {
+func (p *RemoteProvider) stopContainer(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "stop", name)
 	return err
 }
 
 // removeContainer removes a container on the remote host.
-func (p *VPSProvider) removeContainer(ctx context.Context, name string) error {
+func (p *RemoteProvider) removeContainer(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "rm", "-f", name)
 	return err
 }
 
 // restartContainer restarts a container on the remote host.
-func (p *VPSProvider) restartContainer(ctx context.Context, name string) error {
+func (p *RemoteProvider) restartContainer(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "restart", name)
 	return err
 }
 
 // containerLogs returns the last N lines of container logs from the remote host.
-func (p *VPSProvider) containerLogs(ctx context.Context, name string, lines int) (string, error) {
+func (p *RemoteProvider) containerLogs(ctx context.Context, name string, lines int) (string, error) {
 	return p.dockerRun(ctx, "logs", name, "--tail", fmt.Sprintf("%d", lines), "--timestamps")
 }
 
@@ -147,7 +147,7 @@ type DockerState struct {
 }
 
 // inspectState returns the container state from the remote host.
-func (p *VPSProvider) inspectState(ctx context.Context, name string) (*DockerState, error) {
+func (p *RemoteProvider) inspectState(ctx context.Context, name string) (*DockerState, error) {
 	output, err := p.dockerRun(ctx, "inspect", name, "--format", "{{json .State}}")
 	if err != nil {
 		return nil, err
@@ -167,7 +167,7 @@ type DockerStats struct {
 }
 
 // containerStats returns resource usage from the remote host.
-func (p *VPSProvider) containerStats(ctx context.Context, name string) (*DockerStats, error) {
+func (p *RemoteProvider) containerStats(ctx context.Context, name string) (*DockerStats, error) {
 	output, err := p.dockerRun(ctx, "stats", name, "--no-stream", "--format", "{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}")
 	if err != nil {
 		return nil, err
@@ -187,31 +187,31 @@ func (p *VPSProvider) containerStats(ctx context.Context, name string) (*DockerS
 }
 
 // containerExists checks if a container exists on the remote host.
-func (p *VPSProvider) containerExists(ctx context.Context, name string) bool {
+func (p *RemoteProvider) containerExists(ctx context.Context, name string) bool {
 	_, err := p.dockerRun(ctx, "inspect", name, "--format", "{{.Id}}")
 	return err == nil
 }
 
 // networkExists checks if a network exists on the remote host.
-func (p *VPSProvider) networkExists(ctx context.Context, name string) bool {
+func (p *RemoteProvider) networkExists(ctx context.Context, name string) bool {
 	_, err := p.dockerRun(ctx, "network", "inspect", name, "--format", "{{.Id}}")
 	return err == nil
 }
 
 // pullImage pulls a Docker image on the remote host.
-func (p *VPSProvider) pullImage(ctx context.Context, image string) error {
+func (p *RemoteProvider) pullImage(ctx context.Context, image string) error {
 	_, err := p.dockerRun(ctx, "pull", image)
 	return err
 }
 
 // buildImage builds a Docker image on the remote host.
-func (p *VPSProvider) buildImage(ctx context.Context, dir, tag string) error {
+func (p *RemoteProvider) buildImage(ctx context.Context, dir, tag string) error {
 	_, err := p.dockerRun(ctx, "build", "-t", tag, dir)
 	return err
 }
 
 // imageExists checks if a Docker image exists on the remote host.
-func (p *VPSProvider) imageExists(ctx context.Context, image string) bool {
+func (p *RemoteProvider) imageExists(ctx context.Context, image string) bool {
 	_, err := p.dockerRun(ctx, "image", "inspect", image)
 	return err == nil
 }

@@ -1,5 +1,5 @@
 // Package vpsprovider implements the Provider interface for VPS hosts via SSH.
-package vpsprovider
+package remoteprovider
 
 import (
 	"context"

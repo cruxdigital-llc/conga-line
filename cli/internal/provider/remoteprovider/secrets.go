@@ -1,4 +1,4 @@
-package vpsprovider
+package remoteprovider
 
 import (
 	"context"
@@ -13,17 +13,17 @@ import (
 )
 
 // sharedSecretsDir returns the remote path to shared secrets.
-func (p *VPSProvider) sharedSecretsDir() string {
+func (p *RemoteProvider) sharedSecretsDir() string {
 	return filepath.Join(p.remoteDir, "secrets", "shared")
 }
 
 // agentSecretsDir returns the remote path to per-agent secrets.
-func (p *VPSProvider) agentSecretsDir(agentName string) string {
+func (p *RemoteProvider) agentSecretsDir(agentName string) string {
 	return filepath.Join(p.remoteDir, "secrets", "agents", agentName)
 }
 
 // readSharedSecrets loads all shared secrets from the remote host.
-func (p *VPSProvider) readSharedSecrets() (common.SharedSecrets, error) {
+func (p *RemoteProvider) readSharedSecrets() (common.SharedSecrets, error) {
 	dir := p.sharedSecretsDir()
 	var s common.SharedSecrets
 
@@ -45,7 +45,7 @@ func (p *VPSProvider) readSharedSecrets() (common.SharedSecrets, error) {
 }
 
 // readAgentSecrets reads all per-agent secrets from the remote host.
-func (p *VPSProvider) readAgentSecrets(agentName string) (map[string]string, error) {
+func (p *RemoteProvider) readAgentSecrets(agentName string) (map[string]string, error) {
 	dir := p.agentSecretsDir(agentName)
 	output, err := p.ssh.Run(context.Background(), fmt.Sprintf("ls %s 2>/dev/null || true", shellQuote(dir)))
 	if err != nil {
@@ -68,7 +68,7 @@ func (p *VPSProvider) readAgentSecrets(agentName string) (map[string]string, err
 }
 
 // SetSecret creates or updates a secret for an agent on the remote host.
-func (p *VPSProvider) SetSecret(ctx context.Context, agentName, secretName, value string) error {
+func (p *RemoteProvider) SetSecret(ctx context.Context, agentName, secretName, value string) error {
 	path := filepath.Join(p.agentSecretsDir(agentName), secretName)
 	// Ensure directory exists
 	p.ssh.MkdirAll(filepath.Dir(path), 0700)
@@ -76,7 +76,7 @@ func (p *VPSProvider) SetSecret(ctx context.Context, agentName, secretName, valu
 }
 
 // ListSecrets returns all secrets for an agent from the remote host.
-func (p *VPSProvider) ListSecrets(ctx context.Context, agentName string) ([]provider.SecretEntry, error) {
+func (p *RemoteProvider) ListSecrets(ctx context.Context, agentName string) ([]provider.SecretEntry, error) {
 	dir := p.agentSecretsDir(agentName)
 	// Use stat to get file info
 	output, err := p.ssh.Run(ctx, fmt.Sprintf("ls -la --time-style=full-iso %s 2>/dev/null || true", shellQuote(dir)))
@@ -114,7 +114,7 @@ func (p *VPSProvider) ListSecrets(ctx context.Context, agentName string) ([]prov
 }
 
 // DeleteSecret removes a secret file on the remote host.
-func (p *VPSProvider) DeleteSecret(ctx context.Context, agentName, secretName string) error {
+func (p *RemoteProvider) DeleteSecret(ctx context.Context, agentName, secretName string) error {
 	path := filepath.Join(p.agentSecretsDir(agentName), secretName)
 	_, err := p.ssh.Run(ctx, fmt.Sprintf("rm %s", shellQuote(path)))
 	if err != nil {
@@ -124,7 +124,7 @@ func (p *VPSProvider) DeleteSecret(ctx context.Context, agentName, secretName st
 }
 
 // writeSharedSecret writes a single shared secret to the remote host.
-func (p *VPSProvider) writeSharedSecret(name, value string) error {
+func (p *RemoteProvider) writeSharedSecret(name, value string) error {
 	if value == "" {
 		return nil
 	}
