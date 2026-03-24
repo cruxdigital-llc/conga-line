@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -52,26 +53,60 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		if status.Container.State == "not found" || status.Container.State == "" {
+		// Detect paused state once, shared by JSON and text output paths
+		containerState := status.Container.State
+		paused := false
+		if containerState != "running" {
 			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
-				fmt.Println("Container:  stopped (agent paused)")
-				fmt.Printf("Service:    %s\n", status.ServiceState)
-				fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
-				return nil
+				containerState = "stopped"
+				paused = true
 			}
-			fmt.Println("Container:  not found")
-			fmt.Printf("Service:    %s\n", status.ServiceState)
+		}
+
+		if ui.OutputJSON {
+			uptime := ""
+			if status.Container.StartedAt != "" {
+				uptime = formatUptime(status.Container.StartedAt)
+			}
+			ui.EmitJSON(struct {
+				Agent        string `json:"agent"`
+				Container    string `json:"container"`
+				Service      string `json:"service"`
+				Readiness    string `json:"readiness,omitempty"`
+				Paused       bool   `json:"paused,omitempty"`
+				StartedAt    string `json:"started_at,omitempty"`
+				Uptime       string `json:"uptime,omitempty"`
+				RestartCount int    `json:"restart_count,omitempty"`
+				CPU          string `json:"cpu,omitempty"`
+				Memory       string `json:"memory,omitempty"`
+				PIDs         int    `json:"pids,omitempty"`
+			}{
+				Agent:        agentName,
+				Container:    containerState,
+				Service:      status.ServiceState,
+				Readiness:    status.ReadyPhase,
+				Paused:       paused,
+				StartedAt:    status.Container.StartedAt,
+				Uptime:       uptime,
+				RestartCount: status.Container.RestartCount,
+				CPU:          status.Container.CPUPercent,
+				Memory:       status.Container.MemoryUsage,
+				PIDs:         status.Container.PIDs,
+			})
 			return nil
 		}
 
-		// Container exists but isn't running — check if agent is paused
-		if status.Container.State != "running" {
-			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
-				fmt.Println("Container:  stopped (agent paused)")
-				fmt.Printf("Service:    %s\n", status.ServiceState)
-				fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
-				return nil
-			}
+		if paused {
+			fmt.Println("Container:  stopped (agent paused)")
+			fmt.Printf("Service:    %s\n", status.ServiceState)
+			fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
+			return nil
+		}
+
+		if containerState == "not found" || containerState == "" {
+			fmt.Println("Container:  not found")
+			fmt.Printf("Service:    %s\n", status.ServiceState)
+			return nil
 		}
 
 		fmt.Printf("Container:  %s\n", status.Container.State)

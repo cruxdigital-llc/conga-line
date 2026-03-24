@@ -20,7 +20,7 @@ func adminRefreshAllRun(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if !adminForce {
+	if !adminForce && !ui.JSONInputActive {
 		fmt.Printf("This will restart all %d agent(s). Active sessions will be interrupted.\n", len(agents))
 		if !ui.Confirm("Continue?") {
 			fmt.Println("Cancelled.")
@@ -30,6 +30,14 @@ func adminRefreshAllRun(cmd *cobra.Command, args []string) error {
 
 	if err := prov.RefreshAll(ctx); err != nil {
 		return err
+	}
+
+	if ui.OutputJSON {
+		ui.EmitJSON(struct {
+			AgentsRefreshed int    `json:"agents_refreshed"`
+			Status          string `json:"status"`
+		}{AgentsRefreshed: len(agents), Status: "ok"})
+		return nil
 	}
 
 	fmt.Printf("All %d agent(s) refreshed.\n", len(agents))

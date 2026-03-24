@@ -9,8 +9,8 @@ import (
 
 func TestGenerateRoutingJSON(t *testing.T) {
 	agents := []provider.AgentConfig{
-		{Name: "myagent", Type: provider.AgentTypeUser, SlackMemberID: "U0123456789"},
-		{Name: "leadership", Type: provider.AgentTypeTeam, SlackChannel: "C9876543210"},
+		{Name: "myagent", Type: provider.AgentTypeUser, SlackMemberID: "U0123456789", GatewayPort: 18789},
+		{Name: "leadership", Type: provider.AgentTypeTeam, SlackChannel: "C9876543210", GatewayPort: 18790},
 	}
 
 	data, err := GenerateRoutingJSON(agents)
@@ -26,17 +26,17 @@ func TestGenerateRoutingJSON(t *testing.T) {
 	if got := cfg.Members["U0123456789"]; got != "http://conga-myagent:18789/slack/events" {
 		t.Errorf("member route = %q, want http://conga-myagent:18789/slack/events", got)
 	}
-	if got := cfg.Channels["C9876543210"]; got != "http://conga-leadership:18789/slack/events" {
-		t.Errorf("channel route = %q, want http://conga-leadership:18789/slack/events", got)
+	if got := cfg.Channels["C9876543210"]; got != "http://conga-leadership:18790/slack/events" {
+		t.Errorf("channel route = %q, want http://conga-leadership:18790/slack/events", got)
 	}
 }
 
 func TestGenerateRoutingJSON_PausedExcluded(t *testing.T) {
 	agents := []provider.AgentConfig{
-		{Name: "myagent", Type: provider.AgentTypeUser, SlackMemberID: "U0123456789"},
-		{Name: "paused-user", Type: provider.AgentTypeUser, SlackMemberID: "U9999999999", Paused: true},
-		{Name: "leadership", Type: provider.AgentTypeTeam, SlackChannel: "C9876543210"},
-		{Name: "paused-team", Type: provider.AgentTypeTeam, SlackChannel: "C0000000000", Paused: true},
+		{Name: "myagent", Type: provider.AgentTypeUser, SlackMemberID: "U0123456789", GatewayPort: 18789},
+		{Name: "paused-user", Type: provider.AgentTypeUser, SlackMemberID: "U9999999999", Paused: true, GatewayPort: 18790},
+		{Name: "leadership", Type: provider.AgentTypeTeam, SlackChannel: "C9876543210", GatewayPort: 18791},
+		{Name: "paused-team", Type: provider.AgentTypeTeam, SlackChannel: "C0000000000", Paused: true, GatewayPort: 18792},
 	}
 
 	data, err := GenerateRoutingJSON(agents)

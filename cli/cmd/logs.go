@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +32,21 @@ func logsRun(cmd *cobra.Command, args []string) error {
 	output, err := prov.GetLogs(ctx, agentName, logLines)
 	if err != nil {
 		return err
+	}
+
+	if ui.OutputJSON {
+		lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+		if len(lines) == 1 && lines[0] == "" {
+			lines = []string{}
+		}
+		ui.EmitJSON(struct {
+			Agent string   `json:"agent"`
+			Lines []string `json:"lines"`
+		}{
+			Agent: agentName,
+			Lines: lines,
+		})
+		return nil
 	}
 
 	fmt.Print(output)

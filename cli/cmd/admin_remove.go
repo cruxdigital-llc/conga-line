@@ -19,7 +19,7 @@ func adminRemoveAgentRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !adminForce {
+	if !adminForce && !ui.JSONInputActive {
 		if !ui.Confirm(fmt.Sprintf("Remove agent %s (type: %s)? This will stop the container and delete config.", agentName, agent.Type)) {
 			fmt.Println("Cancelled.")
 			return nil
@@ -28,6 +28,14 @@ func adminRemoveAgentRun(cmd *cobra.Command, args []string) error {
 
 	if err := prov.RemoveAgent(ctx, agentName, adminDeleteSecrets); err != nil {
 		return err
+	}
+
+	if ui.OutputJSON {
+		ui.EmitJSON(struct {
+			Agent  string `json:"agent"`
+			Status string `json:"status"`
+		}{Agent: agentName, Status: "removed"})
+		return nil
 	}
 
 	fmt.Printf("Agent %s removed.\n", agentName)

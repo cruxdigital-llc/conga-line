@@ -120,17 +120,42 @@ async function forwardEvent(target, payload) {
 // Handle ALL incoming Slack events via the catch-all listener
 // SDK v2 emits specific event types that don't match the envelope type names,
 // so we use 'slack_event' which fires for everything
+// Deduplicate events — Slack may send retries or duplicate envelope deliveries
+const recentEvents = new Map();
+const DEDUP_TTL_MS = 30_000;
+
+function isDuplicate(body) {
+  const eventId = body?.event_id || body?.event?.client_msg_id;
+  if (!eventId) return false;
+  if (recentEvents.has(eventId)) return true;
+  recentEvents.set(eventId, Date.now());
+  // Prune old entries
+  if (recentEvents.size > 500) {
+    const cutoff = Date.now() - DEDUP_TTL_MS;
+    for (const [k, v] of recentEvents) {
+      if (v < cutoff) recentEvents.delete(k);
+    }
+  }
+  return false;
+}
+
 client.on('slack_event', async ({ body, ack }) => {
   // Ack immediately — Slack requires this within 3 seconds
   if (ack) await ack();
+
+  // Deduplicate retries and duplicate envelope deliveries
+  if (isDuplicate(body)) {
+    return;
+  }
 
   const eventType = body?.event?.type || body?.type || 'unknown';
   const subtype = body?.event?.subtype;
 
   // Drop events the containers should never see:
   // - app_mention: Slack fires both 'message' and 'app_mention' for @-mentions
+  // - assistant_thread_started: triggers a duplicate response in channel contexts
   // - bot_message / message_changed / message_deleted: bot's own activity echoed back
-  if (eventType === 'app_mention') {
+  if (eventType === 'app_mention' || eventType === 'assistant_thread_started') {
     return;
   }
   if (subtype && ['bot_message', 'message_changed', 'message_deleted'].includes(subtype)) {

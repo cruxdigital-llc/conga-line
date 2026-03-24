@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -65,6 +66,7 @@ func init() {
 		Short: "Configure shared secrets and settings",
 		RunE:  adminSetupRun,
 	}
+	setupCmd.Flags().StringVar(&adminSetupConfig, "config", "", "JSON config (inline or file path) for non-interactive setup")
 
 	refreshAllCmd := &cobra.Command{
 		Use:   "refresh-all",
@@ -105,6 +107,14 @@ func adminListAgentsRun(cmd *cobra.Command, args []string) error {
 	agents, err := prov.ListAgents(ctx)
 	if err != nil {
 		return err
+	}
+
+	if ui.OutputJSON {
+		if agents == nil {
+			agents = []provider.AgentConfig{}
+		}
+		ui.EmitJSON(agents)
+		return nil
 	}
 
 	if len(agents) == 0 {

@@ -144,7 +144,8 @@ type Provider interface {
 	// --- Environment Management ---
 
 	// Setup runs the initial environment setup wizard.
-	Setup(ctx context.Context) error
+	// When cfg is non-nil, values from it are used instead of interactive prompts.
+	Setup(ctx context.Context, cfg *SetupConfig) error
 
 	// CycleHost restarts the entire deployment environment.
 	CycleHost(ctx context.Context) error

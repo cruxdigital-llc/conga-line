@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +24,13 @@ var authLoginCmd = &cobra.Command{
 	Long:  "Opens your browser to complete AWS SSO login. Credentials are cached for future commands.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if prov != nil && prov.Name() == "local" {
+			if ui.OutputJSON {
+				ui.EmitJSON(map[string]string{
+					"provider": "local",
+					"message":  "Local provider does not require authentication.",
+				})
+				return nil
+			}
 			fmt.Println("Local provider does not require authentication.")
 			return nil
 		}
@@ -31,6 +39,16 @@ var authLoginCmd = &cobra.Command{
 		if profileName == "" {
 			profileName = "your-profile"
 		}
+
+		if ui.OutputJSON {
+			ui.EmitJSON(map[string]string{
+				"provider": prov.Name(),
+				"command":  fmt.Sprintf("aws sso login --profile %s", profileName),
+				"message":  "Run the command to authenticate via AWS SSO.",
+			})
+			return nil
+		}
+
 		fmt.Println("To authenticate, run:")
 		fmt.Println()
 		fmt.Printf("  aws sso login --profile %s\n", profileName)
@@ -72,6 +90,25 @@ var authStatusCmd = &cobra.Command{
 		identity, err := prov.WhoAmI(ctx)
 		if err != nil {
 			return err
+		}
+
+		if ui.OutputJSON {
+			identityStr := identity.Name
+			if identity.ARN != "" {
+				identityStr = identity.ARN
+			}
+			ui.EmitJSON(struct {
+				Identity  string `json:"identity"`
+				AccountID string `json:"account_id,omitempty"`
+				Provider  string `json:"provider"`
+				Agent     string `json:"agent,omitempty"`
+			}{
+				Identity:  identityStr,
+				AccountID: identity.AccountID,
+				Provider:  prov.Name(),
+				Agent:     identity.AgentName,
+			})
+			return nil
 		}
 
 		if identity.ARN != "" {

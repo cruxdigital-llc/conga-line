@@ -64,24 +64,37 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 	var name string
 	if len(args) > 0 {
 		name = args[0]
-		fmt.Printf("  -> will be injected as: %s\n", common.SecretNameToEnvVar(name))
+	} else if ui.JSONInputActive {
+		name, err = ui.MustGetString("name")
+		if err != nil {
+			return err
+		}
 	} else {
 		fmt.Println("Secret names are injected as env vars in SCREAMING_SNAKE_CASE (e.g. anthropic-api-key → ANTHROPIC_API_KEY).")
 		name, err = ui.TextPrompt("Secret name (e.g. anthropic-api-key)")
 		if err != nil {
 			return err
 		}
-		if name == "" {
-			return fmt.Errorf("secret name cannot be empty")
-		}
-		fmt.Printf("  → will be injected as: %s\n", common.SecretNameToEnvVar(name))
+	}
+	if name == "" {
+		return fmt.Errorf("secret name cannot be empty")
+	}
+	if !ui.OutputJSON {
+		fmt.Printf("  -> will be injected as: %s\n", common.SecretNameToEnvVar(name))
 	}
 
 	value := secretValue
 	if value == "" {
-		value, err = ui.SecretPrompt(fmt.Sprintf("Enter value for %s", name))
-		if err != nil {
-			return err
+		if ui.JSONInputActive {
+			value, err = ui.MustGetString("value")
+			if err != nil {
+				return err
+			}
+		} else {
+			value, err = ui.SecretPrompt(fmt.Sprintf("Enter value for %s", name))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	if value == "" {
@@ -92,7 +105,20 @@ func secretsSetRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Secret '%s' saved (env var: %s). Run `conga refresh` to pick it up.\n", name, common.SecretNameToEnvVar(name))
+	if ui.OutputJSON {
+		ui.EmitJSON(struct {
+			Secret string `json:"secret"`
+			EnvVar string `json:"env_var"`
+			Status string `json:"status"`
+		}{
+			Secret: name,
+			EnvVar: common.SecretNameToEnvVar(name),
+			Status: "saved",
+		})
+		return nil
+	}
+
+	fmt.Printf("Secret '%s' saved (value: %s, env var: %s). Run `conga refresh` to pick it up.\n", name, common.MaskSecret(value), common.SecretNameToEnvVar(name))
 	return nil
 }
 
@@ -108,6 +134,24 @@ func secretsListRun(cmd *cobra.Command, args []string) error {
 	entries, err := prov.ListSecrets(ctx, agentName)
 	if err != nil {
 		return err
+	}
+
+	if ui.OutputJSON {
+		type entry struct {
+			Name        string `json:"name"`
+			EnvVar      string `json:"env_var"`
+			LastChanged string `json:"last_changed,omitempty"`
+		}
+		result := make([]entry, 0, len(entries))
+		for _, e := range entries {
+			lc := ""
+			if !e.LastChanged.IsZero() {
+				lc = e.LastChanged.Format("2006-01-02T15:04:05Z")
+			}
+			result = append(result, entry{Name: e.Name, EnvVar: e.EnvVar, LastChanged: lc})
+		}
+		ui.EmitJSON(result)
+		return nil
 	}
 
 	if len(entries) == 0 {
@@ -137,7 +181,7 @@ func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !secretForce {
+	if !secretForce && !ui.JSONInputActive {
 		if !ui.Confirm(fmt.Sprintf("Delete secret '%s' for %s?", args[0], agentName)) {
 			fmt.Println("Cancelled.")
 			return nil
@@ -146,6 +190,14 @@ func secretsDeleteRun(cmd *cobra.Command, args []string) error {
 
 	if err := prov.DeleteSecret(ctx, agentName, args[0]); err != nil {
 		return err
+	}
+
+	if ui.OutputJSON {
+		ui.EmitJSON(struct {
+			Secret string `json:"secret"`
+			Status string `json:"status"`
+		}{Secret: args[0], Status: "deleted"})
+		return nil
 	}
 
 	fmt.Printf("Secret '%s' deleted.\n", args[0])

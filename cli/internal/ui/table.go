@@ -6,6 +6,9 @@ import (
 )
 
 func PrintTable(headers []string, rows [][]string) {
+	if OutputJSON {
+		return // Caller handles JSON output separately
+	}
 	widths := make([]int, len(headers))
 	for i, h := range headers {
 		widths[i] = len(h)

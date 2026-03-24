@@ -18,7 +18,15 @@ func NewSpinner(msg string) *Spinner {
 		done: make(chan struct{}),
 	}
 	s.wg.Add(1)
-	go s.run()
+	if OutputJSON {
+		// No-op spinner in JSON mode — no terminal output
+		go func() {
+			defer s.wg.Done()
+			<-s.done
+		}()
+	} else {
+		go s.run()
+	}
 	return s
 }
 

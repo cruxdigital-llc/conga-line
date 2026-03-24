@@ -8,3 +8,13 @@ import "strings"
 func SecretNameToEnvVar(name string) string {
 	return strings.NewReplacer("-", "_").Replace(strings.ToUpper(name))
 }
+
+// MaskSecret returns a masked version of a secret value, showing only the
+// first 4 and last 3 characters (e.g. "sk-a...5yU"). Short values are
+// fully masked.
+func MaskSecret(s string) string {
+	if len(s) <= 8 {
+		return "***"
+	}
+	return s[:4] + "..." + s[len(s)-3:]
+}

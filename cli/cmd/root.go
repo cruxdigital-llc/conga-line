@@ -9,6 +9,7 @@ import (
 	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 
 	// Register providers via init()
@@ -25,6 +26,8 @@ var (
 	flagTimeout  time.Duration
 	flagProvider string
 	flagDataDir  string
+	flagJSON     string
+	flagOutput   string
 
 	// prov is the active provider, initialized in PersistentPreRunE.
 	prov provider.Provider
@@ -40,8 +43,23 @@ var rootCmd = &cobra.Command{
 	Short: "Conga Line — manage your OpenClaw deployment",
 	Long:  "Cross-platform CLI for managing OpenClaw containers via pluggable providers (AWS, local Docker, remote SSH).",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Initialize JSON mode early so errors can be emitted as JSON.
+		// Set OutputJSON before parsing so that even parse failures are JSON-formatted.
+		if flagJSON != "" {
+			if flagOutput == "text" && cmd.Flags().Changed("output") {
+				return fmt.Errorf("--json implies --output json; cannot use --output text with --json")
+			}
+			ui.OutputJSON = true
+			if err := ui.SetJSONMode(flagJSON); err != nil {
+				return err
+			}
+		}
+		if flagOutput == "json" {
+			ui.OutputJSON = true
+		}
+
 		// Skip provider init for commands that don't need it
-		if cmd.Name() == "version" || cmd.Name() == "help" {
+		if cmd.Name() == "version" || cmd.Name() == "help" || cmd.Name() == "json-schema" {
 			return nil
 		}
 
@@ -91,6 +109,8 @@ func init() {
 	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 5*time.Minute, "Global timeout for operations")
 	rootCmd.PersistentFlags().StringVar(&flagProvider, "provider", "", "Deployment provider: aws, local, remote (default: local)")
 	rootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", "", "Data directory for local provider (default: ~/.conga/)")
+	rootCmd.PersistentFlags().StringVar(&flagJSON, "json", "", "JSON input (inline or @file.json); implies --output json")
+	rootCmd.PersistentFlags().StringVar(&flagOutput, "output", "text", "Output format: text, json")
 }
 
 // commandContext returns a context with the global timeout applied.
@@ -100,6 +120,9 @@ func commandContext() (context.Context, context.CancelFunc) {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		if ui.OutputJSON {
+			ui.EmitError(err)
+		}
 		os.Exit(1)
 	}
 }

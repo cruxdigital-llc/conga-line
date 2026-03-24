@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +43,23 @@ func connectRun(cmd *cobra.Command, args []string) error {
 	info, err := prov.Connect(setupCtx, agentName, 0)
 	if err != nil {
 		return err
+	}
+
+	if ui.OutputJSON {
+		ui.EmitJSON(struct {
+			Agent string `json:"agent"`
+			URL   string `json:"url"`
+			Port  int    `json:"port"`
+			Token string `json:"token,omitempty"`
+		}{
+			Agent: agentName,
+			URL:   info.URL,
+			Port:  info.LocalPort,
+			Token: info.Token,
+		})
+		// For AWS, Connect() starts an SSM tunnel subprocess. The deferred
+		// setupCancel() will cancel the context and kill it on return.
+		return nil
 	}
 
 	fmt.Printf("\nOpen in your browser:\n  %s\n\n", info.URL)

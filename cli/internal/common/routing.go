@@ -14,7 +14,7 @@ type RoutingConfig struct {
 }
 
 // GenerateRoutingJSON builds routing.json from a list of agents.
-// Container URLs use the format http://conga-{name}:18789/slack/events.
+// Container URLs use the format http://conga-{name}:{port}/slack/events.
 func GenerateRoutingJSON(agents []provider.AgentConfig) ([]byte, error) {
 	cfg := RoutingConfig{
 		Channels: make(map[string]string),
@@ -25,7 +25,7 @@ func GenerateRoutingJSON(agents []provider.AgentConfig) ([]byte, error) {
 		if a.Paused {
 			continue
 		}
-		url := fmt.Sprintf("http://conga-%s:18789/slack/events", a.Name)
+		url := fmt.Sprintf("http://conga-%s:%d/slack/events", a.Name, a.GatewayPort)
 		switch a.Type {
 		case provider.AgentTypeUser:
 			if a.SlackMemberID != "" {

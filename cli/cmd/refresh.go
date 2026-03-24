@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,14 @@ var refreshCmd = &cobra.Command{
 
 		if err := prov.RefreshAgent(ctx, agentName); err != nil {
 			return err
+		}
+
+		if ui.OutputJSON {
+			ui.EmitJSON(struct {
+				Agent  string `json:"agent"`
+				Status string `json:"status"`
+			}{Agent: agentName, Status: "refreshed"})
+			return nil
 		}
 
 		fmt.Printf("Secrets refreshed and container restarted for %s.\n", agentName)

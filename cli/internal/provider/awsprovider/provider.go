@@ -581,7 +581,7 @@ func (p *AWSProvider) Connect(ctx context.Context, agentName string, localPort i
 
 // --- Environment Management ---
 
-func (p *AWSProvider) Setup(ctx context.Context) error {
+func (p *AWSProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) error {
 	manifestJSON, err := awsutil.GetParameter(ctx, p.clients.SSM, "/conga/config/setup-manifest")
 	if err != nil {
 		return fmt.Errorf("setup manifest not found in SSM. Run `terraform apply` first to create infrastructure")

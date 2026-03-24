@@ -189,6 +189,8 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 	for _, sub := range []string{"data/workspace", "memory", "logs", "agents", "canvas", "cron", "devices", "identity", "media"} {
 		p.ssh.MkdirAll(posixpath.Join(dataDir, sub), 0755)
 	}
+	// Container runs as node (uid 1000) — must own the data directory for hot-reload temp files
+	p.ssh.Run(ctx, fmt.Sprintf("chown -R 1000:1000 %s", shellQuote(dataDir)))
 	// Create empty MEMORY.md
 	memoryPath := posixpath.Join(dataDir, "data", "workspace", "MEMORY.md")
 	p.ssh.Run(ctx, fmt.Sprintf("test -f %s || echo '# Memory' > %s", shellQuote(memoryPath), shellQuote(memoryPath)))
@@ -253,12 +255,9 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
 	}
 
-	// 9. Ensure router if Slack configured
+	// 9. Restart router if Slack configured so it picks up updated routing.json
 	if shared.HasSlack() {
-		p.ensureRouter(ctx)
-		if p.containerExists(ctx, routerContainer) {
-			p.connectNetwork(ctx, netName, routerContainer)
-		}
+		p.restartRouter(ctx)
 	}
 
 	// 10. Save config hash baseline
@@ -300,6 +299,11 @@ func (p *RemoteProvider) RemoveAgent(ctx context.Context, name string, deleteSec
 
 	if err := p.regenerateRouting(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
+	}
+	// Restart router to pick up removed agent from routing.json
+	shared, _ := p.readSharedSecrets()
+	if shared.HasSlack() {
+		p.restartRouter(ctx)
 	}
 	return nil
 }
@@ -501,6 +505,15 @@ func (p *RemoteProvider) RefreshAll(ctx context.Context) error {
 		return err
 	}
 
+	// Regenerate routing.json before restarting the router
+	shared, _ := p.readSharedSecrets()
+	if shared.HasSlack() {
+		if err := p.regenerateRouting(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to regenerate routing: %v\n", err)
+		}
+		p.restartRouter(ctx)
+	}
+
 	spin := ui.NewSpinner("Refreshing all agents...")
 	for _, a := range agents {
 		if a.Paused {
@@ -671,6 +684,15 @@ func (p *RemoteProvider) cleanupDockerByPrefix(ctx context.Context) {
 
 // --- infrastructure helpers ---
 
+// restartRouter removes and recreates the router container so it picks up
+// the latest routing.json (which is a read-only bind mount).
+func (p *RemoteProvider) restartRouter(ctx context.Context) {
+	if p.containerExists(ctx, routerContainer) {
+		p.removeContainer(ctx, routerContainer)
+	}
+	p.ensureRouter(ctx)
+}
+
 func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 	if p.containerExists(ctx, routerContainer) {
 		state, err := p.inspectState(ctx, routerContainer)
@@ -695,6 +717,18 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: router.env not found — router not started\n")
 		return
+	}
+
+	// Install npm dependencies if node_modules is missing
+	nodeModules := posixpath.Join(p.remoteRouterDir(), "node_modules")
+	if _, err := p.ssh.Run(ctx, fmt.Sprintf("test -d %s", shellQuote(nodeModules))); err != nil {
+		fmt.Println("Installing router dependencies...")
+		installCmd := fmt.Sprintf("docker run --rm -v %s:/app -w /app node:22-alpine npm install --production 2>&1",
+			shellQuote(p.remoteRouterDir()))
+		if out, err := p.ssh.Run(ctx, installCmd); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: npm install failed: %v\n%s\n", err, out)
+			return
+		}
 	}
 
 	fmt.Println("Starting router...")

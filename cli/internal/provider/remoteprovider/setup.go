@@ -8,46 +8,71 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 )
 
 // Setup runs the initial remote environment setup wizard.
-func (p *RemoteProvider) Setup(ctx context.Context) error {
+// When cfg is non-nil, values from it are used instead of interactive prompts.
+func (p *RemoteProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) error {
 	fmt.Println("Setting up remote Conga Line deployment...")
 
-	// Track SSH key path for config persistence
+	// Track SSH key path for config persistence — load from existing config if available
 	var sshKeyPath string
+	if existingCfg, err := provider.LoadConfig(provider.DefaultConfigPath()); err == nil {
+		sshKeyPath = existingCfg.SSHKeyPath
+	}
+	// Config override takes precedence
+	if cfg != nil && cfg.SSHKeyPath != "" {
+		sshKeyPath = cfg.SSHKeyPath
+	}
 
 	// If no SSH connection yet (first-time setup), prompt for details and connect
 	if p.ssh == nil {
-		host, err := ui.TextPrompt("  SSH host (IP or hostname)")
-		if err != nil {
-			return err
-		}
-		if host == "" {
-			return fmt.Errorf("SSH host is required")
-		}
-
-		portStr, err := ui.TextPromptWithDefault("  SSH port", "22")
-		if err != nil {
-			return err
-		}
+		var host, sshUser, keyPath string
 		port := 22
-		if portStr != "" && portStr != "22" {
-			fmt.Sscanf(portStr, "%d", &port)
-		}
 
-		sshUser, err := ui.TextPromptWithDefault("  SSH user", "root")
-		if err != nil {
-			return err
-		}
+		if cfg != nil && cfg.SSHHost != "" {
+			host = cfg.SSHHost
+			if cfg.SSHPort != 0 {
+				port = cfg.SSHPort
+			}
+			sshUser = cfg.SSHUser
+			if sshUser == "" {
+				sshUser = "root"
+			}
+			keyPath = cfg.SSHKeyPath
+			sshKeyPath = keyPath
+		} else {
+			var err error
+			host, err = ui.TextPrompt("  SSH host (IP or hostname)")
+			if err != nil {
+				return err
+			}
+			if host == "" {
+				return fmt.Errorf("SSH host is required")
+			}
 
-		keyPath, err := ui.TextPromptWithDefault("  SSH key path (leave empty to auto-detect)", "")
-		if err != nil {
-			return err
+			portStr, err := ui.TextPromptWithDefault("  SSH port", "22")
+			if err != nil {
+				return err
+			}
+			if portStr != "" && portStr != "22" {
+				fmt.Sscanf(portStr, "%d", &port)
+			}
+
+			sshUser, err = ui.TextPromptWithDefault("  SSH user", "root")
+			if err != nil {
+				return err
+			}
+
+			keyPath, err = ui.TextPromptWithDefault("  SSH key path (leave empty to auto-detect)", "")
+			if err != nil {
+				return err
+			}
+			sshKeyPath = keyPath
 		}
-		sshKeyPath = keyPath
 
 		fmt.Printf("\nConnecting to %s@%s:%d...\n", sshUser, host, port)
 		sshClient, err := SSHConnect(host, port, sshUser, keyPath)
@@ -67,7 +92,11 @@ func (p *RemoteProvider) Setup(ctx context.Context) error {
 	// Check/install Docker
 	fmt.Println("\nChecking Docker...")
 	if err := p.dockerCheck(ctx); err != nil {
-		if !ui.Confirm("Docker not found on remote host. Install it?") {
+		install := cfg != nil && cfg.InstallDocker
+		if !install {
+			install = ui.Confirm("Docker not found on remote host. Install it?")
+		}
+		if !install {
 			return fmt.Errorf("Docker is required. Install it manually on the remote host and rerun setup")
 		}
 		fmt.Println("Installing Docker...")
@@ -113,33 +142,48 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 
 	// --- Repo path ---
 	repoPath := p.getConfigValue("repo_path")
+	if cfg != nil && cfg.RepoPath != "" {
+		repoPath = cfg.RepoPath
+	}
 	repoStatus := "set"
 	if repoPath == "" {
 		repoStatus = "not set"
 		repoPath = detectRepoRoot()
 	}
 	fmt.Printf("\n[config] repo_path — Conga Line repo root for router/behavior files (%s)\n", repoStatus)
-	newRepoPath, err := ui.TextPromptWithDefault("  Repo path", repoPath)
-	if err != nil {
-		return err
-	}
-	if newRepoPath != "" {
-		if _, err := os.Stat(filepath.Join(newRepoPath, "router", "src", "index.js")); err != nil {
-			return fmt.Errorf("invalid repo path: %s/router/src/index.js not found", newRepoPath)
+	if cfg == nil {
+		newRepoPath, err := ui.TextPromptWithDefault("  Repo path", repoPath)
+		if err != nil {
+			return err
 		}
-		p.setConfigValue("repo_path", newRepoPath)
-		repoPath = newRepoPath
+		if newRepoPath != "" {
+			repoPath = newRepoPath
+		}
+	}
+	if repoPath != "" {
+		if _, err := os.Stat(filepath.Join(repoPath, "router", "src", "index.js")); err != nil {
+			return fmt.Errorf("invalid repo path: %s/router/src/index.js not found", repoPath)
+		}
+		p.setConfigValue("repo_path", repoPath)
 		changed++
 	}
 
 	// --- Docker image ---
 	image := p.getConfigValue("image")
+	if cfg != nil && cfg.Image != "" {
+		image = cfg.Image
+	}
 	imageStatus := "set"
 	if image == "" {
 		imageStatus = "not set"
 	}
 	fmt.Printf("\n[config] image — OpenClaw Docker image (%s)\n", imageStatus)
-	if image == "" || ui.Confirm("  Update this value?") {
+	if cfg != nil {
+		// Non-interactive: use config value or existing value
+		if image == "" {
+			image = "ghcr.io/openclaw/openclaw:2026.3.11"
+		}
+	} else if image == "" || ui.Confirm("  Update this value?") {
 		defaultImage := "ghcr.io/openclaw/openclaw:2026.3.11"
 		if image != "" {
 			defaultImage = image
@@ -149,10 +193,12 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 			return err
 		}
 		if newImage != "" {
-			p.setConfigValue("image", newImage)
 			image = newImage
-			changed++
 		}
+	}
+	if image != "" {
+		p.setConfigValue("image", image)
+		changed++
 	}
 
 	// --- Shared secrets (all optional) ---
@@ -182,30 +228,40 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 		}
 		fmt.Printf("\n[secret] %s — %s (optional) (%s)\n", item.name, item.description, status)
 
-		if current != "" {
-			if !ui.Confirm("  Update this value?") {
+		// Check for config-provided value first
+		cfgValue := cfg.SecretValue(item.name)
+		var value string
+		if cfgValue != "" {
+			value = cfgValue
+		} else if cfg != nil {
+			// Non-interactive mode with no value for this secret — skip
+			fmt.Println("  Skipped (not in config)")
+			continue
+		} else {
+			if current != "" {
+				if !ui.Confirm("  Update this value?") {
+					continue
+				}
+			}
+
+			if item.isSecret {
+				value, err = ui.SecretPrompt(fmt.Sprintf("  Enter %s", item.name))
+			} else {
+				value, err = ui.TextPrompt(fmt.Sprintf("  Enter %s", item.name))
+			}
+			if err != nil {
+				return err
+			}
+			if value == "" {
+				fmt.Println("  Skipped (empty value)")
 				continue
 			}
-		}
-
-		var value string
-		if item.isSecret {
-			value, err = ui.SecretPrompt(fmt.Sprintf("  Enter %s", item.name))
-		} else {
-			value, err = ui.TextPrompt(fmt.Sprintf("  Enter %s", item.name))
-		}
-		if err != nil {
-			return err
-		}
-		if value == "" {
-			fmt.Println("  Skipped (empty value)")
-			continue
 		}
 
 		if err := p.ssh.Upload(remotePath, []byte(value), 0400); err != nil {
 			return fmt.Errorf("failed to save %s: %w", item.name, err)
 		}
-		fmt.Println("  Saved.")
+		fmt.Printf("  Saved (%s).\n", common.MaskSecret(value))
 		changed++
 	}
 
@@ -216,6 +272,15 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 			return fmt.Errorf("failed to upload router files: %w", err)
 		}
 		fmt.Println("  Router source uploaded to /opt/conga/router/")
+
+		fmt.Println("Installing router dependencies...")
+		installCmd := fmt.Sprintf("docker run --rm -v %s:/app -w /app node:22-alpine npm install --omit=dev 2>&1",
+			shellQuote(p.remoteRouterDir()))
+		if out, installErr := p.ssh.Run(ctx, installCmd); installErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: npm install failed: %v\n%s\n", installErr, out)
+		} else {
+			fmt.Println("  Router dependencies installed.")
+		}
 
 		fmt.Println("Uploading behavior files...")
 		if err := p.ssh.UploadDir(filepath.Join(repoPath, "behavior"), p.remoteBehaviorDir()); err != nil {

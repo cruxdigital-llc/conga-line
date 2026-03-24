@@ -558,7 +558,7 @@ func (p *LocalProvider) Connect(ctx context.Context, agentName string, localPort
 
 // --- Environment Management ---
 
-func (p *LocalProvider) Setup(ctx context.Context) error {
+func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) error {
 	if err := dockerCheck(ctx); err != nil {
 		return err
 	}
@@ -588,6 +588,9 @@ func (p *LocalProvider) Setup(ctx context.Context) error {
 
 	// --- Repo path (for copying router source and behavior files) ---
 	repoPath := p.getConfigValue("repo_path")
+	if cfg != nil && cfg.RepoPath != "" {
+		repoPath = cfg.RepoPath
+	}
 	repoStatus := "set"
 	if repoPath == "" {
 		repoStatus = "not set"
@@ -595,28 +598,39 @@ func (p *LocalProvider) Setup(ctx context.Context) error {
 		repoPath = detectRepoRoot()
 	}
 	fmt.Printf("\n[config] repo_path — Conga Line repo root for router/behavior files (%s)\n", repoStatus)
-	newRepoPath, err := ui.TextPromptWithDefault("  Repo path", repoPath)
-	if err != nil {
-		return err
-	}
-	if newRepoPath != "" {
-		// Validate the path has router/ and behavior/ directories
-		if _, err := os.Stat(filepath.Join(newRepoPath, "router", "src", "index.js")); err != nil {
-			return fmt.Errorf("invalid repo path: %s/router/src/index.js not found", newRepoPath)
+	if cfg == nil {
+		newRepoPath, err := ui.TextPromptWithDefault("  Repo path", repoPath)
+		if err != nil {
+			return err
 		}
-		p.setConfigValue("repo_path", newRepoPath)
-		repoPath = newRepoPath
+		if newRepoPath != "" {
+			repoPath = newRepoPath
+		}
+	}
+	if repoPath != "" {
+		// Validate the path has router/ and behavior/ directories
+		if _, err := os.Stat(filepath.Join(repoPath, "router", "src", "index.js")); err != nil {
+			return fmt.Errorf("invalid repo path: %s/router/src/index.js not found", repoPath)
+		}
+		p.setConfigValue("repo_path", repoPath)
 		changed++
 	}
 
 	// --- Docker image ---
 	image := p.getConfigValue("image")
+	if cfg != nil && cfg.Image != "" {
+		image = cfg.Image
+	}
 	imageStatus := "set"
 	if image == "" {
 		imageStatus = "not set"
 	}
 	fmt.Printf("\n[config] image — OpenClaw Docker image (%s)\n", imageStatus)
-	if image == "" || ui.Confirm("  Update this value?") {
+	if cfg != nil {
+		if image == "" {
+			image = "ghcr.io/openclaw/openclaw:2026.3.11"
+		}
+	} else if image == "" || ui.Confirm("  Update this value?") {
 		defaultImage := "ghcr.io/openclaw/openclaw:2026.3.11"
 		if image != "" {
 			defaultImage = image
@@ -626,10 +640,12 @@ func (p *LocalProvider) Setup(ctx context.Context) error {
 			return err
 		}
 		if newImage != "" {
-			p.setConfigValue("image", newImage)
 			image = newImage
-			changed++
 		}
+	}
+	if image != "" {
+		p.setConfigValue("image", image)
+		changed++
 	}
 
 	// --- Shared secrets (all optional — Slack not required for gateway-only mode) ---
@@ -658,30 +674,40 @@ func (p *LocalProvider) Setup(ctx context.Context) error {
 		optLabel := " (optional)"
 		fmt.Printf("\n[secret] %s — %s%s (%s)\n", item.name, item.description, optLabel, status)
 
-		if current != "" {
-			if !ui.Confirm("  Update this value?") {
+		// Check for config-provided value first
+		cfgValue := cfg.SecretValue(item.name)
+		var value string
+		if cfgValue != "" {
+			value = cfgValue
+		} else if cfg != nil {
+			fmt.Println("  Skipped (not in config)")
+			continue
+		} else {
+			if current != "" {
+				if !ui.Confirm("  Update this value?") {
+					continue
+				}
+			}
+
+			var err error
+			if item.isSecret {
+				value, err = ui.SecretPrompt(fmt.Sprintf("  Enter %s", item.name))
+			} else {
+				value, err = ui.TextPrompt(fmt.Sprintf("  Enter %s", item.name))
+			}
+			if err != nil {
+				return err
+			}
+			if value == "" {
+				fmt.Println("  Skipped (empty value)")
 				continue
 			}
-		}
-
-		var value string
-		if item.isSecret {
-			value, err = ui.SecretPrompt(fmt.Sprintf("  Enter %s", item.name))
-		} else {
-			value, err = ui.TextPrompt(fmt.Sprintf("  Enter %s", item.name))
-		}
-		if err != nil {
-			return err
-		}
-		if value == "" {
-			fmt.Println("  Skipped (empty value)")
-			continue
 		}
 
 		if err := writeSecret(path, value); err != nil {
 			return fmt.Errorf("failed to save %s: %w", item.name, err)
 		}
-		fmt.Println("  Saved.")
+		fmt.Printf("  Saved (%s).\n", common.MaskSecret(value))
 		changed++
 	}
 
