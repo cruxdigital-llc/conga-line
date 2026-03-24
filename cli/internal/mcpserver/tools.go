@@ -3,10 +3,10 @@ package mcpserver
 import "github.com/mark3labs/mcp-go/server"
 
 func (s *Server) registerTools() {
-	// Intentionally omitted Provider methods:
-	// - Connect(): returns a long-lived tunnel (Waiter channel), not suited for MCP request/response.
-	// - ResolveAgentByIdentity(): CLI convenience for auto-detecting the caller's agent.
-	//   MCP callers specify agent names explicitly; WhoAmI() already returns the mapped agent name.
+	// Connect() is not directly exposed — it requires a long-lived tunnel. Instead,
+	// conga_connect_help tells the AI agent how to instruct the user to run it.
+	// ResolveAgentByIdentity() is omitted — MCP callers specify agent names explicitly;
+	// WhoAmI() already returns the mapped agent name.
 
 	s.tools = []server.ServerTool{
 		// Identity & Discovery
@@ -26,6 +26,7 @@ func (s *Server) registerTools() {
 		s.toolRefreshAgent(),
 		s.toolRefreshAll(),
 		s.toolContainerExec(),
+		s.toolConnectHelp(),
 
 		// Secrets
 		s.toolSetSecret(),

@@ -146,6 +146,44 @@ func (s *Server) toolRefreshAll() server.ServerTool {
 	}
 }
 
+func (s *Server) toolConnectHelp() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "conga_connect_help",
+			Description: "Explains how to open the web UI for an agent. The connect operation requires a long-lived tunnel that cannot run inside an MCP tool call — use this tool to get the command the user should run in their terminal.",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"agent_name": map[string]any{
+						"type":        "string",
+						"description": "Agent name",
+					},
+				},
+				Required: []string{"agent_name"},
+			},
+			Annotations: mcp.ToolAnnotation{
+				ReadOnlyHint: boolPtr(true),
+			},
+		},
+		Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			agentName, err := req.RequireString("agent_name")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			msg := fmt.Sprintf(
+				"The connect operation opens a long-lived tunnel to the agent's web UI.\n"+
+					"This cannot be done via MCP — ask the user to run this in their terminal:\n\n"+
+					"  conga connect --agent %s\n\n"+
+					"This will open the OpenClaw gateway UI in their browser. "+
+					"On AWS, it creates an SSM port-forwarding session. "+
+					"On local, it binds to localhost directly.",
+				agentName,
+			)
+			return mcp.NewToolResultText(msg), nil
+		},
+	}
+}
+
 func (s *Server) toolContainerExec() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{

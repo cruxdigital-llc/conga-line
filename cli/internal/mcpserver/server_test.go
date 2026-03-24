@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -437,6 +438,17 @@ func TestToolsViaStdio(t *testing.T) {
 		result := callTool(t, client, "conga_teardown", nil)
 		if result.IsError {
 			t.Fatalf("unexpected error: %s", textContent(t, result))
+		}
+	})
+
+	t.Run("conga_connect_help", func(t *testing.T) {
+		result := callTool(t, client, "conga_connect_help", map[string]any{"agent_name": "agent1"})
+		if result.IsError {
+			t.Fatalf("unexpected error: %s", textContent(t, result))
+		}
+		text := textContent(t, result)
+		if !strings.Contains(text, "conga connect --agent agent1") {
+			t.Errorf("expected command with agent name, got: %s", text)
 		}
 	})
 }
