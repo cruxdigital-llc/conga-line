@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -382,6 +383,39 @@ func TestToolsViaStdio(t *testing.T) {
 		}
 		if mock.lastSecretValue != "secret123" {
 			t.Errorf("got value %q, want %q", mock.lastSecretValue, "secret123")
+		}
+	})
+
+	t.Run("conga_set_secret_value_file", func(t *testing.T) {
+		// Write secret to a temp file.
+		tmpFile := t.TempDir() + "/secret.txt"
+		if err := os.WriteFile(tmpFile, []byte("file-secret-456\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		result := callTool(t, client, "conga_set_secret", map[string]any{
+			"agent_name":  "agent1",
+			"secret_name": "file-key",
+			"value_file":  tmpFile,
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error: %s", textContent(t, result))
+		}
+		if mock.lastSecretValue != "file-secret-456" {
+			t.Errorf("got value %q, want %q", mock.lastSecretValue, "file-secret-456")
+		}
+		// Temp file should be cleaned up.
+		if _, err := os.Stat(tmpFile); !os.IsNotExist(err) {
+			t.Error("expected temp file to be deleted")
+		}
+	})
+
+	t.Run("conga_set_secret_missing_value", func(t *testing.T) {
+		result := callTool(t, client, "conga_set_secret", map[string]any{
+			"agent_name":  "agent1",
+			"secret_name": "no-value",
+		})
+		if !result.IsError {
+			t.Fatal("expected error when neither value nor value_file provided")
 		}
 	})
 
