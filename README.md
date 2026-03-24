@@ -1,4 +1,4 @@
-# Conga Line 🦞🦞🦞
+# CongaLine 🦞🦞🦞
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.25.0-00ADD8.svg)](cli/)
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
@@ -9,7 +9,7 @@
 
 Self-host a fleet of isolated [OpenClaw](https://github.com/openclaw/openclaw) AI agents — each with its own container, network, secrets, and identity — managed through a single CLI. Deploy anywhere: your laptop, a $5 VPS, a Raspberry Pi, or a hardened AWS account.
 
-> **conga line** *n.* A single-file procession of spiny lobsters that travel in physical contact during seasonal migration, reducing hydrodynamic drag and offering collective protection from predators.
+> **CongaLine** *n.* A single-file procession of spiny lobsters that travel in physical contact during seasonal migration, reducing hydrodynamic drag and offering collective protection from predators.
 ## Key Features
 
 - **Three deployment modes** — local Docker, remote (any SSH host), or hardened AWS
@@ -382,7 +382,7 @@ All state lives under `~/.conga/`:
 
 ## MCP Server (AI Agent Integration)
 
-The CLI includes an MCP server that exposes agent management as tools for AI coding assistants like Claude Code. This lets an AI manage your Conga Line deployment conversationally — listing agents, checking status, setting secrets, refreshing containers, etc.
+The CLI includes an MCP server that exposes agent management as tools for AI coding assistants like Claude Code. This lets an AI manage your CongaLine deployment conversationally — listing agents, checking status, setting secrets, refreshing containers, etc.
 
 ### Setup
 
