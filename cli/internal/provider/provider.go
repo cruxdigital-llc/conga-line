@@ -28,38 +28,38 @@ type AgentConfig struct {
 
 // AgentStatus is returned by GetStatus.
 type AgentStatus struct {
-	AgentName    string
-	ServiceState string // "running", "stopped", "not-found"
-	Container    ContainerStatus
-	ReadyPhase   string // "starting", "gateway up", "slack loading", "ready"
-	Errors       []string
+	AgentName    string          `json:"agent_name"`
+	ServiceState string          `json:"service_state"` // "running", "stopped", "not-found"
+	Container    ContainerStatus `json:"container"`
+	ReadyPhase   string          `json:"ready_phase"` // "starting", "gateway up", "slack loading", "ready"
+	Errors       []string        `json:"errors,omitempty"`
 }
 
 // ContainerStatus holds Docker container state and resource usage.
 type ContainerStatus struct {
-	State        string // "running", "exited", "created", "not found"
-	Uptime       time.Duration
-	StartedAt    string
-	RestartCount int
-	MemoryUsage  string
-	CPUPercent   string
-	PIDs         int
+	State        string        `json:"state"` // "running", "exited", "created", "not found"
+	Uptime       time.Duration `json:"uptime"`
+	StartedAt    string        `json:"started_at,omitempty"`
+	RestartCount int           `json:"restart_count"`
+	MemoryUsage  string        `json:"memory_usage,omitempty"`
+	CPUPercent   string        `json:"cpu_percent,omitempty"`
+	PIDs         int           `json:"pids"`
 }
 
 // SecretEntry represents a stored secret.
 type SecretEntry struct {
-	Name        string
-	EnvVar      string
-	Path        string
-	LastChanged time.Time
+	Name        string    `json:"name"`
+	EnvVar      string    `json:"env_var"`
+	Path        string    `json:"path,omitempty"`
+	LastChanged time.Time `json:"last_changed"`
 }
 
 // Identity represents the resolved caller identity.
 type Identity struct {
-	Name      string // username or IAM session name
-	AccountID string // AWS account ID (empty for local)
-	ARN       string // AWS ARN (empty for local)
-	AgentName string // mapped agent name (empty if unmapped)
+	Name      string `json:"name"`                 // username or IAM session name
+	AccountID string `json:"account_id,omitempty"` // AWS account ID (empty for local)
+	ARN       string `json:"arn,omitempty"`        // AWS ARN (empty for local)
+	AgentName string `json:"agent_name,omitempty"` // mapped agent name (empty if unmapped)
 }
 
 // ConnectInfo is returned by Connect for display to the user.

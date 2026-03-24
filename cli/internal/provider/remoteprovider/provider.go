@@ -211,6 +211,9 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		fmt.Fprintf(os.Stderr, "Warning: behavior file deployment failed: %v\n", err)
 	}
 
+	// Re-chown after behavior deployment — files are uploaded as root
+	p.ssh.Run(ctx, fmt.Sprintf("chown -R 1000:1000 %s", shellQuote(posixpath.Join(dataDir, "data", "workspace"))))
+
 	// 4. Read image
 	image := p.getConfigValue("image")
 	if image == "" {

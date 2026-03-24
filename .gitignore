@@ -12,3 +12,7 @@ terraform/terraform.tfvars
 
 # CLI build artifacts
 cli/conga
+cli/dist/
+
+# MCP config (user-specific)
+.mcp.json

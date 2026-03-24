@@ -2,17 +2,18 @@
 
 ## Project Overview
 
-This is an infrastructure-as-code project deploying Conga Line (autonomous AI assistant) via pluggable providers. Supports **local Docker** (for dev/personal use) and **hardened AWS** (for teams/production). There is no application code — the deliverable is Terraform configuration + bootstrap scripts + a Go CLI.
+This is an infrastructure-as-code project deploying Conga Line (autonomous AI assistant) via pluggable providers. Supports **local Docker** (for dev/personal use), **remote SSH** (for VPS/bare-metal hosts), and **hardened AWS** (for teams/production). There is no application code — the deliverable is Terraform configuration + bootstrap scripts + a Go CLI.
 
 ## Key Context
 
-- **Provider model**: CLI uses a `Provider` interface (`cli/internal/provider/provider.go`) with two implementations: `awsprovider` (EC2/SSM/Secrets Manager) and `localprovider` (Docker CLI/file-based secrets). Commands call `prov.Method()` and work identically on either provider.
-- **AWS architecture**: Single EC2 host (AL2023, ARM64) with per-agent Docker containers in a zero-ingress VPC. Instance sized at ~2GB per agent (e.g. r6g.medium for 3 agents)
+- **Provider model**: CLI uses a `Provider` interface (`cli/internal/provider/provider.go`) with three implementations: `localprovider` (Docker CLI/file-based secrets), `remoteprovider` (SSH + Docker on any host), and `awsprovider` (EC2/SSM/Secrets Manager). Commands call `prov.Method()` and work identically on any provider.
 - **Local architecture**: Per-agent Docker containers on the local machine. State in `~/.conga/`. No cloud services needed. Slack optional — can run gateway-only (web UI).
+- **Remote architecture**: Per-agent Docker containers on any SSH-accessible host (VPS, bare metal, etc.). State on remote at `/opt/conga/`. Local config in `~/.conga/remote-config.json`. SSH tunneling for gateway access.
+- **AWS architecture**: Single EC2 host (AL2023, ARM64) with per-agent Docker containers in a zero-ingress VPC. Instance sized at ~2GB per agent (e.g. r6g.medium for 3 agents)
 - **NAT**: fck-nat via `RaJiska/fck-nat/aws` module v1.4.0 (not AWS NAT Gateway)
 - **Terraform state**: S3 bucket `<project_name>-terraform-state-<account_id>` + DynamoDB `<project_name>-terraform-locks`
 - **Configuration**: Environment-specific values are in gitignored `terraform/terraform.tfvars` and `terraform/backend.tf`. See `.example` files.
-- **Separation of concerns**: Terraform manages AWS infrastructure. CLI manages configuration (`admin setup`) and agents (`admin add-user/add-team`). On AWS, agents are discovered from SSM Parameter Store at `/conga/agents/<name>` at boot time. On local, agents are stored as JSON files in `~/.conga/agents/`.
+- **Separation of concerns**: Terraform manages AWS infrastructure. CLI manages configuration (`admin setup`) and agents (`admin add-user/add-team`). On AWS, agents are discovered from SSM Parameter Store at `/conga/agents/<name>` at boot time. On local, agents are stored as JSON files in `~/.conga/agents/`. On remote, agents are stored as JSON files on the remote host at `/opt/conga/agents/`.
 
 ## Provider System
 
@@ -20,8 +21,9 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 - **Provider registry**: `cli/internal/provider/registry.go` — `Register(name, factory)` / `Get(name, cfg)`
 - **AWS provider**: `cli/internal/provider/awsprovider/provider.go` — wraps existing `aws`, `discovery`, `tunnel` packages
 - **Local provider**: `cli/internal/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
-- **Common package**: `cli/internal/common/` — shared logic used by both providers: config generation (`GenerateOpenClawConfig`), routing (`GenerateRoutingJSON`), behavior file composition, port allocation, validation
-- **Provider selection**: `--provider aws|local` flag, persisted in `~/.conga/config.json` (default: `local`)
+- **Remote provider**: `cli/internal/provider/remoteprovider/` — SSH-based Docker operations on any remote host, file-based secrets (mode 0400), SSH tunneling for gateway access, config integrity monitoring
+- **Common package**: `cli/internal/common/` — shared logic used by all providers: config generation (`GenerateOpenClawConfig`), routing (`GenerateRoutingJSON`), behavior file composition, port allocation, validation
+- **Provider selection**: `--provider aws|local|remote` flag, persisted in `~/.conga/config.json` (default: `local`)
 - **Slack is optional**: When no Slack tokens are provided, openclaw.json omits the `channels` section and the agent runs in gateway-only mode. The router is only started when Slack is configured.
 
 ## Working with Terraform
@@ -37,6 +39,7 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 
 - **AWS provider**: Secrets in AWS Secrets Manager under `conga/shared/*` and `conga/agents/<name>/*`
 - **Local provider**: Secrets as files under `~/.conga/secrets/shared/` and `~/.conga/secrets/agents/<name>/` (mode 0400)
+- **Remote provider**: Secrets as files on remote host under `/opt/conga/secrets/shared/` and `/opt/conga/secrets/agents/<name>/` (mode 0400)
 - Shared secrets created via `conga admin setup` (prompts interactively for missing values)
 - Per-agent secrets — users self-serve via `conga secrets set`
 - Never put real secret values in Terraform files or state
@@ -46,10 +49,10 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 
 ## OpenClaw-Specific
 
-- Docker image: configured via `conga admin setup`, stored in SSM (AWS) or `~/.conga/local-config.json` (local)
+- Docker image: configured via `conga admin setup`, stored in SSM (AWS), `~/.conga/local-config.json` (local), or `~/.conga/remote-config.json` (remote)
 - Container runs as `node` user (uid 1000 inside container)
 - Config at `/home/node/.openclaw/openclaw.json` inside container — mapped from host data directory
-- Env file at `~/.conga/config/{agent_name}.env` (local) or `/opt/conga/config/{agent_name}.env` (AWS) — secrets, mode 0400
+- Env file at `~/.conga/config/{agent_name}.env` (local), `/opt/conga/config/{agent_name}.env` (remote/AWS) — secrets, mode 0400
 - OpenClaw hot-reload writes `.tmp` files next to `openclaw.json` — the config directory must be writable by the container user
 - Container needs `NODE_OPTIONS="--max-old-space-size=1536"` to avoid V8 heap OOM
 - Container memory limit: 2GB per agent (idle ~500MB, spikes to 1-1.5GB during heavy conversations)
@@ -78,7 +81,7 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 ## OpenClaw Behavioral Issues
 
 - **Billing/rate errors are cached**: When Anthropic returns a billing or rate limit error, OpenClaw's model fallback system caches the rejection. Even after the billing issue is resolved, the container must be restarted to clear the cached error state.
-- **Container restart reconnects router automatically**: On AWS, agent systemd units include `ExecStartPost` to reconnect the router. On local, `RefreshAgent()` reconnects the router after container restart.
+- **Container restart reconnects router automatically**: On AWS, agent systemd units include `ExecStartPost` to reconnect the router. On local and remote, `RefreshAgent()` reconnects the router after container restart.
 
 ## Known Limitations
 
@@ -95,6 +98,15 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 - Service status: `systemctl status conga-<agent_name>`
 - Container logs: `docker logs conga-<agent_name> --tail 50`
 - Journal: `journalctl -u conga-<agent_name> --no-pager -n 50`
+
+### Remote
+- Container status: `conga status --agent <name>`
+- Container logs: `conga logs --agent <name>`
+- Config file (on remote): `/opt/conga/data/<name>/openclaw.json`
+- Env file (on remote): `/opt/conga/config/<name>.env`
+- Agent config (on remote): `/opt/conga/agents/<name>.json`
+- SSH into host: use credentials from `~/.conga/config.json` (ssh_host, ssh_user, ssh_key_path)
+- Teardown and restart: `conga admin teardown && conga admin setup --provider remote`
 
 ### Local
 - Container status: `conga status --agent <name>`

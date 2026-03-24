@@ -59,7 +59,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Skip provider init for commands that don't need it
-		if cmd.Name() == "version" || cmd.Name() == "help" || cmd.Name() == "json-schema" {
+		if cmd.Name() == "version" || cmd.Name() == "help" || cmd.Name() == "json-schema" || cmd.CommandPath() == "conga mcp serve" {
 			return nil
 		}
 

@@ -380,6 +380,66 @@ All state lives under `~/.conga/`:
 - **Network isolation**: Per-agent Docker bridge networks, localhost-only port binding
 - **Slack routing**: Router container auto-started when Slack tokens are configured
 
+## MCP Server (AI Agent Integration)
+
+The CLI includes an MCP server that exposes agent management as tools for AI coding assistants like Claude Code. This lets an AI manage your Conga Line deployment conversationally — listing agents, checking status, setting secrets, refreshing containers, etc.
+
+### Setup
+
+1. Install the `conga` CLI (see above)
+2. Copy the example config:
+
+```bash
+cp .mcp.json.example .mcp.json
+```
+
+3. Edit `.mcp.json` with your provider and credentials:
+
+**AWS:**
+```json
+{
+  "mcpServers": {
+    "conga": {
+      "command": "conga",
+      "args": ["mcp", "serve"],
+      "env": {
+        "CONGA_PROVIDER": "aws",
+        "AWS_PROFILE": "your-profile"
+      }
+    }
+  }
+}
+```
+
+**Remote (SSH):**
+```json
+{
+  "mcpServers": {
+    "conga": {
+      "command": "conga",
+      "args": ["mcp", "serve"],
+      "env": {
+        "CONGA_PROVIDER": "remote"
+      }
+    }
+  }
+}
+```
+
+**Local Docker:**
+```json
+{
+  "mcpServers": {
+    "conga": {
+      "command": "conga",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+4. Restart Claude Code — the conga tools will appear automatically.
+
 ## Docker Image
 
 This project uses the official OpenClaw image pinned to **v2026.3.11** (`29dc654`), the last stable release before a [Slack socket mode regression](https://github.com/openclaw/openclaw/issues/45311) was introduced in v2026.3.12.
@@ -418,6 +478,7 @@ cli/
 │   ├── aws/                    # AWS SDK wrappers
 │   ├── common/                 # Shared logic (config gen, routing, validation)
 │   ├── discovery/              # Agent & identity resolution (AWS)
+│   ├── mcpserver/              # MCP server (AI agent integration)
 │   ├── provider/               # Provider interface & registry
 │   │   ├── awsprovider/        # AWS provider implementation
 │   │   ├── remoteprovider/    # Remote (SSH) provider implementation

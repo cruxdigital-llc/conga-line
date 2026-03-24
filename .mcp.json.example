@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "conga": {
+      "command": "conga",
+      "args": ["mcp", "serve"],
+      "env": {
+        "CONGA_PROVIDER": "aws",
+        "AWS_PROFILE": "your-profile"
+      }
+    }
+  }
+}

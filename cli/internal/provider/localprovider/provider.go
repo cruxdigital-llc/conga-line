@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"sort"
@@ -174,6 +175,11 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	if err := p.deployBehavior(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: behavior file deployment failed: %v\n", err)
 	}
+
+	// Chown workspace to uid 1000 (node user inside container) so OpenClaw can
+	// update MEMORY.md and other workspace files via hot-reload
+	workspaceDir := filepath.Join(dataDir, "data", "workspace")
+	exec.CommandContext(ctx, "chown", "-R", "1000:1000", workspaceDir).Run()
 
 	// 4. Read image
 	image := p.getConfigValue("image")

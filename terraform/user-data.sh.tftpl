@@ -431,6 +431,8 @@ setup_agent_common() {
 
   # Deploy behavior files (SOUL.md, AGENTS.md, USER.md) to workspace
   /opt/conga/bin/deploy-behavior.sh "$AGENT_NAME" "$AGENT_TYPE"
+  # Re-chown workspace after behavior deployment (files created as root)
+  chown -R 1000:1000 /opt/conga/data/$AGENT_NAME/data/workspace
 
   # Config hash baseline
   sha256sum /opt/conga/config/$AGENT_NAME-config.json | cut -d' ' -f1 > /opt/conga/config/$AGENT_NAME-config.json.sha256
@@ -455,7 +457,7 @@ Requires=docker.service
 [Service]
 Type=simple
 EnvironmentFile=/opt/conga/config/$AGENT_NAME.env
-ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh $AGENT_NAME \$(cat /opt/conga/config/$AGENT_NAME.type 2>/dev/null || echo user) 2>/dev/null || true'
+ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh $AGENT_NAME \$(cat /opt/conga/config/$AGENT_NAME.type 2>/dev/null || echo user) 2>/dev/null || true; chown -R 1000:1000 /opt/conga/data/$AGENT_NAME/data/workspace 2>/dev/null || true'
 ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
 ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:$GATEWAY_PORT:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 0.75 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE
 ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
