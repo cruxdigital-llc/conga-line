@@ -19,7 +19,8 @@ type FieldSchema struct {
 
 // SchemaSection describes the input or output fields for a command.
 type SchemaSection struct {
-	Fields map[string]FieldSchema `json:"fields,omitempty"`
+	IsArray bool                   `json:"is_array,omitempty"` // true when output is an array of objects
+	Fields  map[string]FieldSchema `json:"fields,omitempty"`
 }
 
 // CommandSchema describes the JSON input/output contract for a command.
@@ -37,6 +38,10 @@ func init() {
 		Use:   "json-schema [command]",
 		Short: "Print JSON input/output schema for a command",
 		Long: `Print the JSON schema for a command's --json input and --output json response.
+
+The --json flag accepts inline JSON or a file reference (@file.json):
+  conga admin setup --json '{"image":"ghcr.io/openclaw/openclaw:2026.3.11"}'
+  conga admin setup --json @setup.json
 
 Examples:
   conga json-schema status
@@ -187,7 +192,7 @@ var commandSchemas = map[string]CommandSchema{
 	"secrets.list": {
 		Command:     "secrets list",
 		Description: "List secrets for an agent",
-		Output: &SchemaSection{Fields: map[string]FieldSchema{
+		Output: &SchemaSection{IsArray: true, Fields: map[string]FieldSchema{
 			"name":         {Type: "string", Description: "Secret name"},
 			"env_var":      {Type: "string", Description: "Environment variable name"},
 			"last_changed": {Type: "string", Description: "Last modified time (ISO 8601)"},
@@ -205,18 +210,18 @@ var commandSchemas = map[string]CommandSchema{
 		Command:     "admin setup",
 		Description: "Configure shared secrets and settings",
 		Input: &SchemaSection{Fields: map[string]FieldSchema{
-			"ssh_host":             {Type: "string", Description: "SSH host (remote provider)"},
-			"ssh_port":             {Type: "integer", Description: "SSH port (remote provider)"},
-			"ssh_user":             {Type: "string", Description: "SSH user (remote provider)"},
-			"ssh_key_path":         {Type: "string", Description: "SSH key path (remote provider)"},
-			"repo_path":            {Type: "string", Description: "Repository path on host"},
-			"image":                {Type: "string", Description: "Docker image to deploy"},
-			"slack_bot_token":      {Type: "string", Description: "Slack bot token (xoxb-...)"},
-			"slack_signing_secret": {Type: "string", Description: "Slack signing secret"},
-			"slack_app_token":      {Type: "string", Description: "Slack app token (xapp-...)"},
-			"google_client_id":     {Type: "string", Description: "Google OAuth client ID"},
-			"google_client_secret": {Type: "string", Description: "Google OAuth client secret"},
-			"install_docker":       {Type: "boolean", Description: "Auto-install Docker on remote host"},
+			"ssh_host":             {Type: "string", Description: "SSH host — remote provider only"},
+			"ssh_port":             {Type: "integer", Description: "SSH port — remote provider only (default: 22)"},
+			"ssh_user":             {Type: "string", Description: "SSH user — remote provider only (default: root)"},
+			"ssh_key_path":         {Type: "string", Description: "SSH key path — remote provider only (auto-detect if omitted)"},
+			"repo_path":            {Type: "string", Description: "Conga Line repo root — local and remote providers"},
+			"image":                {Type: "string", Description: "Docker image to deploy — all providers"},
+			"slack_bot_token":      {Type: "string", Description: "Slack bot token (xoxb-...) — all providers, optional"},
+			"slack_signing_secret": {Type: "string", Description: "Slack signing secret — all providers, optional"},
+			"slack_app_token":      {Type: "string", Description: "Slack app token (xapp-...) — all providers, optional"},
+			"google_client_id":     {Type: "string", Description: "Google OAuth client ID — all providers, optional"},
+			"google_client_secret": {Type: "string", Description: "Google OAuth client secret — all providers, optional"},
+			"install_docker":       {Type: "boolean", Description: "Auto-install Docker — remote provider only"},
 		}},
 		Output: &SchemaSection{Fields: map[string]FieldSchema{
 			"provider": {Type: "string", Description: "Active provider name"},
@@ -255,7 +260,7 @@ var commandSchemas = map[string]CommandSchema{
 	"admin.list-agents": {
 		Command:     "admin list-agents",
 		Description: "List all provisioned agents",
-		Output: &SchemaSection{Fields: map[string]FieldSchema{
+		Output: &SchemaSection{IsArray: true, Fields: map[string]FieldSchema{
 			"name":            {Type: "string", Description: "Agent name"},
 			"type":            {Type: "string", Description: "Agent type: user, team"},
 			"slack_member_id": {Type: "string", Description: "Slack member ID (user agents)"},

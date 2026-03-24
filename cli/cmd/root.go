@@ -43,11 +43,13 @@ var rootCmd = &cobra.Command{
 	Short: "Conga Line — manage your OpenClaw deployment",
 	Long:  "Cross-platform CLI for managing OpenClaw containers via pluggable providers (AWS, local Docker, remote SSH).",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize JSON mode early so errors can be emitted as JSON
+		// Initialize JSON mode early so errors can be emitted as JSON.
+		// Set OutputJSON before parsing so that even parse failures are JSON-formatted.
 		if flagJSON != "" {
 			if flagOutput == "text" && cmd.Flags().Changed("output") {
 				return fmt.Errorf("--json implies --output json; cannot use --output text with --json")
 			}
+			ui.OutputJSON = true
 			if err := ui.SetJSONMode(flagJSON); err != nil {
 				return err
 			}

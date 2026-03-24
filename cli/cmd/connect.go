@@ -57,6 +57,8 @@ func connectRun(cmd *cobra.Command, args []string) error {
 			Port:  info.LocalPort,
 			Token: info.Token,
 		})
+		// For AWS, Connect() starts an SSM tunnel subprocess. The deferred
+		// setupCancel() will cancel the context and kill it on return.
 		return nil
 	}
 

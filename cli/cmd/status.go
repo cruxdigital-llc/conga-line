@@ -53,15 +53,17 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		if ui.OutputJSON {
-			containerState := status.Container.State
-			paused := false
-			if containerState == "not found" || containerState == "" || containerState != "running" {
-				if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
-					containerState = "stopped"
-					paused = true
-				}
+		// Detect paused state once, shared by JSON and text output paths
+		containerState := status.Container.State
+		paused := false
+		if containerState != "running" {
+			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
+				containerState = "stopped"
+				paused = true
 			}
+		}
+
+		if ui.OutputJSON {
 			uptime := ""
 			if status.Container.StartedAt != "" {
 				uptime = formatUptime(status.Container.StartedAt)
@@ -94,26 +96,17 @@ var statusCmd = &cobra.Command{
 			return nil
 		}
 
-		if status.Container.State == "not found" || status.Container.State == "" {
-			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
-				fmt.Println("Container:  stopped (agent paused)")
-				fmt.Printf("Service:    %s\n", status.ServiceState)
-				fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
-				return nil
-			}
-			fmt.Println("Container:  not found")
+		if paused {
+			fmt.Println("Container:  stopped (agent paused)")
 			fmt.Printf("Service:    %s\n", status.ServiceState)
+			fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
 			return nil
 		}
 
-		// Container exists but isn't running — check if agent is paused
-		if status.Container.State != "running" {
-			if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg != nil && cfg.Paused {
-				fmt.Println("Container:  stopped (agent paused)")
-				fmt.Printf("Service:    %s\n", status.ServiceState)
-				fmt.Printf("\nTo resume: conga admin unpause %s\n", agentName)
-				return nil
-			}
+		if containerState == "not found" || containerState == "" {
+			fmt.Println("Container:  not found")
+			fmt.Printf("Service:    %s\n", status.ServiceState)
+			return nil
 		}
 
 		fmt.Printf("Container:  %s\n", status.Container.State)

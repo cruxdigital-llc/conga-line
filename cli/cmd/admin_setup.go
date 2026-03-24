@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -26,13 +27,15 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 
 	var cfg *provider.SetupConfig
 	if ui.JSONInputActive {
-		// Re-serialize JSON input data and parse as SetupConfig
+		// Parse JSON input directly into SetupConfig, rejecting unknown fields
 		data, err := json.Marshal(ui.JSONData())
 		if err != nil {
 			return fmt.Errorf("marshaling JSON input: %w", err)
 		}
 		cfg = &provider.SetupConfig{}
-		if err := json.Unmarshal(data, cfg); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(cfg); err != nil {
 			return fmt.Errorf("parsing JSON input as setup config: %w", err)
 		}
 	} else if adminSetupConfig != "" {

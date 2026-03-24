@@ -7,8 +7,9 @@ import (
 )
 
 // EmitJSON writes a JSON-serializable value to stdout with a trailing newline.
+// Uses compact encoding for machine consumption (the primary use case).
 func EmitJSON(v any) {
-	data, err := json.MarshalIndent(v, "", "  ")
+	data, err := json.Marshal(v)
 	if err != nil {
 		EmitError(fmt.Errorf("failed to marshal JSON output: %w", err))
 		return

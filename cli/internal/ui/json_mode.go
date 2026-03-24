@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// Package-level JSON mode state. Not goroutine-safe; the CLI is single-threaded.
+// If parallel command execution is ever added, this must be wrapped in a struct
+// passed through context.
 var (
 	// JSONInputActive is true when --json was provided with data.
 	JSONInputActive bool
@@ -116,38 +119,3 @@ func MustGetString(key string) (string, error) {
 	return s, nil
 }
 
-// TextPromptJ is the JSON-aware version of TextPrompt.
-// In JSON mode, reads from JSON input. In text mode, falls through to interactive prompt.
-func TextPromptJ(key, label string) (string, error) {
-	if JSONInputActive {
-		return MustGetString(key)
-	}
-	return TextPrompt(label)
-}
-
-// TextPromptWithDefaultJ is the JSON-aware version with a default value.
-func TextPromptWithDefaultJ(key, label, defaultVal string) (string, error) {
-	if JSONInputActive {
-		if s, ok := GetString(key); ok {
-			return s, nil
-		}
-		return defaultVal, nil
-	}
-	return TextPromptWithDefault(label, defaultVal)
-}
-
-// SecretPromptJ is the JSON-aware version of SecretPrompt.
-func SecretPromptJ(key, label string) (string, error) {
-	if JSONInputActive {
-		return MustGetString(key)
-	}
-	return SecretPrompt(label)
-}
-
-// ConfirmJ returns true in JSON mode (like --force). In text mode, prompts.
-func ConfirmJ(prompt string) bool {
-	if JSONInputActive {
-		return true
-	}
-	return Confirm(prompt)
-}
