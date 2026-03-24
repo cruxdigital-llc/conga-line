@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -55,16 +56,27 @@ func (s *Server) toolProvisionAgent() server.ServerTool {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid agent type %q: must be \"user\" or \"team\"", agentType)), nil
 			}
 
+			gatewayPort := req.GetInt("gateway_port", 0)
+
+			ctx, cancel := toolCtx(ctx)
+			defer cancel()
+
+			// Auto-assign gateway port if not specified, same as CLI.
+			if gatewayPort == 0 {
+				agents, err := s.prov.ListAgents(ctx)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("failed to auto-assign port: %v", err)), nil
+				}
+				gatewayPort = common.NextAvailablePort(agents)
+			}
+
 			cfg := provider.AgentConfig{
 				Name:          agentName,
 				Type:          provider.AgentType(agentType),
 				SlackMemberID: req.GetString("slack_member_id", ""),
 				SlackChannel:  req.GetString("slack_channel", ""),
-				GatewayPort:   req.GetInt("gateway_port", 0),
+				GatewayPort:   gatewayPort,
 			}
-
-			ctx, cancel := toolCtx(ctx)
-			defer cancel()
 
 			if err := s.prov.ProvisionAgent(ctx, cfg); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil

@@ -502,8 +502,8 @@ func TestToolsErrorPropagation(t *testing.T) {
 				t.Errorf("expected error result for %s", tt.name)
 			}
 			text := textContent(t, result)
-			if text != "provider failure" {
-				t.Errorf("got error %q, want %q", text, "provider failure")
+			if !strings.Contains(text, "provider failure") {
+				t.Errorf("got error %q, want it to contain %q", text, "provider failure")
 			}
 		})
 	}
