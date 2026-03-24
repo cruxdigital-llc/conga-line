@@ -42,8 +42,10 @@ type mockProvider struct {
 	err error
 }
 
-func (m *mockProvider) Name() string                                           { return m.name }
-func (m *mockProvider) WhoAmI(ctx context.Context) (*provider.Identity, error) { return m.identity, m.err }
+func (m *mockProvider) Name() string { return m.name }
+func (m *mockProvider) WhoAmI(ctx context.Context) (*provider.Identity, error) {
+	return m.identity, m.err
+}
 func (m *mockProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig, error) {
 	return m.agents, m.err
 }
@@ -112,11 +114,13 @@ func (m *mockProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) err
 	m.lastSetupCfg = cfg
 	return m.err
 }
-func (m *mockProvider) CycleHost(ctx context.Context) error  { return m.err }
-func (m *mockProvider) Teardown(ctx context.Context) error   { return m.err }
+func (m *mockProvider) CycleHost(ctx context.Context) error { return m.err }
+func (m *mockProvider) Teardown(ctx context.Context) error  { return m.err }
 
 // helper to call a tool and return the text result.
-func callTool(t *testing.T, client interface{ CallTool(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) }, name string, args map[string]any) *mcp.CallToolResult {
+func callTool(t *testing.T, client interface {
+	CallTool(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+}, name string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	var req mcp.CallToolRequest
 	req.Params.Name = name

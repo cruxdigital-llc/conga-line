@@ -56,7 +56,7 @@ type SecretEntry struct {
 
 // Identity represents the resolved caller identity.
 type Identity struct {
-	Name      string `json:"name"`                // username or IAM session name
+	Name      string `json:"name"`                 // username or IAM session name
 	AccountID string `json:"account_id,omitempty"` // AWS account ID (empty for local)
 	ARN       string `json:"arn,omitempty"`        // AWS ARN (empty for local)
 	AgentName string `json:"agent_name,omitempty"` // mapped agent name (empty if unmapped)
