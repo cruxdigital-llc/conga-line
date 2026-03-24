@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -28,6 +27,7 @@ func init() {
 }
 
 func connectRun(cmd *cobra.Command, args []string) error {
+	// Use the timeout context only for short setup operations.
 	setupCtx, setupCancel := commandContext()
 	defer setupCancel()
 
@@ -40,7 +40,12 @@ func connectRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("agent %s is paused. Use `conga admin unpause %s` first", agentName, agentName)
 	}
 
-	info, err := prov.Connect(setupCtx, agentName, 0)
+	// Use a signal-driven context for the long-lived connection so it isn't
+	// killed by the global command timeout.
+	sessionCtx, sessionCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer sessionCancel()
+
+	info, err := prov.Connect(sessionCtx, agentName, 0)
 	if err != nil {
 		return err
 	}
@@ -57,37 +62,28 @@ func connectRun(cmd *cobra.Command, args []string) error {
 			Port:  info.LocalPort,
 			Token: info.Token,
 		})
-		// For AWS, Connect() starts an SSM tunnel subprocess. The deferred
-		// setupCancel() will cancel the context and kill it on return.
 		return nil
 	}
 
 	fmt.Printf("\nOpen in your browser:\n  %s\n\n", info.URL)
 	fmt.Println("Press Ctrl+C to disconnect.")
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	sessionCtx, sessionCancel := context.WithCancel(context.Background())
-	defer sessionCancel()
-
-	// Start device pairing poll in background (works on both providers)
+	// Start device pairing poll in background
 	if !connectNoPairing {
 		go pollDevicePairing(sessionCtx, prov, agentName)
 	}
 
 	if info.Waiter != nil {
 		select {
-		case <-sigCh:
+		case <-sessionCtx.Done():
 			fmt.Println("\nClosing connection...")
-			sessionCancel()
 		case err := <-info.Waiter:
 			if err != nil {
 				return fmt.Errorf("connection exited: %w", err)
 			}
 		}
 	} else {
-		<-sigCh
+		<-sessionCtx.Done()
 		fmt.Println("\nDisconnected.")
 	}
 
