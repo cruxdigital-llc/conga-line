@@ -10,6 +10,7 @@ import (
 	posixpath "path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -108,6 +109,7 @@ func SSHConnect(host string, port int, user, keyPath string) (*SSHClient, error)
 		User:            user,
 		Auth:            authMethods,
 		HostKeyCallback: hostKeyCallback,
+		Timeout:         15 * time.Second,
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
@@ -115,6 +117,9 @@ func SSHConnect(host string, port int, user, keyPath string) (*SSHClient, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to %s@%s: %w", user, addr, err)
 	}
+
+	// Start SSH keepalive to prevent idle disconnects from NAT/firewalls.
+	go sshKeepalive(client)
 
 	return &SSHClient{
 		client: client,
@@ -379,6 +384,19 @@ func tunnelCopy(ctx context.Context, local, remote net.Conn) {
 // Close closes the SSH connection.
 func (c *SSHClient) Close() error {
 	return c.client.Close()
+}
+
+// sshKeepalive sends periodic keepalive requests to prevent idle disconnects.
+// Stops automatically when the connection is closed.
+func sshKeepalive(client *ssh.Client) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+		if err != nil {
+			return
+		}
+	}
 }
 
 // --- helpers ---
