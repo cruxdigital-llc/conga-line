@@ -26,7 +26,7 @@ import (
 // must be serialized. If concurrent access is needed in the future, mu must be held
 // around session()/sftpClient()/reconnect() calls.
 type SSHClient struct {
-	mu     sync.Mutex        // guards client replacement during reconnect
+	mu     sync.Mutex // guards client replacement during reconnect
 	client *ssh.Client
 	config *ssh.ClientConfig // stored for reconnection
 	host   string
