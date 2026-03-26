@@ -1,174 +1,126 @@
 <!--
 GLaDOS-MANAGED DOCUMENT
-Last Updated: 2026-03-15
+Last Updated: 2026-03-25
 To modify: Edit directly.
 -->
 
 # Product Roadmap
 
-## Phase 1 — First User Live on AWS
+## Completed Phases
 
-Goal: Migrate a locally-running OpenClaw gateway to a hardened AWS deployment. End state: message in Slack channel → response from AWS-hosted container.
+### Phase 1 — First User Live on AWS ✅
+Single-user OpenClaw on hardened AWS infrastructure.
+- Epic 0: Terraform foundation (S3 state + DynamoDB locks)
+- Epic 1: VPC + networking (zero ingress, fck-nat, NACLs, flow logs — 31 resources)
+- Epic 2: IAM + secrets (least-privilege role, deny-dangerous policy, KMS, Secrets Manager)
+- Epic 3: EC2 + Docker bootstrap (cap-drop ALL, no-new-privileges, resource limits, systemd hardening)
+- Epic 4: Config integrity monitoring (SHA256 timer, CloudWatch alarm, SNS alerts)
 
-### Epic 0: Terraform Foundation ✅
-- [x] S3 backend bucket `<project_name>-terraform-state-<account_id>` (versioned, AES256, public access blocked)
-- [x] DynamoDB table `<project_name>-terraform-locks` (PAY_PER_REQUEST)
-- [x] backend.tf configuration (S3 backend with state locking)
-- [x] Bootstrap shell script (`terraform/bootstrap.sh`, idempotent)
+### Phase 2 — Multi-User with Shared Slack App ✅
+Single Slack app with centralized event router, repeatable onboarding.
+- Epics 5+6: Multi-user onboarding, Slack event router (Socket Mode → HTTP fan-out)
+- Containers use HTTP webhook mode via forked OpenClaw image
 
-### Epic 1: VPC + Networking ✅
-- [x] VPC (10.0.0.0/24)
-- [x] Public subnet (10.0.0.0/28) for fck-nat instance
-- [x] Private subnet (10.0.0.16/28) for Conga Line host
-- [x] fck-nat (t4g.nano, ASG-backed, self-healing) via `RaJiska/fck-nat/aws` v1.4.0
-- [x] Route tables: private subnet 0.0.0.0/0 → fck-nat ENI
-- [x] NACLs: 443 egress + DNS + ephemeral return only
-- [x] Security group: zero ingress, HTTPS + DNS egress
-- [x] VPC Flow Logs → CloudWatch `/conga/vpc-flow-logs` (30-day retention)
+### Phase 3 — Modular Deployment ✅
+Pluggable provider architecture decoupled from AWS.
+- Provider interface (17 methods) with AWS, local Docker, and remote SSH implementations
+- Common package for config generation, routing, behavior composition
+- Per-agent network isolation, file-based secrets (mode 0400), config integrity on all providers
+- Egress proxy infrastructure deployed but not wired (enforcement is current work)
 
-### Epic 2: IAM + Secrets
-- [ ] Instance IAM role with least-privilege policies
-- [ ] Deny-dangerous IAM policy (iam:*, ec2:RunInstances, lambda:*, etc.)
-- [ ] KMS key for EBS encryption
-- [ ] SSM instance profile policies
-- [ ] Secrets Manager secrets per user:
-  - [ ] Slack botToken (shared — will be reused by user 2)
-  - [ ] Slack appToken (shared)
-  - [ ] Anthropic API key
-  - [ ] Gateway auth token
-  - [ ] Trello API key + token
-  - [ ] Brave API key (if needed)
-
-### Epic 3: EC2 + Docker Bootstrap (Single User) ✅
-- [x] Launch template: t4g.medium (4GB RAM), Graviton, encrypted EBS, IMDSv2 hop limit 1
-- [x] User-data script: install Docker, pull OpenClaw image, fetch secrets from Secrets Manager
-- [x] Per-user openclaw.json generated with:
-  - [x] Channel allowlist: `<channel_id>`
-  - [x] Model: `anthropic/claude-opus-4-6`
-  - [x] Skills: trello (credentials from env vars)
-  - [x] Tools profile: coding
-  - [x] Gateway: loopback
-- [x] Docker container with:
-  - [x] Isolated Docker network (`conga-<member_id>`)
-  - [x] Resource limits: 2GB memory, 1.5 CPU, 256 pids
-  - [x] Non-root user (uid 1000, `node`)
-  - [x] `--cap-drop=ALL`, `--security-opt=no-new-privileges`
-  - [x] Secrets injected as env vars via systemd EnvironmentFile
-  - [ ] ~~Docker rootless mode~~ — deferred to Horizon 3 (AL2023 missing `fuse-overlayfs`, `slirp4netns`)
-  - [ ] ~~Seccomp profile~~ — using Docker default; custom profile deferred to Horizon 3
-  - [ ] ~~Read-only config mount~~ — not possible due to OpenClaw hot-reload .tmp files; integrity via monitoring (Epic 4)
-- [x] Systemd unit with restart policy (`Restart=always`, `RestartSec=10`)
-- [x] OS hardening: openssh-server removed, sysctl lockdown, dnf-automatic enabled
-- [x] `NODE_OPTIONS="--max-old-space-size=1536"` to prevent V8 heap OOM
-
-### Epic 4: Config Integrity + Monitoring ✅
-- [x] Systemd timer: hash-check openclaw.json every 5 minutes (configurable via `config_check_interval_minutes`)
-- [x] CloudWatch agent shipping container logs + integrity check logs to `/conga/gateway`
-- [x] CloudWatch metric filter for `CONFIG_INTEGRITY_VIOLATION`
-- [x] CloudWatch alarm → SNS topic (`alert_email` configurable, no subscribers by default)
-- [ ] TODO: Move hash baseline to after OpenClaw's first boot settles (~60s delay) to avoid false positive
-
-### Milestone: First user's local gateway replaced by AWS deployment ✅
-- [x] Local OpenClaw gateway stopped (launchd unloaded)
-- [x] End-to-end test: message in Slack channel → response from AWS container
-- [x] Slack socket mode connected, channel resolved
-- [x] Secrets in env file (root:root 0400), config integrity monitoring deferred to Epic 4
+### Operational Maturity (Ongoing) ✅
+- Conga Line CLI (13 commands, Go + Cobra)
+- CLI hardening (silent failure fixes, validation, 28 unit tests)
+- Agent pause/unpause (all providers)
+- Behavior management (version-controlled SOUL.md, per-type composition)
+- CLI JSON input/output for LLM-driven automation
+- Remote provider (full lifecycle on VPS/bare-metal/RPi, SSH tunneling)
+- SSH auto-reconnect for MCP server
+- Open-source sanitization (gitignored config, .example templates)
 
 ---
 
-## Phase 2 — Multi-User with Shared Slack App + Router
+## Active: Promotion Pipeline
 
-Goal: Single shared Slack app with a centralized event router. Repeatable onboarding via `conga admin add-user`.
+The organizing principle: local → remote → enterprise is a promotion pipeline. Security and routing policy is a portable artifact (`conga-policy.yaml`) that travels with the deployment. Each provider enforces what it can.
 
-### Architecture
-Single Slack app → Socket Mode connection held by the router (`router/src/index.js`) → HTTP fan-out to per-user containers in webhook mode. This avoids the Socket Mode event-splitting problem (multiple connections to the same app = ~50% missed messages). The approach was unblocked by our fork's HTTP webhook fix (PR openclaw/openclaw#49514).
+### Pipeline Phase 1: Policy Foundation + Egress
 
-### Epic 5+6: Multi-User Onboarding
-- [x] `users` Terraform variable drives all per-user resources
-- [x] Dynamic secret discovery — users self-serve via `conga secrets set`
-- [x] User-data loops over users to create containers
-- [x] Persistent EBS data volume survives instance replacement
-- [x] SSM-based user provisioning via `conga admin add-user` (replaces `scripts/add-user.sh`)
-- [x] **Slack event router deployed** — single Socket Mode connection, HTTP fan-out to per-user containers
-- [x] **Containers use HTTP webhook mode** — `mode: "http"` with `botToken`/`signingSecret` in config
-- [x] **`add-user.sh.tmpl` aligned with router architecture** — updates `routing.json`, connects router to user network
-- [ ] Validate: both users receiving 100% of messages in their channels
-- [ ] End-to-end test: no missed messages, no stale-socket restarts
-- [ ] Onboarding guide update: document shared app setup and `conga admin add-user` workflow
+**Goal:** Establish the portable policy artifact and close the #1 security gap (egress domain allowlisting).
 
-### Milestone: 2 users operational
-- [ ] Both users receiving responses in their respective Slack channels
-- [ ] No cross-channel leakage
-- [ ] Onboarding process documented and tested
+| Area | Deliverable | Status |
+|---|---|---|
+| **Policy schema** | `conga-policy.yaml` with egress, routing, posture sections. Go types, validation, enforcement reporting. `conga policy validate` command. | ✅ Complete — `specs/2026-03-25_feature_policy-schema/` |
+| **Egress — Local** | Validate mode (warn-only, default) + enforce mode (egress proxy container with SNI-based domain filtering). | Spec 2 — next |
+| **Egress — Remote** | iptables OUTPUT rules or dnsmasq DNS filtering on remote host. | Spec 2 |
+| **Egress — Enterprise** | Squid forward proxy with domain allowlist. Blocked requests logged and alerted. | Spec 2 |
+| **Version awareness** | `conga status` shows OpenClaw version + security update availability. | Planned |
+| **Demo playbook** | 5 ready-today scenarios (container escape, network isolation, config tamper, SSRF, IAM deny). | Planned |
+
+### Pipeline Phase 2: Multi-Provider Routing + Promotion
+
+**Goal:** Model routing via Bifrost proxy, promotion command, cost tracking.
+
+| Area | Deliverable | Status |
+|---|---|---|
+| **Routing policy** | Routing section of `conga-policy.yaml`: model registry, fallback chains, cost limits, task rules. Ollama auto-detection on local. | Planned (Spec 3) |
+| **Bifrost sidecar** | Deploy Bifrost as sidecar container on remote/AWS. Generate config from routing policy. Cost tracking via metrics endpoint. | Planned (Spec 5) |
+| **Promote command** | `conga admin promote --from local --to remote/aws`. Validates policy against target. Reports enforcement gaps. Copies config + policy (not secrets). | Planned (Spec 6) |
+| **Security posture reporting** | `conga status` security section, `conga policy audit`, CVE awareness. | Planned (Spec 4) |
+| **Per-user agent binding (remote)** | End users access only their assigned agent via CLI. Admin retains full SSH access. | Planned |
+| **Controls matrix** | CIS Docker Benchmark, NIST 800-190, AWS Well-Architected mapping. | Planned (Spec 8) |
+
+### Pipeline Phase 3: Runtime Security + Advanced Routing
+
+**Goal:** Sensitivity-aware routing, OpenShell integration evaluation, advanced hardening.
+
+| Area | Deliverable | Status |
+|---|---|---|
+| **Sensitivity routing** | Keyword/pattern classification forcing sensitive prompts to self-hosted models (Ollama sidecar). | Planned (Spec 7) |
+| **OpenShell evaluation** | Evaluate NVIDIA OpenShell integration for per-action runtime policy. `conga-policy.yaml` references optional OpenShell policy. | Planned |
+| **Docker rootless** | Evaluate on Ubuntu 24.04 / Debian 12. If feasible, default for new remote setups. | Planned |
+| **Custom seccomp** | Profile OpenClaw's syscall patterns, tighten beyond Docker default. | Planned |
+| **GuardDuty + AWS Config** | Anomaly detection + security group drift detection. | Planned |
+| **Proxy-based credential injection** | Agent sees placeholder tokens; proxy resolves to real secrets at request time. | Planned |
+
+### Pipeline Phase 4: Enterprise Hardening + Ecosystem
+
+**Goal:** Compliance reporting, advanced isolation, ecosystem integrations.
+
+| Area | Deliverable | Status |
+|---|---|---|
+| **Compliance reporting** | `conga policy compliance` command generates report from `compliance_frameworks` declaration. | Planned (Spec 8) |
+| **gVisor (Level 2)** | `--runtime=runsc` for stronger container sandboxing. | Planned |
+| **Per-agent subnets (Level 3)** | Separate private subnet per agent with NACLs. | Planned |
+| **Per-user VPCs (Level 4)** | Separate VPC per user via Transit Gateway. Documented pattern. | Planned |
+| **Demo: policy promotion** | Define policy locally → `conga admin promote --to aws` → show enforcement in production. | Planned |
+| **Routing analytics** | Cost per model, savings vs single-provider baseline, compliance-grade audit trail. | Planned |
 
 ---
 
-## Phase 3 — Modular Deployment (Local Docker) ✅
+## Backlog (Unscheduled)
 
-Goal: Decouple deployment from AWS so Conga Line can be deployed locally for development/testing, and to other targets in the future.
+### Operational
+- [ ] Per-user SSO permission sets (CongaUser vs CongaAdmin)
+- [ ] Per-user custom SSM documents (each user can only use their own port)
+- [ ] Rewrite Slack router in Go (replace Node.js `router/src/index.js`)
+- [ ] Self-service container restart via signal file
+- [ ] Automated secret rotation
+- [ ] EBS snapshot backups
+- [ ] CloudWatch dashboard (per-container resources, NAT throughput, error rates)
+- [ ] Idle-shutdown alarm
+- [ ] Runbook: common operations
 
-- [x] **Provider abstraction**: `Provider` interface (16 methods) with registry pattern
-- [x] **Common package**: Config generation, routing, behavior composition extracted from shell templates into Go
-- [x] **AWS provider**: Wraps existing code with zero behavioral change
-- [x] **Local Docker provider**: File-based discovery/secrets, Docker CLI operations, same container isolation
-- [x] **Network isolation**: Per-agent bridge networks (no inter-container routing), localhost-only port bindings
-- [ ] **Egress restriction**: Proxy infrastructure deployed (`deploy/egress-proxy/`) but not wired — needs `HTTPS_PROXY`/`--dns` or iptables rules; `--internal` networks break `-p` port publishing
-- [x] **Config integrity**: SHA256 hash monitoring for openclaw.json
-- [x] **CLI integration**: `--provider aws|local` flag, persistent config at `~/.conga/config.json`
-
-### VPS Provider ✅
-- [x] **SSH-based VPS provider**: Manage OpenClaw clusters on any VPS (Hetzner, DigitalOcean, Linode, etc.) over SSH
-- [x] SSH client with key auth, SFTP file transfer, SSH tunnel for gateway access
-- [x] Docker auto-install during setup (apt/dnf/yum/pacman)
-- [x] File-based secrets on remote host (mode 0400), same model as local provider
-- [x] Full Provider interface (17 methods): setup, add-user, add-team, status, logs, secrets, connect, pause/unpause, teardown
-- [x] No inbound ports beyond SSH (22) — gateway via SSH tunnel only
-- [ ] Real VPS end-to-end testing (Hetzner/DigitalOcean)
+### Pre-Release
+- [ ] Git history rewrite (scrub PII before public release)
+- [ ] Evaluate spec files for public repo (keep, strip, or wiki)
+- [ ] VPS end-to-end testing (Hetzner/DigitalOcean)
 - [ ] User-facing setup guide documentation
+- [ ] SECURITY-GUIDE.md for remote provider (VPS hardening best practices)
 
-### Future Deployment Targets (not yet started)
-- [ ] **Kubernetes provider**: Helm chart + kubectl operations behind Provider interface
-- [ ] **ECS/Fargate provider**: Task definitions + AWS ECS API behind Provider interface
-- [ ] **Multi-cloud**: GCP Cloud Run, Azure Container Instances
+### Future Providers
+- [ ] Kubernetes provider (Helm chart + kubectl)
+- [ ] ECS/Fargate provider
+- [ ] Multi-cloud (GCP Cloud Run, Azure Container Instances)
 
----
-
-## Horizon 2 — Operational Maturity
-
-- [x] **SSM port forwarding for web UI (Phase 1)**: Per-user `gateway_port` in `users` variable, Docker `-p 127.0.0.1:<port>:18789`, SSM output commands. See `specs/2026-03-17_feature_ssm-port-forwarding/`.
-- [x] **Conga Line CLI**: Cross-platform Go CLI for non-technical users. AWS SSO auth, SSM Parameter Store discovery, embedded bash scripts. 13 commands: auth, secrets, connect, refresh, status, logs, admin (add-user, remove-user, list-users, cycle-host). See `specs/2026-03-18_feature_cruxclaw-cli/`.
-- [x] **CLI Hardening**: Fixed silent failures, tightened Slack ID validation, added --timeout flag, AWS service interfaces + HostExecutor interface for testability and future local mode, 28 unit tests, admin.go split, CI test/coverage. See `specs/2026-03-19_feature_cli-hardening/`.
-- [x] **Agent Pause / Unpause**: Per-agent pause/unpause via `conga admin pause/unpause`. Provider interface methods for both AWS (SSM scripts) and local (Docker). Routing, RefreshAll, CycleHost, and bootstrap skip paused agents. See `specs/2026-03-21_feature_agent-pause/`.
-- [ ] **Git history rewrite before public release**: Git history contains real AWS account IDs, Slack member/channel IDs, SSO URLs, and usernames from before the OSS sanitization (PR #3). Run `git filter-repo` or equivalent before making the repo public. Alternatively, accept that the account ID is public info and scrub only PII (usernames, Slack IDs).
-- [ ] **Evaluate spec files for public repo**: `specs/` contains internal planning artifacts (requirements, plans, task lists, trace logs). Decide whether to keep (transparency), strip (noise reduction), or move to a wiki before open-sourcing.
-- [ ] **SSO permission sets for CLI access control**: Create scoped IAM Identity Center permission sets — `CongaUser` (secrets on own path, SSM StartSession, EC2 DescribeInstances) and `CongaAdmin` (SSM SendCommand, SSM PutParameter, EC2 Stop/Start, secrets on shared path). Currently all SSO users get `AdministratorAccess`. The CLI enforces user-level isolation (blocks `--user` override on non-admin commands), but IAM-level enforcement is defense-in-depth.
-- [ ] **SSM port forwarding Phase 2 — user isolation**: Per-user custom SSM documents (hardcode allowed port), IAM policy restrictions (each user can only use their document), gateway auth token (`conga/{user_id}/gateway-token` secret).
-- [x] **Slack event router (single app for all users)**: Deployed using forked OpenClaw image with HTTP webhook fix (PR openclaw/openclaw#49514). Router at `router/src/index.js`. Single Slack app, single Socket Mode connection, HTTP fan-out to per-user containers.
-- [ ] **Rewrite Slack router in Go**: Replace `router/src/index.js` (Node.js) with a Go binary for consistency with the Conga Line CLI. ~100 lines, no external dependencies beyond the AWS SDK. Could be built into the `conga` binary as a `conga router` subcommand or as a standalone binary deployed to the instance.
-- [ ] **Tighten bootstrap cleanup glob**: The pre-discovery cleanup loop stops all `conga-*.service` units, which catches non-agent units like `conga-config-check.timer`. Harmless (they're recreated later in the same bootstrap), but the glob should exclude known non-agent units for clarity.
-- [ ] **Fix router network reconnection on container restart**: When a user container restarts, the router loses its Docker network connection to that container. Need to add `ExecStartPost` to each user's systemd unit (or the router's unit) to reconnect. Currently requires manual `docker network connect` after any container restart.
-- [ ] **Auto-approve Slack pairing on user setup**: Run `openclaw pairing approve slack <MEMBER_ID>` automatically after container starts for the first time. Currently requires manual SSM command. Could be added to the user-data bootstrap or the `add-user.sh` script.
-- [ ] **Self-service container restart via signal file**: User tells their agent to restart. Agent writes `.restart-requested` to its writable volume. A host-level systemd timer (or inotifywait) watches for the file, rebuilds the env file from Secrets Manager, and restarts the container. No Docker socket or systemd access exposed to the container. Enables users to add secrets and pick them up without admin involvement.
-- [ ] Automated secret rotation (Lambda or scheduled task)
-- [ ] EBS snapshot backups of OpenClaw memory/config
-- [ ] CloudWatch dashboard: per-container resource usage, NAT throughput, error rates
-- [ ] Idle-shutdown alarm to save costs when host is unused
-- [ ] Runbook: common operations (rotate keys, add user, tear down user, recover NAT)
-
-## Horizon 3 — Hardening + Scale
-
-- [ ] **Proxy-based credential injection** (inspired by NVIDIA OpenShell) — agent process sees placeholder tokens, a proxy resolves to real secrets at request time. Secrets never exist in agent memory. Stronger than env var injection.
-- [ ] **Declarative policy engine** (inspired by NVIDIA OpenShell's OPA/Rego) — replace ad-hoc security hardening with formal policy definitions for filesystem, network, process access
-- [ ] **Docker rootless mode** — blocked by AL2023 missing `fuse-overlayfs` and `slirp4netns`; revisit with Docker CE on Ubuntu or custom AL2023 build
-- [ ] **Custom seccomp profile** — currently using Docker default; profile OpenClaw's syscall patterns and tighten
-- [ ] **Read-only config enforcement** — OpenClaw hot-reload writes .tmp files next to config; investigate disabling hot-reload or upstream fix for Issue #9627
-- [ ] Egress domain allowlisting (Squid proxy or AWS Network Firewall)
-- [ ] GuardDuty for anomaly detection
-- [ ] AWS Config rules for security group drift detection
-- [ ] Blue/green deploys via launch template versioning
-- [ ] Scale pattern: when to split to multiple hosts (evaluate per-container resource usage)
-- [ ] **Isolation Level 2**: gVisor runtime (`--runtime=runsc`) for stronger container sandboxing
-- [ ] **Isolation Level 3**: Per-user subnets with NACLs for network-level segmentation (when scaling to multiple hosts)
-- [ ] **Isolation Level 4**: Per-user VPCs via Transit Gateway/VPC Peering (if client contracts require full network isolation)
-
-See `product-knowledge/standards/security.md` → "Isolation Upgrade Path" for detailed criteria.
+See `product-knowledge/standards/security.md` for the security model and isolation upgrade path.

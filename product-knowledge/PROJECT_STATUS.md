@@ -80,9 +80,13 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 10. CLI JSON Input — Verified Complete
 *See `specs/2026-03-23_feature_cli-json-input/` for full trace*
 
+### 12. Portable Policy Schema — ✅ Verified and Complete
+*See `specs/2026-03-25_feature_policy-schema/` for full trace*
+
 ### 11. Backlog / Upcoming
+- [ ] Egress Domain Allowlisting (Spec 2 — depends on policy schema)
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
-- [ ] Horizon 3: Advanced hardening (egress allowlisting, GuardDuty, Config rules)
+- [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
 
 ## Known Issues / Technical Debt
 - CLI has zero test coverage — addressed by CLI Hardening spec (Phase 4)
@@ -93,6 +97,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-03-25: Portable Policy Schema — `conga-policy.yaml` schema for declaring security and routing policy as a portable artifact. New `cli/internal/policy/` package with YAML parsing (`gopkg.in/yaml.v3`), validation (enum checks, domain format, unknown field rejection), per-agent override merging, and per-provider enforcement reporting. `conga policy validate` CLI command with `--file`, `--agent`, `--output json` support. 5 new files, 19 unit tests. See `specs/2026-03-25_feature_policy-schema/`.
 - 2026-03-24: SSH Auto-Reconnect — MCP server's SSH connection now transparently recovers from stale/dead connections instead of requiring a Claude Code restart. Added `reconnect()`, `session()`, `sftpClient()` methods to `SSHClient` with single-retry semantics. 4 new tests with in-process SSH server. See `specs/2026-03-24_bugfix_ssh-reconnect/`.
 - 2026-03-23: CLI JSON Input — `--json` and `--output json` flags for LLM/agent-driven CLI automation. All 20 commands support structured JSON input (replacing interactive prompts) and JSON output (replacing human-formatted text). Schema discovery via `conga json-schema <command>`. 4 new files, 18 modified, 25 unit tests. `SetupConfig` struct enables non-interactive `admin setup` across all providers. See `specs/2026-03-23_feature_cli-json-input/`.
 - 2026-03-23: Remote Provider PR review fixes — 13 fixes across 7 files: `filepath.Join` → `posixpath.Join` for cross-platform remote path correctness, host key verification warning, shell injection fix in integrity log append, Docker install confirmation prompt, SSHKeyPath persistence, stale VPS naming cleanup, `Close()` method, `detectReadyPhase` tests. See `specs/2026-03-23_bugfix_remote-provider-pr-review/`.

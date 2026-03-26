@@ -1,0 +1,98 @@
+# Conga Line Deployment Policy
+# Copy to ~/.conga/conga-policy.yaml and customize.
+# All sections are optional. When absent, no policy is enforced.
+# See: portable-policy.md for full documentation.
+
+apiVersion: conga.dev/v1alpha1
+
+# --- Egress Policy ---
+# Which external domains agents can reach.
+# This is the single highest-impact security control.
+egress:
+  # Domains the agent is allowed to reach. Wildcards supported (*.example.com).
+  allowed_domains:
+    - api.anthropic.com
+    - "*.slack.com"
+    - "*.slack-edge.com"
+    - github.com
+    - api.github.com
+    - registry.npmjs.org
+
+  # Domains explicitly blocked (takes precedence over allowed_domains).
+  blocked_domains: []
+
+  # Enforcement mode (local provider only; remote/AWS always enforce).
+  #   validate — warn about unenforced rules (default)
+  #   enforce  — activate egress proxy container
+  mode: validate
+
+# --- Routing Policy ---
+# Model selection and routing rules.
+# Enforcement requires Bifrost proxy (future spec). This section is validated only.
+routing:
+  # Model used when no routing rule matches.
+  default_model: claude-sonnet-4-6
+
+  # Available models with provider and cost metadata.
+  # models:
+  #   claude-sonnet:
+  #     provider: anthropic
+  #     model: claude-sonnet-4-6
+  #     cost_per_1k_input: 0.003
+  #     cost_per_1k_output: 0.015
+  #   gpt-4o:
+  #     provider: openai
+  #     model: gpt-4o
+  #     cost_per_1k_input: 0.005
+  #     cost_per_1k_output: 0.015
+
+  # Ordered list of models to try when the primary is unavailable.
+  # fallback_chain:
+  #   - claude-haiku
+  #   - gpt-4o-mini
+
+  # Budget caps. Actions when exceeded: downgrade model, pause agent, alert.
+  # cost_limits:
+  #   daily_per_agent: 10.00
+  #   monthly_per_agent: 200.00
+  #   monthly_global: 1000.00
+
+# --- Security Posture Declarations ---
+# Operator expectations for deployment security properties.
+# Providers enforce what they can and report the gap.
+posture:
+  # Container isolation level.
+  #   standard  — Docker cap-drop ALL, no-new-privileges, seccomp (all providers)
+  #   hardened  — gVisor runtime (AWS only, future spec)
+  #   segmented — Per-agent subnets with NACLs (AWS only, future spec)
+  isolation_level: standard
+
+  # Secrets storage backend.
+  #   file    — Mode 0400 files (local/remote)
+  #   managed — AWS Secrets Manager (AWS only)
+  #   proxy   — Proxy-based credential injection (future spec)
+  secrets_backend: file
+
+  # Monitoring level.
+  #   basic    — Config integrity hash + container logs (all providers)
+  #   standard — + CloudWatch logging + VPC flow logs (AWS)
+  #   full     — + GuardDuty + runtime anomaly detection (AWS, future spec)
+  monitoring: basic
+
+  # Compliance frameworks to map against (AWS only, future spec).
+  # compliance_frameworks:
+  #   - cis-docker
+  #   - nist-800-190
+  #   - aws-well-architected
+
+# --- Per-Agent Overrides ---
+# Override any section for a specific agent.
+# The override replaces the entire section (shallow merge, not deep merge).
+# agents:
+#   myagent:
+#     egress:
+#       allowed_domains:
+#         - api.anthropic.com
+#         - "*.trello.com"
+#     posture:
+#       monitoring: standard

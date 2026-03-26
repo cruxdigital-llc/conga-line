@@ -1,13 +1,14 @@
 <!--
 GLaDOS-MANAGED DOCUMENT
-Last Updated: 2026-03-15
+Last Updated: 2026-03-25
 To modify: Edit directly. These standards are expected to evolve as we learn more.
 -->
 
-# Security Standards — Conga Line AWS Deployment
+# Security Standards — Conga Line
 
-> These standards represent our current best understanding. They should be reviewed
-> and updated as we gain operational experience and discover new threat vectors.
+> These standards apply to all deployment providers (local, remote, AWS).
+> Provider-specific controls are marked. Standards are reviewed and updated
+> as we gain operational experience and discover new threat vectors.
 
 ## Principles
 
@@ -15,10 +16,58 @@ To modify: Edit directly. These standards are expected to evolve as we learn mor
 2. **Immutable configuration** — Runtime config that controls security boundaries (channel allowlists, permissions) must not be writable by the process it governs.
 3. **Least privilege everywhere** — IAM roles, filesystem permissions, network access, and Docker capabilities should all be minimally scoped.
 4. **Defense in depth** — No single control should be the only thing preventing a breach. Layer network, filesystem, process, and container isolation.
-5. **Secrets never touch disk** — API keys are injected at boot from Secrets Manager into systemd environment variables. Never written to config files or environment files on the filesystem.
+5. **Secrets are protected at rest** — On AWS, secrets are in Secrets Manager (encrypted, never on disk). On local and remote, secrets are files with mode 0400 on operator-managed storage. Secrets are injected via env vars, never embedded in config files (Issue #9627).
 6. **Detect what you can't prevent** — Where we accept residual risk, add monitoring and alerting.
+7. **Policy is portable, enforcement is tiered** — Security intent is defined once in `conga-policy.yaml`. Each provider enforces what it can with available tools. The gap between intent and enforcement is visible via `conga policy validate`.
+8. **Own the box, not the behavior** — Conga Line controls infrastructure: containers, networks, egress, secrets, resource limits. Runtime behavior enforcement (per-action policy, tool invocation, privacy routing) is the domain of OpenShell or similar. Neither replaces the other.
 
-## Network Security
+## Universal Baseline (All Providers, Automatic)
+
+These controls apply identically regardless of provider. They happen automatically on `conga admin setup` and require no operator configuration.
+
+| Control | Implementation | Rationale |
+|---|---|---|
+| Drop all capabilities | `--cap-drop=ALL` | Removes kernel capabilities that enable most escape techniques |
+| No new privileges | `--security-opt=no-new-privileges` | Prevents privilege escalation via setuid binaries |
+| Resource limits | `--memory 2g`, `--cpus 0.75`, `--pids-limit 256` | Prevents resource starvation across agents |
+| Non-root container | Runs as uid 1000 (`node`) | Limits blast radius of container compromise |
+| Seccomp profile | Docker default seccomp (~44 dangerous syscalls blocked) | Restricts syscalls available to the container |
+| Isolated Docker networks | Each agent on its own bridge network | Prevents lateral movement between agents |
+| Localhost-only port binding | `-p 127.0.0.1:<port>:<port>` | Gateway not exposed to network |
+| Secrets via env vars | Env file (mode 0400), never in openclaw.json | Prevents secret exposure via config (Issue #9627) |
+| Config integrity monitoring | SHA256 hash baseline, periodic check, alert on mismatch | Detects tampering that bypasses other controls |
+| Router event signing | HMAC-SHA256 on forwarded Slack events | Prevents event forgery between router and containers |
+| Gateway token auth | Random token + device pairing | Prevents unauthorized web UI access |
+| Pinned image | Known-good OpenClaw version (currently v2026.3.11) | Avoids regressions (e.g., Slack socket mode bug in v2026.3.12) |
+
+## Enforcement Escalation by Provider
+
+When a policy defines a security control, each provider enforces it with the best mechanism available.
+
+| Control | Local (Dev) | Remote (Staging) | Enterprise (Prod) |
+|---|---|---|---|
+| **Egress filtering** | Configurable: validate (warns only) or enforce (egress proxy with domain allowlist) | iptables OUTPUT rules (IP-based, best-effort) | Squid forward proxy with domain allowlist. Blocked requests logged and alerted. |
+| **Host access** | N/A (user's machine) | SSH key-only auth. Gateway via SSH tunnel. | Zero ingress. No SSH. SSM-only. Gateway via SSM tunnel. |
+| **Secrets backend** | File, mode 0400. User owns disk encryption. | File, mode 0400 on remote. | AWS Secrets Manager. Encrypted at rest. IAM-scoped. |
+| **IAM / RBAC** | N/A (single user) | Admin: SSH. End users: CLI-only, scoped to assigned agent. | AWS SSO + IAM roles with explicit deny. Per-user permission sets (planned). |
+| **Monitoring** | Config integrity + container logs via `conga logs` | Config integrity + container logs. Optional: log aggregator. | VPC flow logs (30-day), CloudWatch alerting, config integrity. Planned: GuardDuty. |
+| **Runtime policy** | Validate: check policy syntax, report unenforced rules. Enforce: activate egress proxy locally. | Enforce egress + routing rules. Report what requires enterprise. | Full enforcement. Planned: OpenShell for per-action interception. |
+| **Container read-only** | Router container only (--read-only + tmpfs). | Router container only. | Router + agent where feasible. systemd ReadOnlyPaths as backup. |
+| **Isolation upgrade** | N/A | Docker default is sufficient. | Planned: gVisor (Level 2), per-agent subnets (Level 3), per-user VPCs (Level 4). |
+
+## Egress Policy
+
+Egress domain allowlisting is the single highest-impact security control and the #1 priority. A compromised agent on port-443-only egress can exfiltrate to any HTTPS endpoint. Domain allowlisting restricts it to declared destinations.
+
+| Field | Purpose |
+|---|---|
+| `allowed_domains` | Domains the agent can reach (e.g., api.anthropic.com, *.slack.com). Wildcards supported. |
+| `blocked_domains` | Explicit deny list. Takes precedence over allowed_domains. |
+| `mode` | `validate` (warn-only, default for local) or `enforce` (activate enforcement mechanism). |
+
+Defined in `conga-policy.yaml` egress section. See `specs/2026-03-25_feature_policy-schema/` for schema.
+
+## Network Security (AWS-Specific)
 
 | Control | Implementation | Rationale |
 |---|---|---|
@@ -26,89 +75,69 @@ To modify: Edit directly. These standards are expected to evolve as we learn mor
 | No SSH | openssh-server removed entirely | Eliminates credential-based remote access |
 | SSM-only access | AWS Session Manager via VPC endpoint | Auditable, IAM-authenticated access |
 | HTTPS-only egress | SG egress limited to port 443 + DNS | Only traffic needed is Slack WSS and LLM APIs |
-| Isolated Docker networks | Each container on its own Docker network, no inter-container communication | Prevents lateral movement between user containers |
 | NACLs | Stateless subnet ACLs, 443 egress + ephemeral return only | Defense-in-depth at the subnet level |
 
 ## Configuration Integrity
 
 | Control | Implementation | Rationale |
 |---|---|---|
-| Root-owned config | `openclaw.json` owned by `root:root`, mode `0444` | OpenClaw process (uid 1000) cannot modify its own config |
-| Systemd read-only paths | `ReadOnlyPaths=/home/openclaw/.openclaw/openclaw.json` | Kernel-level enforcement even if uid 1000 is compromised |
-| Docker read-only mount | Config mounted with `:ro` flag | Container cannot modify config even with container-level root |
-| Config integrity monitoring | Systemd timer hashes config file, alerts on unexpected change | Detects tampering that bypasses other controls |
-| Channel allowlist is security-critical | Treat `groupPolicy` and channel allowlist as a security boundary, not just a preference | Prevents cross-user channel access via config modification |
+| Root-owned config (AWS) | `openclaw.json` owned by `root:root`, mode `0444` | Agent process (uid 1000) cannot modify its own config |
+| Systemd read-only paths (AWS) | `ReadOnlyPaths=/home/openclaw/.openclaw/openclaw.json` | Kernel-level enforcement even if uid 1000 is compromised |
+| Docker read-only mount (AWS) | Config mounted with `:ro` flag | Container cannot modify config even with container-level root |
+| Hash-based integrity (all) | SHA256 baseline, periodic check, alert on mismatch | Detects tampering that bypasses other controls |
+| Channel allowlist is security-critical | Treat `groupPolicy` and channel allowlist as a security boundary | Prevents cross-agent channel access via config modification |
 
-## Container Isolation
-
-| Control | Implementation | Rationale |
-|---|---|---|
-| Isolated Docker networks | Each container on its own bridge network (`--network=conga-user-N`) | Containers cannot communicate with each other |
-| Per-container resource limits | `--memory`, `--cpus`, `--pids-limit` flags | Prevents one user from starving the other |
-| Non-root container | Each container runs as uid 1000 | Limits blast radius of container compromise |
-| Per-container env vars | Secrets injected as env vars per container, not shared | One container cannot read another's API keys |
-| Read-only root filesystem | `--read-only` flag + explicit tmpfs mounts for writable paths | Limits attacker's ability to persist changes |
-| Drop all capabilities | `--cap-drop=ALL`, add back only what OpenClaw requires | Removes kernel capabilities that enable most escape techniques |
-| Seccomp profile | Docker default seccomp profile at minimum; custom tighter profile if feasible | Restricts syscalls available to the container (~44 dangerous calls blocked by default) |
-| No new privileges | `--security-opt=no-new-privileges` | Prevents privilege escalation via setuid binaries or capability inheritance |
-| Docker rootless mode | Docker daemon runs as non-root user on the host | Container escape lands as unprivileged host user, neutralizing most known escape techniques |
-
-## Host Hardening
+## Host Hardening (AWS-Specific)
 
 | Control | Implementation | Rationale |
 |---|---|---|
 | IMDSv2 enforced, hop limit 1 | `http_tokens = "required"`, `http_put_response_hop_limit = 1` | Prevents container SSRF to instance metadata |
 | Systemd sandboxing | `NoNewPrivileges=true`, `ProtectSystem=strict`, per-unit `MemoryMax` | Constrains each container's systemd unit |
-| No IP forwarding | `sysctl net.ipv4.ip_forward=0` (except as needed for Docker NAT) | Host cannot be used as a network pivot |
-| Auto security updates | `unattended-upgrades` enabled | Patches applied without manual intervention |
-| Encrypted EBS | KMS-encrypted volume | Data at rest encryption |
+| No IP forwarding | `sysctl net.ipv4.ip_forward=0` (except Docker NAT) | Host cannot be used as a network pivot |
+| Auto security updates | `dnf-automatic` enabled | Patches applied without manual intervention |
+| Encrypted EBS | KMS-encrypted volume with auto-rotation | Data at rest encryption |
 
-## IAM
+## IAM (AWS-Specific)
 
 | Control | Implementation | Rationale |
 |---|---|---|
-| Single instance IAM role | Role scoped to read all user secrets under `conga/*` path | Host fetches secrets at boot and injects per-container |
+| Single instance IAM role | Scoped to read secrets under `conga/*` path | Host fetches secrets at boot and injects per-container |
 | Explicit deny policy | Denies `iam:*`, `ec2:RunInstances`, `lambda:*`, `s3:DeleteBucket`, etc. | Even if the role is expanded, dangerous actions are blocked |
 | Containers have no IAM access | IMDSv2 hop limit 1 blocks container metadata access | Containers cannot assume the host's IAM role |
+
+## Isolation Upgrade Path
+
+| Level | Isolation Model | Container Escape Protection | When to consider |
+|---|---|---|---|
+| **Current** | Docker seccomp + cap-drop on shared host | No inter-container network; escape lands as host user | Internal team, low sensitivity data |
+| **Level 2: gVisor** | Add `--runtime=runsc` to Docker containers | User-space kernel intercepts all syscalls | Higher sensitivity data, or after a Docker CVE |
+| **Level 3: Per-agent subnets** | Separate private subnet per agent, per-subnet NACLs | Network-level isolation layered on container isolation | Compliance requires network segmentation |
+| **Level 4: Per-user VPCs** | Separate VPC per user, connected via Transit Gateway | Full network boundary isolation | Client contractual requirements, regulated data |
+
+Each level is additive — higher levels include all controls from lower levels.
 
 ## Shared Resources — Security Boundaries
 
 | Shared Resource | Risk | Mitigation |
 |---|---|---|
-| EC2 host | Container escape gives access to all users' data | Docker isolation + systemd hardening + non-root; accept as residual risk for internal team, upgrade to per-host if needed |
-| Slack app tokens (`xapp-`, `xoxb-`) | Both containers receive all Slack events | Channel allowlist + config immutability controls above |
-| fck-nat instance | Shared egress path | No access to application traffic (TLS end-to-end) |
-| Public IP (NAT EIP) | External IP correlation | Low severity; acceptable for internal team use |
-
-## Isolation Upgrade Path
-
-The current architecture uses Docker container isolation on a shared host. This is appropriate for
-a small internal team but can be upgraded incrementally if client requirements or threat landscape change.
-
-| Level | Isolation Model | Container Escape Protection | When to consider |
-|---|---|---|---|
-| **Current** | Docker rootless + seccomp + cap-drop on shared host | Escape lands as unprivileged user; no inter-container network | Internal team, low sensitivity data |
-| **Level 2: gVisor** | Add `--runtime=runsc` to Docker containers | User-space kernel intercepts all syscalls; host kernel not directly reachable | Higher sensitivity data, or after a Docker CVE shakes confidence |
-| **Level 3: Per-user subnets** | Separate private subnet per user within the shared VPC, per-subnet NACLs denying cross-subnet traffic | Network-level isolation layered on top of container isolation; even a host compromise on one subnet can't reach another | Multiple hosts needed for capacity, or compliance requires network segmentation |
-| **Level 4: Per-user VPCs** | Separate VPC per user, connected via Transit Gateway or VPC Peering to a shared NAT hub | Full network boundary isolation; no shared kernel, no shared network | Client contractual requirements, regulated data, or multi-tenant with untrusted users |
-
-Each level is additive — higher levels include all controls from lower levels. The Terraform
-module should be structured so that moving up a level is a configuration change, not a re-architecture.
+| Host (all providers) | Container escape gives access to all agents' data | Docker isolation + non-root + cap-drop; upgrade path documented |
+| Slack app tokens | All containers receive all Slack events | Channel allowlist + config immutability |
+| fck-nat instance (AWS) | Shared egress path | No access to application traffic (TLS end-to-end) |
+| Public IP / NAT EIP (AWS) | External IP correlation | Low severity; acceptable for internal use |
 
 ## Accepted Residual Risks
 
 | Risk | Severity | Rationale for acceptance |
 |---|---|---|
-| Container escape on shared host | Medium | Docker rootless + seccomp + capability drops make this difficult; blast radius is limited to internal team data; upgrade path documented above |
-| Shared Slack tokens across containers | Low | Both containers receive all events but only act on allowlisted channels; config is immutable; no cross-user data in the Slack events themselves |
-| IP correlation by external APIs | Low | All traffic exits through the same NAT EIP; reveals shared infrastructure but not traffic content |
-| Shared kernel vulnerabilities | Medium | A host kernel CVE affects all containers; mitigated by unattended-upgrades and monitoring; gVisor (Level 2) eliminates this |
+| Container escape on shared host | Medium | cap-drop + seccomp + no-new-privileges make this difficult; upgrade path documented |
+| Shared Slack tokens across containers | Low | Channel allowlist + immutable config prevents cross-agent access |
+| Port-443-only egress (until domain allowlisting) | High | Compromised agent can exfiltrate to any HTTPS endpoint. Mitigated by Spec 2 (egress allowlisting). |
+| Secrets on disk (local/remote) | Low | Mode 0400 files; disk encryption is operator responsibility. AWS uses Secrets Manager. |
+| IP correlation by external APIs | Low | All traffic exits through same NAT; reveals shared infrastructure but not content |
+| Shared kernel vulnerabilities | Medium | Host kernel CVE affects all containers; mitigated by auto-upgrades; gVisor eliminates |
 
-## Open Questions (to revisit as we learn)
+## Open Questions
 
-- Should Anthropic API keys be per-user for usage tracking, or shared?
-- Do we need egress domain allowlisting (e.g., Squid proxy) or is port-443-only sufficient?
 - What OpenClaw skills/plugins will be enabled, and do any need additional sandboxing?
-- Should we add GuardDuty or AWS Config rules for drift detection in v2?
 - Is Docker's default seccomp profile sufficient, or do we need a custom profile for OpenClaw's syscall patterns?
-- Should we evaluate gVisor before first deploy, or start with Docker rootless and upgrade later?
+- Should Conga Line validate OpenShell policy files even when OpenShell isn't the enforcement engine?
