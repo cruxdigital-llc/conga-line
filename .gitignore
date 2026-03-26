@@ -16,3 +16,6 @@ cli/dist/
 
 # MCP config (user-specific)
 .mcp.json
+
+# User-specific policy config
+conga-policy.yaml
