@@ -86,6 +86,15 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 13. Egress Domain Allowlisting — ✅ Verified and Complete
 *See `specs/2026-03-25_feature_egress-allowlist/` for full trace*
 
+### 14. Channel Abstraction — Specified, Ready for Implementation
+*See `specs/2026-03-26_feature_channel-abstraction/` for full trace*
+- [x] Requirements defined
+- [x] Plan defined (7 phases)
+- [x] Spec defined (11 sections: data models, interface, Slack impl, modified functions, CLI, MCP, providers, import graph, edge cases, migration, file summary)
+- [x] Persona review passed (Architect + QA + PM; QA recommends migration warning — non-blocking)
+- [x] Standards gate passed (14 standards, 0 violations)
+- [ ] Implementation: 5 new files, ~15 modified, ~5 test files
+
 ### 11. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
