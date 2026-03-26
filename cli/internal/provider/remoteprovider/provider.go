@@ -227,11 +227,11 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		egressEnforce = true // Remote always enforces when domains defined
 	}
 
-	// 6. Create Docker network
+	// 6. Create Docker network (--internal when egress enforced)
 	netName := networkName(cfg.Name)
 	if !p.networkExists(ctx, netName) {
 		fmt.Printf("Creating network %s...\n", netName)
-		if err := p.createNetwork(ctx, netName); err != nil {
+		if err := p.createNetwork(ctx, netName, egressEnforce); err != nil {
 			return fmt.Errorf("failed to create network: %w", err)
 		}
 	}
@@ -276,6 +276,13 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
+	// Start gateway port forwarder (replaces -p on --internal networks)
+	if egressEnforce {
+		if err := p.startPortForwarder(ctx, cfg.Name, cfg.GatewayPort); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to start port forwarder: %v\n", err)
+		}
+	}
+
 	// 9. Update routing.json
 	if err := p.regenerateRouting(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
@@ -301,8 +308,9 @@ func (p *RemoteProvider) RemoveAgent(ctx context.Context, name string, deleteSec
 		p.removeContainer(ctx, cName)
 	}
 
-	// Stop per-agent egress proxy
+	// Stop per-agent egress proxy and port forwarder
 	p.stopAgentEgressProxy(ctx, name)
+	p.stopPortForwarder(ctx, name)
 
 	if p.containerExists(ctx, routerContainer) {
 		p.disconnectNetwork(ctx, netName, routerContainer)
@@ -402,6 +410,10 @@ func (p *RemoteProvider) PauseAgent(ctx context.Context, name string) error {
 		p.stopContainer(ctx, cName)
 		p.removeContainer(ctx, cName)
 	}
+
+	// Stop egress proxy and port forwarder
+	p.stopAgentEgressProxy(ctx, name)
+	p.stopPortForwarder(ctx, name)
 
 	netName := networkName(name)
 	if p.containerExists(ctx, routerContainer) {
@@ -508,18 +520,29 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		p.removeContainer(ctx, cName)
 	}
 
-	// Stop old egress proxy
+	// Stop old egress proxy and port forwarder
 	p.stopAgentEgressProxy(ctx, agentName)
+	p.stopPortForwarder(ctx, agentName)
 
 	image := p.getConfigValue("image")
 	if image == "" {
 		image = "ghcr.io/openclaw/openclaw:latest"
 	}
 
+	// Recreate network with correct --internal flag.
+	// The network type may need to change (standard → internal or vice versa)
+	// when the egress policy changes.
 	netName := networkName(agentName)
-	if !p.networkExists(ctx, netName) {
-		p.createNetwork(ctx, netName)
+	if p.networkExists(ctx, netName) {
+		if p.containerExists(ctx, routerContainer) {
+			p.disconnectNetwork(ctx, netName, routerContainer)
+		}
+		if p.containerExists(ctx, egressProxyContainer) {
+			p.disconnectNetwork(ctx, netName, egressProxyContainer)
+		}
+		p.removeNetwork(ctx, netName)
 	}
+	p.createNetwork(ctx, netName, egressEnforce)
 
 	// Start per-agent egress proxy (when policy defines domains)
 	if egressEnforce {
@@ -546,6 +569,13 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		EgressProxyName: policy.EgressProxyName(agentName),
 	}); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
+	}
+
+	// Start gateway port forwarder (replaces -p on --internal networks)
+	if egressEnforce {
+		if err := p.startPortForwarder(ctx, agentName, cfg.GatewayPort); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to start port forwarder: %v\n", err)
+		}
 	}
 
 	if p.containerExists(ctx, egressProxyContainer) {
@@ -706,6 +736,8 @@ func (p *RemoteProvider) removeAgentDocker(ctx context.Context, name string) {
 		p.stopContainer(ctx, cName)
 		p.removeContainer(ctx, cName)
 	}
+	p.stopAgentEgressProxy(ctx, name)
+	p.stopPortForwarder(ctx, name)
 	if p.networkExists(ctx, netName) {
 		p.removeNetwork(ctx, netName)
 	}
@@ -739,6 +771,14 @@ func (p *RemoteProvider) cleanupDockerByPrefix(ctx context.Context) {
 		fmt.Printf("Removing network %s...\n", egressNetwork)
 		p.removeNetwork(ctx, egressNetwork)
 	}
+	if p.networkExists(ctx, policy.EgressExtNetwork) {
+		fmt.Printf("Removing network %s...\n", policy.EgressExtNetwork)
+		p.removeNetwork(ctx, policy.EgressExtNetwork)
+	}
+
+	// Kill any orphaned socat port forwarders
+	p.ssh.Run(ctx, "pkill -f 'socat.*conga' 2>/dev/null || true")
+	p.ssh.Run(ctx, "rm -f /run/conga-fwd-conga-*.pid")
 }
 
 // --- infrastructure helpers ---
@@ -892,10 +932,17 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 		}
 	}
 
-	// Ensure network exists
+	// Ensure agent network exists (caller should have created it, but be safe)
 	if !p.networkExists(ctx, netName) {
-		if err := p.createNetwork(ctx, netName); err != nil {
+		if err := p.createNetwork(ctx, netName, true); err != nil {
 			return fmt.Errorf("creating network: %w", err)
+		}
+	}
+
+	// Ensure external network exists for dual-homing the proxy
+	if !p.networkExists(ctx, policy.EgressExtNetwork) {
+		if err := p.createNetwork(ctx, policy.EgressExtNetwork, false); err != nil {
+			return fmt.Errorf("creating egress external network: %w", err)
 		}
 	}
 
@@ -914,6 +961,13 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 
 	if _, err := p.ssh.Run(ctx, cmd); err != nil {
 		return fmt.Errorf("starting egress proxy: %w", err)
+	}
+
+	// Connect proxy to external network for DNS resolution and internet access.
+	// Without this, the proxy is trapped on the --internal network and cannot
+	// resolve or reach external hosts (this was the bug in the previous attempt).
+	if err := p.connectNetwork(ctx, policy.EgressExtNetwork, proxyName); err != nil {
+		return fmt.Errorf("connecting proxy to external network: %w", err)
 	}
 
 	fmt.Printf("  Egress proxy started for %s (%d domains allowed)\n", agentName, len(domains))

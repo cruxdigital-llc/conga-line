@@ -14,9 +14,14 @@ const EgressProxyImage = "conga-egress-proxy"
 // Pinned for reproducibility and supply chain safety.
 const EgressProxyBaseImage = "alpine:3.21"
 
+// EgressExtNetwork is the shared bridge network that gives egress proxy containers
+// internet access when agent networks are --internal. Standard (not internal) bridge.
+const EgressExtNetwork = "conga-egress-ext"
+
 // EgressProxyDockerfile returns the Dockerfile content for building the egress proxy image.
+// Includes socat for the local provider's gateway forwarder container.
 func EgressProxyDockerfile() string {
-	return "FROM " + EgressProxyBaseImage + "\nRUN apk add --no-cache tinyproxy >/dev/null 2>&1\n"
+	return "FROM " + EgressProxyBaseImage + "\nRUN apk add --no-cache tinyproxy socat >/dev/null 2>&1\n"
 }
 
 // LoadEgressPolicy loads the policy file, merges for the given agent, and returns

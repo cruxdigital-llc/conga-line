@@ -434,13 +434,13 @@ func (p *RemoteProvider) installDocker(ctx context.Context) error {
 	script := `#!/bin/sh
 set -e
 if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -qq && apt-get install -y -qq docker.io >/dev/null
+    apt-get update -qq && apt-get install -y -qq docker.io socat >/dev/null
 elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y -q docker
+    dnf install -y -q docker socat
 elif command -v yum >/dev/null 2>&1; then
-    yum install -y -q docker
+    yum install -y -q docker socat
 elif command -v pacman >/dev/null 2>&1; then
-    pacman -S --noconfirm docker >/dev/null
+    pacman -S --noconfirm docker socat >/dev/null
 else
     echo "UNSUPPORTED_OS" >&2
     exit 1

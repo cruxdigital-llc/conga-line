@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/cruxdigital-llc/conga-line/cli/internal/policy"
 )
 
 // dockerRun executes a docker command and returns stdout.
@@ -43,11 +45,15 @@ func networkName(agentName string) string {
 
 // createNetwork creates a Docker bridge network for agent isolation.
 // Each agent gets its own network to prevent inter-container communication.
-// Note: We don't use --internal because it prevents -p port publishing for the
-// gateway web UI. Egress restriction is enforced via per-agent tinyproxy
-// wired through HTTPS_PROXY/HTTP_PROXY env vars (see startAgentEgressProxy).
-func createNetwork(ctx context.Context, name string) error {
-	_, err := dockerRun(ctx, "network", "create", name, "--driver", "bridge")
+// When internal is true, the network is created with --internal which removes
+// the default gateway and blocks all traffic to/from external networks.
+// Gateway access is provided by a forwarder container (see startPortForwarder).
+func createNetwork(ctx context.Context, name string, internal bool) error {
+	args := []string{"network", "create", name, "--driver", "bridge"}
+	if internal {
+		args = append(args, "--internal")
+	}
+	_, err := dockerRun(ctx, args...)
 	return err
 }
 
@@ -83,11 +89,16 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		"--pids-limit", "256",
 		"-e", "NODE_OPTIONS=--max-old-space-size=1536",
 		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort),
 	}
+
+	// When egress is enforced, the network is --internal and -p doesn't work.
+	// Gateway access is provided by a forwarder container (see startPortForwarder).
+	if !opts.EgressEnforce {
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
+	}
+
 	if opts.EgressEnforce && opts.EgressProxyName != "" {
 		// Proxy is on the same Docker network — Docker DNS resolves the container name.
-		// No --dns override needed since the proxy no longer runs a DNS forwarder.
 		args = append(args,
 			"-e", fmt.Sprintf("HTTPS_PROXY=http://%s:3128", opts.EgressProxyName),
 			"-e", fmt.Sprintf("HTTP_PROXY=http://%s:3128", opts.EgressProxyName),
@@ -244,4 +255,52 @@ func imageExists(ctx context.Context, image string) bool {
 func imageHasBinary(ctx context.Context, image string, binary string) bool {
 	_, err := dockerRun(ctx, "run", "--rm", image, "which", binary)
 	return err == nil
+}
+
+// forwarderName returns the Docker container name for a gateway port forwarder.
+func forwarderName(agentName string) string {
+	return "conga-fwd-" + agentName
+}
+
+// startPortForwarder starts a socat container that forwards gateway traffic
+// from a published port to the agent container on the internal network.
+// On macOS Docker Desktop, the host can't route to container IPs directly,
+// so we use a container-based forwarder instead of host socat.
+// The forwarder starts on the default bridge (with -p) then connects to the
+// agent's internal network where it resolves the agent by Docker DNS.
+func startPortForwarder(ctx context.Context, agentName string, port int) error {
+	fwdName := forwarderName(agentName)
+	target := containerName(agentName)
+
+	if containerExists(ctx, fwdName) {
+		removeContainer(ctx, fwdName)
+	}
+
+	args := []string{"run", "-d",
+		"--name", fwdName,
+		"--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges",
+		"--memory", "32m",
+		"--read-only",
+		"-p", fmt.Sprintf("127.0.0.1:%d:%d", port, port),
+		policy.EgressProxyImage,
+		"socat",
+		fmt.Sprintf("TCP-LISTEN:%d,fork,reuseaddr", port),
+		fmt.Sprintf("TCP:%s:%d", target, port),
+	}
+
+	if _, err := dockerRun(ctx, args...); err != nil {
+		return fmt.Errorf("starting port forwarder: %w", err)
+	}
+
+	// Connect to agent's internal network so socat can resolve the agent hostname
+	return connectNetwork(ctx, networkName(agentName), fwdName)
+}
+
+// stopPortForwarder removes the gateway port forwarder container.
+func stopPortForwarder(ctx context.Context, agentName string) {
+	fwdName := forwarderName(agentName)
+	if containerExists(ctx, fwdName) {
+		removeContainer(ctx, fwdName)
+	}
 }

@@ -33,8 +33,15 @@ func networkName(agentName string) string {
 }
 
 // createNetwork creates a Docker bridge network on the remote host.
-func (p *RemoteProvider) createNetwork(ctx context.Context, name string) error {
-	_, err := p.dockerRun(ctx, "network", "create", name, "--driver", "bridge")
+// When internal is true, the network is created with --internal which removes
+// the default gateway and blocks all traffic to/from external networks.
+// Containers on an internal network can only communicate with each other.
+func (p *RemoteProvider) createNetwork(ctx context.Context, name string, internal bool) error {
+	cmd := "docker network create " + shellQuote(name) + " --driver bridge"
+	if internal {
+		cmd += " --internal"
+	}
+	_, err := p.ssh.Run(ctx, cmd)
 	return err
 }
 
@@ -82,7 +89,12 @@ func (p *RemoteProvider) runAgentContainer(ctx context.Context, opts agentContai
 		"--pids-limit", "256",
 		"-e", "NODE_OPTIONS=--max-old-space-size=1536",
 		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort),
+	}
+
+	// When egress is enforced, the network is --internal and -p doesn't work.
+	// Gateway access is provided by socat on the host instead (see startPortForwarder).
+	if !opts.EgressEnforce {
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
 	}
 
 	if opts.EgressEnforce && opts.EgressProxyName != "" {
@@ -226,4 +238,45 @@ func (p *RemoteProvider) buildImage(ctx context.Context, dir, tag string) error 
 func (p *RemoteProvider) imageExists(ctx context.Context, image string) bool {
 	_, err := p.dockerRun(ctx, "image", "inspect", image)
 	return err == nil
+}
+
+// portForwarderPidFile returns the PID file path for an agent's socat port forwarder.
+func portForwarderPidFile(cName string) string {
+	return fmt.Sprintf("/run/conga-fwd-%s.pid", cName)
+}
+
+// startPortForwarder starts a socat process on the remote host that forwards
+// localhost:port to the agent container's IP on the internal network.
+// The host can always route to container IPs on Docker bridges (including
+// --internal ones) because --internal only restricts the container's routing
+// table, not the host's.
+func (p *RemoteProvider) startPortForwarder(ctx context.Context, agentName string, port int) error {
+	cName := containerName(agentName)
+	netName := networkName(agentName)
+
+	// Get container IP on the internal network
+	tpl := fmt.Sprintf("{{(index .NetworkSettings.Networks %q).IPAddress}}", netName)
+	output, err := p.dockerRun(ctx, "inspect", "-f", tpl, cName)
+	if err != nil {
+		return fmt.Errorf("getting container IP: %w", err)
+	}
+	ip := strings.TrimSpace(output)
+	if ip == "" {
+		return fmt.Errorf("container %s has no IP on network %s", cName, netName)
+	}
+
+	pidFile := portForwarderPidFile(cName)
+	cmd := fmt.Sprintf(
+		"nohup socat TCP-LISTEN:%d,bind=127.0.0.1,fork,reuseaddr TCP:%s:%d </dev/null >/dev/null 2>&1 & echo $! > %s",
+		port, ip, port, pidFile)
+	_, err = p.ssh.Run(ctx, cmd)
+	return err
+}
+
+// stopPortForwarder kills the socat process for an agent's gateway forwarder.
+func (p *RemoteProvider) stopPortForwarder(ctx context.Context, agentName string) {
+	pidFile := portForwarderPidFile(containerName(agentName))
+	p.ssh.Run(ctx, fmt.Sprintf(
+		"if [ -f %s ]; then kill $(cat %s) 2>/dev/null; rm -f %s; fi",
+		pidFile, pidFile, pidFile))
 }

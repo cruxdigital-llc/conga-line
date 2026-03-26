@@ -104,6 +104,18 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] Phase 4: MCP tool tests (`tools_policy_test.go`) — 16 tests
 - [x] Phase 5: Full test suite passes
 
+### 16. Network-Level Egress Enforcement — Specified, Ready for Implementation
+*Lead: Architect + QA*
+*See `specs/2026-03-26_feature_network-level-egress-enforcement/` for full trace*
+- [x] Requirements defined: `specs/2026-03-26_feature_network-level-egress-enforcement/requirements.md`
+- [x] Plan defined: `specs/2026-03-26_feature_network-level-egress-enforcement/plan.md`
+- [x] Spec defined: `specs/2026-03-26_feature_network-level-egress-enforcement/spec.md`
+- [x] Persona review passed (Architect + QA)
+- [x] Standards gate passed (10/10 checks clear, resolves "cooperative proxy" residual risk)
+- [x] Phase 1: Remote provider — `--internal` networks, dual-homed proxy, socat port forwarding
+- [x] Phase 2: Local provider — forwarder container for macOS Docker Desktop
+- [ ] Phase 3: AWS provider — bootstrap script + systemd integration (deferred)
+
 ### 11. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
@@ -112,7 +124,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - CLI has zero test coverage — addressed by CLI Hardening spec (Phase 4)
 - CLI `admin.go` is 549 lines with 6 commands — addressed by CLI Hardening spec (Phase 5)
 - Per-user API keys: each employee brings their own credentials and plugins
-- Open question: egress domain allowlisting needed or port-443-only sufficient
+- Egress proxy enforcement is advisory (HTTPS_PROXY env vars) — agents can bypass. Addressed by Network-Level Egress Enforcement spec (Feature 16)
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 

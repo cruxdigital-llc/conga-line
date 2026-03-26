@@ -72,9 +72,16 @@ func (s *Server) toolSetup() server.ServerTool {
 		},
 		Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			secrets := map[string]string{}
-			for _, key := range []string{"slack-bot-token", "slack-signing-secret", "slack-app-token", "google-client-id", "google-client-secret"} {
-				if v := req.GetString(key, ""); v != "" {
-					secrets[key] = v
+			// MCP params use snake_case; secret names use kebab-case
+			for _, pair := range [][2]string{
+				{"slack_bot_token", "slack-bot-token"},
+				{"slack_signing_secret", "slack-signing-secret"},
+				{"slack_app_token", "slack-app-token"},
+				{"google_client_id", "google-client-id"},
+				{"google_client_secret", "google-client-secret"},
+			} {
+				if v := req.GetString(pair[0], ""); v != "" {
+					secrets[pair[1]] = v
 				}
 			}
 			cfg := &provider.SetupConfig{
