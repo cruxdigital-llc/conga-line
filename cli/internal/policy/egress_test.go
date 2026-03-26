@@ -118,46 +118,49 @@ func TestGenerateProxyConfAllowlist(t *testing.T) {
 	domains := []string{"api.anthropic.com", "*.slack.com", "github.com"}
 	result := GenerateProxyConf(domains)
 
-	if !strings.Contains(result, "http_port 3128") {
-		t.Error("expected Squid http_port directive")
+	if !strings.Contains(result, "Port 3128") {
+		t.Error("expected tinyproxy Port directive")
 	}
-	if !strings.Contains(result, "acl allowed_domains dstdomain") {
-		t.Error("expected Squid dstdomain ACL")
-	}
-	if !strings.Contains(result, " api.anthropic.com") {
-		t.Error("expected exact domain in ACL")
-	}
-	if !strings.Contains(result, " .slack.com") {
-		t.Error("expected wildcard domain as .slack.com in ACL")
-	}
-	if !strings.Contains(result, " github.com") {
-		t.Error("expected github.com in ACL")
-	}
-	if !strings.Contains(result, "http_access allow CONNECT allowed_domains SSL_ports") {
-		t.Error("expected CONNECT access rule")
-	}
-	if !strings.Contains(result, "http_access deny all") {
+	if !strings.Contains(result, "FilterDefaultDeny Yes") {
 		t.Error("expected default deny in allowlist mode")
 	}
-	if !strings.Contains(result, "cache deny all") {
-		t.Error("expected cache disabled")
+	if !strings.Contains(result, "FilterType fnmatch") {
+		t.Error("expected fnmatch filter type")
 	}
-	if !strings.Contains(result, "access_log stdio:/dev/stdout") {
-		t.Error("expected access logging to stdout")
+	if !strings.Contains(result, "ConnectPort 443") {
+		t.Error("expected CONNECT port restriction")
 	}
 }
 
 func TestGenerateProxyConfPassthrough(t *testing.T) {
 	result := GenerateProxyConf(nil)
-	if !strings.Contains(result, "http_access allow all") {
-		t.Error("expected passthrough mode with nil domains")
+	if strings.Contains(result, "Filter") {
+		t.Error("expected no filter in passthrough mode")
+	}
+	if !strings.Contains(result, "Port 3128") {
+		t.Error("expected port directive in passthrough mode")
 	}
 }
 
 func TestGenerateProxyConfEmptySlice(t *testing.T) {
 	result := GenerateProxyConf([]string{})
-	if !strings.Contains(result, "http_access allow all") {
-		t.Error("expected passthrough mode with empty domains")
+	if strings.Contains(result, "Filter") {
+		t.Error("expected no filter with empty domains")
+	}
+}
+
+func TestGenerateProxyFilter(t *testing.T) {
+	domains := []string{"api.anthropic.com", "*.slack.com", "GitHub.Com"}
+	result := GenerateProxyFilter(domains)
+
+	if !strings.Contains(result, "api.anthropic.com\n") {
+		t.Error("expected exact domain in filter")
+	}
+	if !strings.Contains(result, "*.slack.com\n") {
+		t.Error("expected wildcard domain in filter")
+	}
+	if !strings.Contains(result, "github.com\n") {
+		t.Error("expected lowercased domain in filter")
 	}
 }
 
@@ -166,7 +169,7 @@ func TestEgressProxyDockerfile(t *testing.T) {
 	if !strings.Contains(df, "FROM alpine:3.21") {
 		t.Error("expected alpine base image")
 	}
-	if !strings.Contains(df, "apk add") && !strings.Contains(df, "squid") {
-		t.Error("expected squid installation")
+	if !strings.Contains(df, "tinyproxy") {
+		t.Error("expected tinyproxy installation")
 	}
 }

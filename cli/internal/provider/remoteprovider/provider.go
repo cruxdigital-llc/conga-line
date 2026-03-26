@@ -855,7 +855,7 @@ func (p *RemoteProvider) ensureEgressProxy(ctx context.Context) {
 	fmt.Println("  Egress proxy started.")
 }
 
-// startAgentEgressProxy starts a per-agent nginx proxy for egress domain filtering on the remote host.
+// startAgentEgressProxy starts a per-agent tinyproxy for egress domain filtering on the remote host.
 func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName string, domains []string) error {
 	proxyName := policy.EgressProxyName(agentName)
 	netName := networkName(agentName)
@@ -874,11 +874,20 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 		}
 	}
 
-	// Generate and upload Squid config
+	// Generate and upload tinyproxy config
 	conf := policy.GenerateProxyConf(domains)
 	confPath := posixpath.Join(p.remoteConfigDir(), fmt.Sprintf("egress-%s.conf", agentName))
-	if err := p.ssh.Upload(confPath, []byte(conf), 0400); err != nil {
+	if err := p.ssh.Upload(confPath, []byte(conf), 0444); err != nil {
 		return fmt.Errorf("uploading egress config: %w", err)
+	}
+
+	// Upload filter file (domain allowlist)
+	filterPath := posixpath.Join(p.remoteConfigDir(), fmt.Sprintf("egress-%s.filter", agentName))
+	if len(domains) > 0 {
+		filter := policy.GenerateProxyFilter(domains)
+		if err := p.ssh.Upload(filterPath, []byte(filter), 0444); err != nil {
+			return fmt.Errorf("uploading egress filter: %w", err)
+		}
 	}
 
 	// Ensure network exists
@@ -888,16 +897,18 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 		}
 	}
 
-	// Start Squid proxy on agent's network.
-	// Runs as squid user (uid 31) so no SETUID/SETGID capabilities needed.
-	// tmpfs mounts provide writable directories for Squid's pid/log files
-	// while keeping the root filesystem read-only.
+	// Start tinyproxy on agent's network.
+	// Runs as nobody (uid 65534) — tinyproxy drops privileges internally.
+	// tmpfs for /run provides writable PID file location.
 	cmd := fmt.Sprintf("docker run -d --name %s --network %s "+
-		"--cap-drop ALL --security-opt no-new-privileges --memory 128m --read-only "+
-		"--user squid:squid "+
-		"--tmpfs /var/run:rw,noexec,nosuid,uid=31,gid=31 --tmpfs /var/log/squid:rw,noexec,nosuid,uid=31,gid=31 --tmpfs /var/spool/squid:rw,noexec,nosuid,uid=31,gid=31 "+
-		"-v %s:/etc/squid/squid.conf:ro %s squid -N -f /etc/squid/squid.conf",
-		shellQuote(proxyName), shellQuote(netName), shellQuote(confPath), policy.EgressProxyImage)
+		"--cap-drop ALL --security-opt no-new-privileges --memory 64m --read-only "+
+		"--tmpfs /run:rw,noexec,nosuid --tmpfs /var/log/tinyproxy:rw,noexec,nosuid "+
+		"-v %s:/etc/tinyproxy/tinyproxy.conf:ro ",
+		shellQuote(proxyName), shellQuote(netName), shellQuote(confPath))
+	if len(domains) > 0 {
+		cmd += fmt.Sprintf("-v %s:/etc/tinyproxy/filter:ro ", shellQuote(filterPath))
+	}
+	cmd += fmt.Sprintf("%s tinyproxy -d -c /etc/tinyproxy/tinyproxy.conf", policy.EgressProxyImage)
 
 	if _, err := p.ssh.Run(ctx, cmd); err != nil {
 		return fmt.Errorf("starting egress proxy: %w", err)

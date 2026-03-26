@@ -1113,14 +1113,23 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 		}
 	}
 
-	// Generate Squid config
+	// Generate tinyproxy config
 	conf := policy.GenerateProxyConf(domains)
 	confPath := filepath.Join(p.configDir(), fmt.Sprintf("egress-%s.conf", agentName))
 	if err := os.MkdirAll(filepath.Dir(confPath), 0700); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
-	if err := os.WriteFile(confPath, []byte(conf), 0400); err != nil {
+	if err := os.WriteFile(confPath, []byte(conf), 0444); err != nil {
 		return fmt.Errorf("writing egress config: %w", err)
+	}
+
+	// Write filter file (domain allowlist)
+	filterPath := filepath.Join(p.configDir(), fmt.Sprintf("egress-%s.filter", agentName))
+	if len(domains) > 0 {
+		filter := policy.GenerateProxyFilter(domains)
+		if err := os.WriteFile(filterPath, []byte(filter), 0444); err != nil {
+			return fmt.Errorf("writing egress filter: %w", err)
+		}
 	}
 
 	// Ensure network exists
@@ -1130,25 +1139,26 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 		}
 	}
 
-	// Start Squid proxy on agent's network.
-	// Runs as squid user (uid 31) so no SETUID/SETGID capabilities needed.
-	// tmpfs mounts provide writable directories for Squid's pid/log files
-	// while keeping the root filesystem read-only.
-	_, err := dockerRun(ctx, "run", "-d",
+	// Start tinyproxy on agent's network.
+	// Runs as nobody — tinyproxy drops privileges internally.
+	// tmpfs for /run provides writable PID file location.
+	args := []string{"run", "-d",
 		"--name", proxyName,
 		"--network", netName,
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges",
-		"--memory", "128m",
+		"--memory", "64m",
 		"--read-only",
-		"--user", "squid:squid",
-		"--tmpfs", "/var/run:rw,noexec,nosuid,uid=31,gid=31",
-		"--tmpfs", "/var/log/squid:rw,noexec,nosuid,uid=31,gid=31",
-		"--tmpfs", "/var/spool/squid:rw,noexec,nosuid,uid=31,gid=31",
-		"-v", fmt.Sprintf("%s:/etc/squid/squid.conf:ro", confPath),
-		policy.EgressProxyImage,
-		"squid", "-N", "-f", "/etc/squid/squid.conf",
-	)
+		"--tmpfs", "/run:rw,noexec,nosuid",
+		"--tmpfs", "/var/log/tinyproxy:rw,noexec,nosuid",
+		"-v", fmt.Sprintf("%s:/etc/tinyproxy/tinyproxy.conf:ro", confPath),
+	}
+	if len(domains) > 0 {
+		args = append(args, "-v", fmt.Sprintf("%s:/etc/tinyproxy/filter:ro", filterPath))
+	}
+	args = append(args, policy.EgressProxyImage, "tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf")
+
+	_, err := dockerRun(ctx, args...)
 	if err != nil {
 		return fmt.Errorf("starting egress proxy: %w", err)
 	}
@@ -1157,7 +1167,7 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 	return nil
 }
 
-// buildEgressProxyImage builds the egress proxy Docker image locally from alpine + squid.
+// buildEgressProxyImage builds the egress proxy Docker image locally from alpine + tinyproxy.
 func buildEgressProxyImage(ctx context.Context) error {
 	dir, err := os.MkdirTemp("", "conga-egress-build-*")
 	if err != nil {
