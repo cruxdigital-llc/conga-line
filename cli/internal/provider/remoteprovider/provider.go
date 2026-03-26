@@ -691,8 +691,9 @@ func (p *RemoteProvider) Teardown(ctx context.Context) error {
 	fmt.Printf("Removing %s...\n", p.remoteDir)
 	p.ssh.Run(ctx, fmt.Sprintf("rm -rf %s", shellQuote(p.remoteDir)))
 
-	// Clear local remote config
+	// Clear local remote config and policy
 	os.Remove(filepath.Join(p.dataDir, "remote-config.json"))
+	os.Remove(filepath.Join(p.dataDir, "conga-policy.yaml"))
 
 	fmt.Println("Remote deployment torn down.")
 	return nil
@@ -863,9 +864,10 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 	// Stop existing proxy if any
 	p.ssh.Run(ctx, fmt.Sprintf("docker rm -f %s 2>/dev/null || true", shellQuote(proxyName)))
 
-	// Build proxy image if not present on remote
+	// Build proxy image if not present or stale (e.g. old nginx-based image from pre-tinyproxy era)
 	exists, _ := p.ssh.Run(ctx, fmt.Sprintf("docker image inspect %s >/dev/null 2>&1 && echo yes || echo no", policy.EgressProxyImage))
-	if strings.TrimSpace(exists) != "yes" {
+	hasTinyproxy, _ := p.ssh.Run(ctx, fmt.Sprintf("docker run --rm %s which tinyproxy >/dev/null 2>&1 && echo yes || echo no", policy.EgressProxyImage))
+	if strings.TrimSpace(exists) != "yes" || strings.TrimSpace(hasTinyproxy) != "yes" {
 		fmt.Printf("  Building egress proxy image on remote...\n")
 		buildCmd := fmt.Sprintf("mkdir -p /tmp/conga-egress-build && echo '%s' > /tmp/conga-egress-build/Dockerfile && docker build -t %s /tmp/conga-egress-build && rm -rf /tmp/conga-egress-build",
 			policy.EgressProxyDockerfile(), policy.EgressProxyImage)

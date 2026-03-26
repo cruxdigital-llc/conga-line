@@ -1,4 +1,2 @@
-FROM nginx:alpine
-COPY nginx.conf /etc/nginx/nginx.conf
-EXPOSE 3128 53
-CMD ["nginx", "-g", "daemon off;"]
+FROM alpine:3.21
+RUN apk add --no-cache tinyproxy >/dev/null 2>&1

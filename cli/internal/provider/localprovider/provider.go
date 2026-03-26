@@ -1105,8 +1105,8 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 		removeContainer(ctx, proxyName)
 	}
 
-	// Build proxy image if not present
-	if !imageExists(ctx, policy.EgressProxyImage) {
+	// Build proxy image if not present or stale (e.g. old nginx-based image from pre-tinyproxy era)
+	if !imageExists(ctx, policy.EgressProxyImage) || !imageHasBinary(ctx, policy.EgressProxyImage, "tinyproxy") {
 		fmt.Printf("  Building egress proxy image...\n")
 		if err := buildEgressProxyImage(ctx); err != nil {
 			return fmt.Errorf("building egress proxy image: %w", err)

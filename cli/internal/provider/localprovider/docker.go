@@ -239,3 +239,9 @@ func imageExists(ctx context.Context, image string) bool {
 	_, err := dockerRun(ctx, "image", "inspect", image)
 	return err == nil
 }
+
+// imageHasBinary checks whether a Docker image contains a specific binary.
+func imageHasBinary(ctx context.Context, image string, binary string) bool {
+	_, err := dockerRun(ctx, "run", "--rm", image, "which", binary)
+	return err == nil
+}
