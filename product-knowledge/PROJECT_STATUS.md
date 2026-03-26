@@ -89,6 +89,20 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 14. Channel Abstraction — Verified Complete
 *See `specs/2026-03-26_feature_channel-abstraction/` for full trace*
 
+### 15. MCP Policy Tools — Implementation Complete, Ready for Verification
+*Lead: Architect + QA*
+*See `specs/2026-03-26_feature_mcp-policy-tools/` for full trace*
+- [x] Requirements defined: `specs/2026-03-26_feature_mcp-policy-tools/requirements.md`
+- [x] Plan defined: `specs/2026-03-26_feature_mcp-policy-tools/plan.md`
+- [x] Spec defined: `specs/2026-03-26_feature_mcp-policy-tools/spec.md`
+- [x] Persona review passed (Architect + QA)
+- [x] Standards gate passed (10/10 checks clear)
+- [x] Phase 1: Policy mutation helpers (`policy/mutate.go`) — 11 tests
+- [x] Phase 2: MCP tool handlers (`mcpserver/tools_policy.go`) — 7 tools
+- [x] Phase 3: Registration & wiring (`tools.go`)
+- [x] Phase 4: MCP tool tests (`tools_policy_test.go`) — 16 tests
+- [x] Phase 5: Full test suite passes
+
 ### 11. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)

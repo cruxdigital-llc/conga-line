@@ -37,6 +37,15 @@ func (s *Server) registerTools() {
 		s.toolSetup(),
 		s.toolCycleHost(),
 		s.toolTeardown(),
+
+		// Policy
+		s.toolPolicyGet(),
+		s.toolPolicyValidate(),
+		s.toolPolicyGetAgent(),
+		s.toolPolicySetEgress(),
+		s.toolPolicySetRouting(),
+		s.toolPolicySetPosture(),
+		s.toolPolicyDeploy(),
 	}
 	s.mcp.AddTools(s.tools...)
 }
