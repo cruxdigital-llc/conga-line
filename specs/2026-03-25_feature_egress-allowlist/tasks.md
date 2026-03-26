@@ -1,6 +1,6 @@
 # Implementation Tasks: Egress Domain Allowlisting
 
-- [x] Task 1: Create `cli/internal/policy/egress.go` — LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateNginxConf
+- [x] Task 1: Create `cli/internal/policy/egress.go` — LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateProxyConf, EgressProxyDockerfile
 - [x] Task 2: Create `cli/internal/policy/egress_test.go` (11 tests pass) — unit tests for egress helpers
 - [x] Task 3: Modify `cli/internal/provider/localprovider/docker.go` — extend agentContainerOpts, add proxy env vars
 - [x] Task 4: Modify `cli/internal/provider/localprovider/provider.go` — policy loading in ProvisionAgent/RefreshAgent, startAgentEgressProxy, stopAgentEgressProxy, RemoveAgent cleanup

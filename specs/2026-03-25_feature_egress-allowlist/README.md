@@ -14,11 +14,11 @@
 - **Docker** — integration testing of egress proxy filtering
 
 ## Decisions
-- **Per-agent proxy, not shared** — a shared proxy requires a union allowlist, leaking one agent's allowed domains to all others. Per-agent nginx proxies give true egress isolation consistent from local through production. ~5MB memory per proxy is negligible.
-- **Nginx everywhere** — same enforcement mechanism on all providers (local, remote, AWS). Drops Squid and iptables for consistency. Squid is a future upgrade if enterprise logging needs grow.
-- **No TLS termination** — proxy inspects SNI hostname only, never decrypts traffic. No MITM CA needed.
+- **Per-agent proxy, not shared** — a shared proxy requires a union allowlist, leaking one agent's allowed domains to all others. Per-agent Squid proxies give true egress isolation consistent from local through production. ~15MB memory per proxy is negligible.
+- **Squid everywhere** — same enforcement mechanism on all providers (local, remote, AWS). Squid handles HTTP CONNECT tunneling natively, which is required because `HTTPS_PROXY=http://...` causes clients to send HTTP CONNECT requests. (Originally designed with nginx stream + ssl_preread, but that cannot handle HTTP CONNECT — it expects raw TLS.)
+- **No TLS termination** — proxy tunnels CONNECT requests to allowed domains, never decrypts traffic. No MITM CA needed.
 - **No Provider interface changes** — enforcement is internal to each provider's ProvisionAgent/RefreshAgent. The policy package provides shared logic.
-- **nginx:alpine directly** — per-agent proxies use the nginx:alpine image with a generated nginx.conf mounted in. No custom Dockerfile needed.
+- **Locally-built image** — per-agent proxies use `conga-egress-proxy` (built from `alpine:3.21` + squid on first use) with a generated `squid.conf` mounted in.
 
 ## Session Log
 - 2026-03-25: plan-feature completed — requirements.md, plan.md created
@@ -29,7 +29,7 @@
 ## Verification Results
 - **Test suite**: 11 egress + 22 policy tests pass, 0 regressions across all packages
 - **Linting**: `go vet ./...` clean
-- **Architect**: Approved — unified per-agent nginx pattern, consistent across providers
+- **Architect**: Approved — unified per-agent Squid proxy pattern, consistent across providers
 - **Product Manager**: Approved — clear progression (no policy → validate → enforce)
 - **QA**: Approved — all public functions tested
 
@@ -73,7 +73,7 @@
 - `specs/2026-03-25_feature_egress-allowlist/plan.md` — created
 - `specs/2026-03-25_feature_egress-allowlist/spec.md` — created
 - `specs/2026-03-25_feature_egress-allowlist/tasks.md` — created
-- `cli/internal/policy/egress.go` — created (LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateNginxConf)
+- `cli/internal/policy/egress.go` — created (LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateProxyConf, EgressProxyDockerfile)
 - `cli/internal/policy/egress_test.go` — created (11 unit tests)
 - `cli/internal/policy/enforcement.go` — modified (remote egress now Enforced, not Partial)
 - `cli/internal/policy/policy_test.go` — modified (updated remote enforcement test)

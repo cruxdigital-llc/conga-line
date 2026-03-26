@@ -342,7 +342,7 @@ func egressReport(e *EgressPolicy, providerName string) []RuleReport {
 		case "local":
 			if e.Mode == "enforce" {
 				level = Enforced
-				detail = "Egress proxy container with SNI-based domain filtering"
+				detail = "Squid proxy container with domain-based CONNECT filtering"
 			} else {
 				level = ValidateOnly
 				detail = "Warnings only; use mode: enforce to activate egress proxy"

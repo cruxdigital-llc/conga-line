@@ -46,14 +46,14 @@ func egressReport(e *EgressPolicy, providerName string) []RuleReport {
 		switch providerName {
 		case "aws":
 			level = Enforced
-			detail = "Per-agent nginx proxy with SNI-based domain filtering"
+			detail = "Per-agent Squid proxy with domain-based CONNECT filtering"
 		case "remote":
 			level = Enforced
-			detail = "Per-agent nginx proxy with SNI-based domain filtering"
+			detail = "Per-agent Squid proxy with domain-based CONNECT filtering"
 		case "local":
 			if e.Mode == "enforce" {
 				level = Enforced
-				detail = "Per-agent nginx proxy with SNI-based domain filtering"
+				detail = "Per-agent Squid proxy with domain-based CONNECT filtering"
 			} else {
 				level = ValidateOnly
 				detail = "Warnings only; use mode: enforce to activate egress proxy"

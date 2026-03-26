@@ -8,7 +8,7 @@ Enforce egress domain restrictions from `conga-policy.yaml` across all three pro
 
 ### Local Provider
 1. **Validate mode (default)**: When `conga-policy.yaml` defines egress domains and `mode: validate`, `ProvisionAgent` and `RefreshAgent` print a warning: "Egress rules defined but not enforced. Use mode: enforce to activate the egress proxy." Agent starts normally.
-2. **Enforce mode**: When `mode: enforce`, the existing egress proxy container (`deploy/egress-proxy/`) is upgraded to filter by SNI hostname against the policy's `allowed_domains` and `blocked_domains`. Agent containers are wired through the proxy via `HTTPS_PROXY` env var and `--dns` flag. Blocked requests fail with connection refused.
+2. **Enforce mode**: When `mode: enforce`, a per-agent Squid proxy container is started to filter by destination domain against the policy's `allowed_domains` and `blocked_domains`. Agent containers are wired through the proxy via `HTTPS_PROXY`/`HTTP_PROXY` env vars. Squid handles HTTP CONNECT for HTTPS tunneling. Blocked requests fail with 403.
 3. **No policy file**: Behavior unchanged. No warnings, no proxy wiring. Egress proxy still runs (existing behavior) but in passthrough mode.
 
 ### Remote Provider

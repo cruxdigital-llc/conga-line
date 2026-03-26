@@ -415,7 +415,7 @@ posture  secrets_backend   enforced       File-based secrets (mode 0400)
 posture  monitoring        enforced       Config integrity monitoring + container logs
 ```
 
-The same policy on AWS would show `enforced` for egress (per-agent nginx proxy with SNI filtering) and `enforced` for standard monitoring (CloudWatch + VPC flow logs).
+The same policy on AWS would show `enforced` for egress (per-agent Squid proxy with domain-based CONNECT filtering) and `enforced` for standard monitoring (CloudWatch + VPC flow logs).
 
 > **Note:** The `mode` field only affects the local provider. Remote and AWS providers always enforce egress when `allowed_domains` are defined — there is no validate-only mode on those tiers.
 
@@ -540,7 +540,7 @@ cli/
 └── go.sum
 
 deploy/
-└── egress-proxy/               # Nginx proxy for HTTPS/DNS-only egress (local)
+└── egress-proxy/               # Squid proxy for HTTPS/HTTP domain-filtered egress (local)
 
 terraform/                      # AWS infrastructure (VPC, EC2, IAM, etc.)
 router/                         # Slack event router (Node.js)
