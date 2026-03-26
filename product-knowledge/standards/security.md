@@ -131,7 +131,7 @@ Each level is additive — higher levels include all controls from lower levels.
 |---|---|---|
 | Container escape on shared host | Medium | cap-drop + seccomp + no-new-privileges make this difficult; upgrade path documented |
 | Shared Slack tokens across containers | Low | Channel allowlist + immutable config prevents cross-agent access |
-| Port-443-only egress (until domain allowlisting) | High | Compromised agent can exfiltrate to any HTTPS endpoint. Mitigated by Spec 2 (egress allowlisting). |
+| Cooperative proxy enforcement | Medium | Egress proxy is set via `HTTPS_PROXY` env var, which well-behaved Node.js HTTP clients honor. A compromised agent using raw sockets or spawned processes could bypass the proxy. Mitigation: `--internal` Docker networks (blocks all direct egress) are the upgrade path but require proxy-based port publishing. |
 | Secrets on disk (local/remote) | Low | Mode 0400 files; disk encryption is operator responsibility. AWS uses Secrets Manager. |
 | IP correlation by external APIs | Low | All traffic exits through same NAT; reveals shared infrastructure but not content |
 | Shared kernel vulnerabilities | Medium | Host kernel CVE affects all containers; mitigated by auto-upgrades; gVisor eliminates |

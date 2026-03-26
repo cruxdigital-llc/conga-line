@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+// EgressProxyImage is the pinned nginx image used for egress proxy containers.
+// Pinned for reproducibility and supply chain safety.
+const EgressProxyImage = "nginx:1.27-alpine"
+
 // LoadEgressPolicy loads the policy file, merges for the given agent, and returns
 // the effective egress policy. Returns nil, nil if no policy file or no egress section.
 func LoadEgressPolicy(policyDir string, agentName string) (*EgressPolicy, error) {
@@ -74,7 +78,7 @@ func GenerateNginxConf(domains []string) string {
 			d = strings.ToLower(d)
 			if base, ok := strings.CutPrefix(d, "*."); ok {
 				escaped := strings.ReplaceAll(base, ".", "\\.")
-				b.WriteString(fmt.Sprintf("        \"~^(.+\\.)?%s$\" $ssl_preread_server_name:443;\n", escaped))
+				b.WriteString(fmt.Sprintf("        \"~^.+\\.%s$\" $ssl_preread_server_name:443;\n", escaped))
 			} else {
 				b.WriteString(fmt.Sprintf("        %s %s:443;\n", d, d))
 			}
@@ -87,26 +91,14 @@ func GenerateNginxConf(domains []string) string {
 		b.WriteString("    }\n\n")
 	}
 
-	// HTTPS proxy
+	// HTTPS proxy — uses Docker's embedded DNS (127.0.0.11) for resolution.
+	// No DNS forwarding listener — avoids DNS tunneling exfiltration vector.
 	b.WriteString("    server {\n")
 	b.WriteString("        listen 3128;\n")
 	b.WriteString("        proxy_pass $upstream;\n")
 	b.WriteString("        ssl_preread on;\n")
-	b.WriteString("        resolver 8.8.8.8 valid=300s;\n")
+	b.WriteString("        resolver 127.0.0.11 valid=300s;\n")
 	b.WriteString("        resolver_timeout 5s;\n")
-	b.WriteString("    }\n\n")
-
-	// DNS forwarding
-	b.WriteString("    server {\n")
-	b.WriteString("        listen 53 udp;\n")
-	b.WriteString("        proxy_pass 8.8.8.8:53;\n")
-	b.WriteString("        proxy_timeout 5s;\n")
-	b.WriteString("    }\n\n")
-
-	b.WriteString("    server {\n")
-	b.WriteString("        listen 53;\n")
-	b.WriteString("        proxy_pass 8.8.8.8:53;\n")
-	b.WriteString("        proxy_timeout 5s;\n")
 	b.WriteString("    }\n")
 
 	b.WriteString("}\n")

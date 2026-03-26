@@ -121,7 +121,7 @@ func TestGenerateNginxConfAllowlist(t *testing.T) {
 	if !strings.Contains(result, "api.anthropic.com api.anthropic.com:443") {
 		t.Error("expected exact domain mapping")
 	}
-	if !strings.Contains(result, `"~^(.+\.)?slack\.com$"`) {
+	if !strings.Contains(result, `"~^.+\.slack\.com$"`) {
 		t.Error("expected wildcard regex pattern")
 	}
 	if !strings.Contains(result, `default "";`) {
@@ -130,8 +130,11 @@ func TestGenerateNginxConfAllowlist(t *testing.T) {
 	if !strings.Contains(result, "listen 3128") {
 		t.Error("expected HTTPS proxy listener")
 	}
-	if !strings.Contains(result, "listen 53 udp") {
-		t.Error("expected DNS forwarder")
+	if !strings.Contains(result, "resolver 127.0.0.11") {
+		t.Error("expected Docker internal DNS resolver")
+	}
+	if strings.Contains(result, "listen 53") {
+		t.Error("DNS forwarder should not be present (DNS tunneling risk)")
 	}
 	if !strings.Contains(result, "access_log /dev/stdout") {
 		t.Error("expected access logging")

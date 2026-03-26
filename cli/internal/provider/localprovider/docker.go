@@ -87,19 +87,13 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		"-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort),
 	}
 	if opts.EgressEnforce && opts.EgressProxyName != "" {
+		// Proxy is on the same Docker network — Docker DNS resolves the container name.
+		// No --dns override needed since the proxy no longer runs a DNS forwarder.
 		args = append(args,
 			"-e", fmt.Sprintf("HTTPS_PROXY=http://%s:3128", opts.EgressProxyName),
 			"-e", fmt.Sprintf("HTTP_PROXY=http://%s:3128", opts.EgressProxyName),
 			"-e", "NO_PROXY=localhost,127.0.0.1",
 		)
-		// Resolve proxy container IP for DNS
-		proxyIP, _ := dockerRun(ctx, "inspect", "--format",
-			"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-			opts.EgressProxyName)
-		proxyIP = strings.TrimSpace(proxyIP)
-		if proxyIP != "" {
-			args = append(args, "--dns", proxyIP)
-		}
 	}
 
 	args = append(args, opts.Image)

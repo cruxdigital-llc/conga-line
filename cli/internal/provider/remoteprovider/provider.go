@@ -216,8 +216,8 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		image = "ghcr.io/openclaw/openclaw:latest"
 	}
 
-	// 5. Load egress policy
-	egressPolicy, policyErr := policy.LoadEgressPolicy(p.remoteDir, cfg.Name)
+	// 5. Load egress policy (from local ~/.conga/, not the remote host)
+	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, cfg.Name)
 	if policyErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
 	}
@@ -491,8 +491,8 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return err
 	}
 
-	// Load egress policy
-	egressPolicy, policyErr := policy.LoadEgressPolicy(p.remoteDir, agentName)
+	// Load egress policy (from local ~/.conga/, not the remote host)
+	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, agentName)
 	if policyErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
 	}
@@ -524,8 +524,7 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 	if egressEnforce {
 		domains := policy.EffectiveAllowedDomains(egressPolicy)
 		if err := p.startAgentEgressProxy(ctx, agentName, domains); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to start egress proxy: %v\n", err)
-			egressEnforce = false
+			return fmt.Errorf("failed to start egress proxy: %w", err)
 		}
 	}
 
@@ -877,14 +876,14 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 		}
 	}
 
-	// Pull nginx:alpine if needed
-	p.ssh.Run(ctx, "docker pull nginx:alpine 2>/dev/null || true")
+	// Pull pinned nginx image if needed
+	p.ssh.Run(ctx, fmt.Sprintf("docker pull %s 2>/dev/null || true", policy.EgressProxyImage))
 
 	// Start proxy on agent's network
 	cmd := fmt.Sprintf("docker run -d --name %s --network %s "+
 		"--cap-drop ALL --security-opt no-new-privileges --memory 64m --read-only "+
-		"-v %s:/etc/nginx/nginx.conf:ro nginx:alpine",
-		shellQuote(proxyName), shellQuote(netName), shellQuote(confPath))
+		"-v %s:/etc/nginx/nginx.conf:ro %s",
+		shellQuote(proxyName), shellQuote(netName), shellQuote(confPath), policy.EgressProxyImage)
 
 	if _, err := p.ssh.Run(ctx, cmd); err != nil {
 		return fmt.Errorf("starting egress proxy: %w", err)

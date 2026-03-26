@@ -505,7 +505,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	if egressEnforce {
 		domains := policy.EffectiveAllowedDomains(egressPolicy)
 		if err := p.startAgentEgressProxy(ctx, agentName, domains); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to start egress proxy: %v\n", err)
+			return fmt.Errorf("failed to start egress proxy: %w", err)
 		}
 	}
 
@@ -1113,7 +1113,7 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 		"--memory", "64m",
 		"--read-only",
 		"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", confPath),
-		"nginx:alpine",
+		policy.EgressProxyImage,
 	)
 	if err != nil {
 		return fmt.Errorf("starting egress proxy: %w", err)
