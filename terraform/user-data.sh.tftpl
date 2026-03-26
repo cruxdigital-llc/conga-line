@@ -597,8 +597,8 @@ SQUID_HEADER
     case "$d" in
       \*.*)
         # *.example.com → .example.com (Squid matches all subdomains)
-        local base="${d#\*.}"
-        ACL_LINE="$ACL_LINE .${base}"
+        local base="$${d#\*.}"
+        ACL_LINE="$ACL_LINE .$${base}"
         ;;
       *)
         ACL_LINE="$ACL_LINE $d"
