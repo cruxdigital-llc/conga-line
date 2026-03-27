@@ -1,2 +1,1 @@
-FROM alpine:3.21
-RUN apk add --no-cache tinyproxy >/dev/null 2>&1
+FROM envoyproxy/envoy:v1.32-latest

@@ -453,7 +453,7 @@ func TestToolsViaStdio(t *testing.T) {
 	t.Run("conga_setup", func(t *testing.T) {
 		result := callTool(t, client, "conga_setup", map[string]any{
 			"image":           "ghcr.io/openclaw/openclaw:latest",
-			"slack-bot-token": "xoxb-test",
+			"slack_bot_token": "xoxb-test",
 		})
 		if result.IsError {
 			t.Fatalf("unexpected error: %s", textContent(t, result))

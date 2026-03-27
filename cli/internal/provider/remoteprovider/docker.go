@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/cruxdigital-llc/conga-line/cli/internal/provider/iptables"
 )
 
 // dockerRun executes a docker command on the remote host via SSH.
@@ -33,8 +36,10 @@ func networkName(agentName string) string {
 }
 
 // createNetwork creates a Docker bridge network on the remote host.
+// Egress restriction is enforced via per-agent Envoy proxy (HTTPS_PROXY env vars)
+// and iptables DROP rules in the DOCKER-USER chain.
 func (p *RemoteProvider) createNetwork(ctx context.Context, name string) error {
-	_, err := p.dockerRun(ctx, "network", "create", name, "--driver", "bridge")
+	_, err := p.ssh.Run(ctx, "docker network create "+shellQuote(name)+" --driver bridge")
 	return err
 }
 
@@ -57,15 +62,16 @@ func (p *RemoteProvider) disconnectNetwork(ctx context.Context, network, contain
 
 // agentContainerOpts holds options for starting an agent container.
 type agentContainerOpts struct {
-	Name            string
-	AgentName       string
-	Network         string
-	EnvFile         string
-	DataDir         string
-	GatewayPort     int
-	Image           string
-	EgressEnforce   bool
-	EgressProxyName string
+	Name               string
+	AgentName          string
+	Network            string
+	EnvFile            string
+	DataDir            string
+	GatewayPort        int
+	Image              string
+	EgressEnforce      bool
+	EgressProxyName    string
+	ProxyBootstrapPath string // Host path to proxy-bootstrap.js (mounted read-only)
 }
 
 // runAgentContainer starts an agent container with full isolation on the remote host.
@@ -80,11 +86,12 @@ func (p *RemoteProvider) runAgentContainer(ctx context.Context, opts agentContai
 		"--memory", "2g",
 		"--cpus", "0.75",
 		"--pids-limit", "256",
-		"-e", "NODE_OPTIONS=--max-old-space-size=1536",
 		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort),
 	}
 
+	args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
+
+	nodeOpts := "--max-old-space-size=1536"
 	if opts.EgressEnforce && opts.EgressProxyName != "" {
 		// Proxy is on the same Docker network — Docker DNS resolves the container name.
 		args = append(args,
@@ -92,7 +99,14 @@ func (p *RemoteProvider) runAgentContainer(ctx context.Context, opts agentContai
 			"-e", fmt.Sprintf("HTTP_PROXY=http://%s:3128", opts.EgressProxyName),
 			"-e", "NO_PROXY=localhost,127.0.0.1",
 		)
+		// Mount the proxy bootstrap script and inject via --require so Node.js
+		// routes all HTTP(S) traffic through the CONNECT tunnel proxy.
+		if opts.ProxyBootstrapPath != "" {
+			args = append(args, "-v", fmt.Sprintf("%s:/opt/proxy-bootstrap.js:ro", opts.ProxyBootstrapPath))
+			nodeOpts += " --require /opt/proxy-bootstrap.js"
+		}
 	}
+	args = append(args, "-e", "NODE_OPTIONS="+nodeOpts)
 
 	args = append(args, opts.Image)
 
@@ -226,4 +240,65 @@ func (p *RemoteProvider) buildImage(ctx context.Context, dir, tag string) error 
 func (p *RemoteProvider) imageExists(ctx context.Context, image string) bool {
 	_, err := p.dockerRun(ctx, "image", "inspect", image)
 	return err == nil
+}
+
+// containerIPOnNetwork returns the IP address of a container on a specific Docker network.
+// Retries briefly to handle the race between container start and IP assignment.
+func (p *RemoteProvider) containerIPOnNetwork(ctx context.Context, container, network string) (string, error) {
+	tpl := fmt.Sprintf("{{(index .NetworkSettings.Networks %q).IPAddress}}", network)
+	for attempt := 0; attempt < 10; attempt++ {
+		output, err := p.dockerRun(ctx, "inspect", "-f", tpl, container)
+		if err != nil {
+			return "", fmt.Errorf("inspecting %s on network %s: %w", container, network, err)
+		}
+		ip := strings.TrimSpace(output)
+		if ip != "" {
+			return ip, nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return "", fmt.Errorf("no IP found for %s on network %s after retries", container, network)
+}
+
+// networkSubnetCIDR returns the CIDR of a Docker network's subnet.
+func (p *RemoteProvider) networkSubnetCIDR(ctx context.Context, network string) (string, error) {
+	output, err := p.dockerRun(ctx, "network", "inspect", network, "--format", "{{(index .IPAM.Config 0).Subnet}}")
+	if err != nil {
+		return "", fmt.Errorf("inspecting subnet for network %s: %w", network, err)
+	}
+	cidr := strings.TrimSpace(output)
+	if cidr == "" {
+		return "", fmt.Errorf("no subnet found for network %s", network)
+	}
+	return cidr, nil
+}
+
+// sshIptablesExec returns an iptables.ExecFunc that runs commands on the remote host via SSH.
+func (p *RemoteProvider) sshIptablesExec(ctx context.Context) iptables.ExecFunc {
+	return func(cmd string) error {
+		_, err := p.ssh.Run(ctx, cmd)
+		if err != nil {
+			return fmt.Errorf("iptables via SSH: %w", err)
+		}
+		return nil
+	}
+}
+
+// addEgressIptablesRules adds iptables DROP rules to DOCKER-USER that restrict
+// outbound traffic from the container to only the bridge subnet (where the proxy
+// and Docker DNS live). Uses DROP (not REJECT) so the app sees ETIMEDOUT instead
+// of ENETUNREACH which would crash Node.js.
+func (p *RemoteProvider) addEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) error {
+	return iptables.AddRules(containerIP, subnetCIDR, p.sshIptablesExec(ctx))
+}
+
+// removeEgressIptablesRules removes iptables egress rules for a container IP.
+// Idempotent — ignores errors from missing rules.
+func (p *RemoteProvider) removeEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) {
+	iptables.RemoveRules(containerIP, subnetCIDR, p.sshIptablesExec(ctx))
+}
+
+// checkEgressIptablesRules checks whether all egress iptables rules exist for a container IP.
+func (p *RemoteProvider) checkEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) bool {
+	return iptables.CheckRules(containerIP, subnetCIDR, p.sshIptablesExec(ctx))
 }

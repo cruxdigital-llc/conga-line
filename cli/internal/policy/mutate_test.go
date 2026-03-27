@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -213,6 +214,25 @@ func TestSetPreservesOtherSections(t *testing.T) {
 	}
 	if pf.Posture == nil || pf.Posture.Monitoring != "basic" {
 		t.Error("posture was clobbered by SetEgress")
+	}
+}
+
+func TestSaveFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conga-policy.yaml")
+
+	pf := &PolicyFile{APIVersion: CurrentAPIVersion}
+	if err := Save(pf, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	mode := info.Mode().Perm()
+	if mode != 0600 {
+		t.Errorf("policy file mode = %04o, want 0600", mode)
 	}
 }
 

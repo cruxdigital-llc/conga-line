@@ -21,7 +21,7 @@ func Save(pf *PolicyFile, path string) error {
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return fmt.Errorf("writing temporary policy file: %w", err)
 	}
 

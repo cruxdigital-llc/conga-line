@@ -221,6 +221,14 @@ func validateDomain(d string) error {
 			return fmt.Errorf("domain %q: only one wildcard allowed", d)
 		}
 	}
+	// Only allow DNS-safe characters to prevent injection into generated configs
+	// (e.g., Lua source in Envoy proxy config). Valid DNS: [a-zA-Z0-9.-] plus leading *.
+	cleaned := strings.TrimPrefix(d, "*.")
+	for _, c := range cleaned {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.') {
+			return fmt.Errorf("domain %q contains invalid character %q", d, c)
+		}
+	}
 	return nil
 }
 

@@ -7,7 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
+	"time"
+
+	"github.com/cruxdigital-llc/conga-line/cli/internal/provider/iptables"
 )
 
 // dockerRun executes a docker command and returns stdout.
@@ -43,9 +47,8 @@ func networkName(agentName string) string {
 
 // createNetwork creates a Docker bridge network for agent isolation.
 // Each agent gets its own network to prevent inter-container communication.
-// Note: We don't use --internal because it prevents -p port publishing for the
-// gateway web UI. Egress restriction is enforced via per-agent tinyproxy
-// wired through HTTPS_PROXY/HTTP_PROXY env vars (see startAgentEgressProxy).
+// Egress restriction is enforced via per-agent Envoy proxy (HTTPS_PROXY env vars)
+// and iptables DROP rules in the DOCKER-USER chain.
 func createNetwork(ctx context.Context, name string) error {
 	_, err := dockerRun(ctx, "network", "create", name, "--driver", "bridge")
 	return err
@@ -81,19 +84,27 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		"--memory", "2g",
 		"--cpus", "0.75",
 		"--pids-limit", "256",
-		"-e", "NODE_OPTIONS=--max-old-space-size=1536",
 		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort),
 	}
+
+	args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
+
+	nodeOpts := "--max-old-space-size=1536"
 	if opts.EgressEnforce && opts.EgressProxyName != "" {
 		// Proxy is on the same Docker network — Docker DNS resolves the container name.
-		// No --dns override needed since the proxy no longer runs a DNS forwarder.
 		args = append(args,
 			"-e", fmt.Sprintf("HTTPS_PROXY=http://%s:3128", opts.EgressProxyName),
 			"-e", fmt.Sprintf("HTTP_PROXY=http://%s:3128", opts.EgressProxyName),
 			"-e", "NO_PROXY=localhost,127.0.0.1",
 		)
+		// Mount the proxy bootstrap script and inject via --require so Node.js
+		// routes all HTTP(S) traffic through the CONNECT tunnel proxy.
+		if opts.ProxyBootstrapPath != "" {
+			args = append(args, "-v", fmt.Sprintf("%s:/opt/proxy-bootstrap.js:ro", opts.ProxyBootstrapPath))
+			nodeOpts += " --require /opt/proxy-bootstrap.js"
+		}
 	}
+	args = append(args, "-e", "NODE_OPTIONS="+nodeOpts)
 
 	args = append(args, opts.Image)
 
@@ -102,15 +113,16 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 }
 
 type agentContainerOpts struct {
-	Name            string
-	AgentName       string
-	Network         string
-	EnvFile         string
-	DataDir         string
-	GatewayPort     int
-	Image           string
-	EgressEnforce   bool
-	EgressProxyName string
+	Name               string
+	AgentName          string
+	Network            string
+	EnvFile            string
+	DataDir            string
+	GatewayPort        int
+	Image              string
+	EgressEnforce      bool
+	EgressProxyName    string
+	ProxyBootstrapPath string // Host path to proxy-bootstrap.js (mounted read-only)
 }
 
 // runRouterContainer starts the router container.
@@ -244,4 +256,80 @@ func imageExists(ctx context.Context, image string) bool {
 func imageHasBinary(ctx context.Context, image string, binary string) bool {
 	_, err := dockerRun(ctx, "run", "--rm", image, "which", binary)
 	return err == nil
+}
+
+// containerIPOnNetwork returns the IP address of a container on a specific Docker network.
+// Retries briefly to handle the race between container start and IP assignment.
+func containerIPOnNetwork(ctx context.Context, container, network string) (string, error) {
+	format := fmt.Sprintf("{{(index .NetworkSettings.Networks %q).IPAddress}}", network)
+	for attempt := 0; attempt < 10; attempt++ {
+		output, err := dockerRun(ctx, "inspect", "--format", format, container)
+		if err != nil {
+			return "", fmt.Errorf("inspecting %s on network %s: %w", container, network, err)
+		}
+		ip := strings.TrimSpace(output)
+		if ip != "" {
+			return ip, nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return "", fmt.Errorf("no IP found for %s on network %s after retries", container, network)
+}
+
+// networkSubnetCIDR returns the CIDR of a Docker network's subnet.
+func networkSubnetCIDR(ctx context.Context, network string) (string, error) {
+	output, err := dockerRun(ctx, "network", "inspect", network, "--format", "{{(index .IPAM.Config 0).Subnet}}")
+	if err != nil {
+		return "", fmt.Errorf("inspecting subnet for network %s: %w", network, err)
+	}
+	cidr := strings.TrimSpace(output)
+	if cidr == "" {
+		return "", fmt.Errorf("no subnet found for network %s", network)
+	}
+	return cidr, nil
+}
+
+// iptablesRun executes an iptables command on the Docker host.
+// On macOS (Docker Desktop), iptables runs inside the LinuxKit VM via nsenter.
+// On Linux, it runs directly via sh.
+func iptablesRun(ctx context.Context, iptablesCmd string) error {
+	if runtime.GOOS == "darwin" {
+		_, err := dockerRun(ctx, "run", "--rm",
+			"--cap-add", "NET_ADMIN", "--cap-add", "NET_RAW",
+			"--pid=host", "--network=host",
+			"alpine:3.21",
+			"nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+			"sh", "-c", iptablesCmd)
+		return err
+	}
+	cmd := exec.CommandContext(ctx, "sh", "-c", iptablesCmd)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("iptables: %s (%w)", strings.TrimSpace(stderr.String()), err)
+	}
+	return nil
+}
+
+// iptablesExec returns an iptables.ExecFunc that runs commands on the Docker host.
+func iptablesExec(ctx context.Context) iptables.ExecFunc {
+	return func(cmd string) error {
+		return iptablesRun(ctx, cmd)
+	}
+}
+
+// addEgressIptablesRules adds iptables DROP rules to DOCKER-USER that restrict
+// outbound traffic from the container to only the bridge subnet.
+func addEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) error {
+	return iptables.AddRules(containerIP, subnetCIDR, iptablesExec(ctx))
+}
+
+// removeEgressIptablesRules removes iptables egress rules for a container IP.
+func removeEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) {
+	iptables.RemoveRules(containerIP, subnetCIDR, iptablesExec(ctx))
+}
+
+// checkEgressIptablesRules checks whether all egress iptables rules exist for a container IP.
+func checkEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) bool {
+	return iptables.CheckRules(containerIP, subnetCIDR, iptablesExec(ctx))
 }

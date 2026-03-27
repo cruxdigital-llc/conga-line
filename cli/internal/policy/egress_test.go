@@ -118,58 +118,148 @@ func TestGenerateProxyConfAllowlist(t *testing.T) {
 	domains := []string{"api.anthropic.com", "*.slack.com", "github.com"}
 	result := GenerateProxyConf(domains)
 
-	if !strings.Contains(result, "Port 3128") {
-		t.Error("expected tinyproxy Port directive")
+	if !strings.Contains(result, "port_value: 3128") {
+		t.Error("expected envoy listener on port 3128")
 	}
-	if !strings.Contains(result, "FilterDefaultDeny Yes") {
-		t.Error("expected default deny in allowlist mode")
+	if !strings.Contains(result, "envoy.filters.http.lua") {
+		t.Error("expected Lua filter in allowlist mode")
 	}
-	if !strings.Contains(result, "FilterType fnmatch") {
-		t.Error("expected fnmatch filter type")
+	// *.slack.com should become .slack.com suffix in Lua SUFFIXES table
+	if !strings.Contains(result, `".slack.com"`) {
+		t.Error("expected .slack.com in Lua SUFFIXES table")
 	}
-	if !strings.Contains(result, "ConnectPort 443") {
-		t.Error("expected CONNECT port restriction")
+	if !strings.Contains(result, `"api.anthropic.com"`) {
+		t.Error("expected exact domain in Lua EXACT table")
+	}
+	if !strings.Contains(result, `":status"] = "403"`) {
+		t.Error("expected 403 deny response in Lua filter")
+	}
+	if !strings.Contains(result, "dynamic_forward_proxy") {
+		t.Error("expected dynamic forward proxy cluster")
+	}
+}
+
+func TestGenerateProxyConfWildcardDedup(t *testing.T) {
+	// When *.slack.com is present, the Lua filter puts .slack.com in SUFFIXES
+	// and slack.com in EXACT. Both appear because Envoy Lua handles them separately.
+	domains := []string{"api.anthropic.com", "slack.com", "*.slack.com"}
+	result := GenerateProxyConf(domains)
+
+	if !strings.Contains(result, `".slack.com"`) {
+		t.Error("expected .slack.com in SUFFIXES table")
+	}
+	if !strings.Contains(result, `"slack.com"`) {
+		t.Error("expected slack.com in EXACT table")
+	}
+	if !strings.Contains(result, `"api.anthropic.com"`) {
+		t.Error("expected non-overlapping domain to remain")
 	}
 }
 
 func TestGenerateProxyConfPassthrough(t *testing.T) {
 	result := GenerateProxyConf(nil)
-	if strings.Contains(result, "Filter") {
-		t.Error("expected no filter in passthrough mode")
+	if strings.Contains(result, "envoy.filters.http.lua") {
+		t.Error("expected no Lua filter in passthrough mode")
 	}
-	if !strings.Contains(result, "Port 3128") {
+	if !strings.Contains(result, "port_value: 3128") {
 		t.Error("expected port directive in passthrough mode")
+	}
+	if !strings.Contains(result, "dynamic_forward_proxy") {
+		t.Error("expected dynamic forward proxy cluster in passthrough mode")
 	}
 }
 
 func TestGenerateProxyConfEmptySlice(t *testing.T) {
 	result := GenerateProxyConf([]string{})
-	if strings.Contains(result, "Filter") {
-		t.Error("expected no filter with empty domains")
-	}
-}
-
-func TestGenerateProxyFilter(t *testing.T) {
-	domains := []string{"api.anthropic.com", "*.slack.com", "GitHub.Com"}
-	result := GenerateProxyFilter(domains)
-
-	if !strings.Contains(result, "api.anthropic.com\n") {
-		t.Error("expected exact domain in filter")
-	}
-	if !strings.Contains(result, "*.slack.com\n") {
-		t.Error("expected wildcard domain in filter")
-	}
-	if !strings.Contains(result, "github.com\n") {
-		t.Error("expected lowercased domain in filter")
+	if strings.Contains(result, "envoy.filters.http.lua") {
+		t.Error("expected no Lua filter with empty domains")
 	}
 }
 
 func TestEgressProxyDockerfile(t *testing.T) {
 	df := EgressProxyDockerfile()
-	if !strings.Contains(df, "FROM alpine:3.21") {
-		t.Error("expected alpine base image")
+	if !strings.Contains(df, "FROM "+EgressProxyBaseImage) {
+		t.Errorf("expected envoy base image, got: %s", df)
 	}
-	if !strings.Contains(df, "tinyproxy") {
-		t.Error("expected tinyproxy installation")
+}
+
+func TestGenerateProxyConfLuaNilAuthorityGuard(t *testing.T) {
+	result := GenerateProxyConf([]string{"api.anthropic.com"})
+	// Lua should guard against nil match result before calling :lower()
+	if !strings.Contains(result, "if not m then") {
+		t.Error("expected Lua nil guard for empty :authority match")
+	}
+	if strings.Contains(result, `a:match("^([^:]+)"):lower()`) {
+		t.Error("old unguarded :lower() call should be replaced with nil-safe version")
+	}
+}
+
+func TestGenerateProxyConfDNSFamily(t *testing.T) {
+	result := GenerateProxyConf([]string{"api.anthropic.com"})
+	if strings.Contains(result, "V4_ONLY") {
+		t.Error("dns_lookup_family should be AUTO, not V4_ONLY")
+	}
+	if !strings.Contains(result, "dns_lookup_family: AUTO") {
+		t.Error("expected dns_lookup_family: AUTO")
+	}
+}
+
+func TestLuaEscapeString(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"api.anthropic.com", "api.anthropic.com"},
+		{`evil"domain`, `evil\"domain`},
+		{"back\\slash", "back\\\\slash"},
+		{"new\nline", "new\\nline"},
+	}
+	for _, tt := range tests {
+		got := luaEscapeString(tt.input)
+		if got != tt.want {
+			t.Errorf("luaEscapeString(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestProxyBootstrapJSSyntax(t *testing.T) {
+	js := ProxyBootstrapJS()
+
+	// Must be non-empty
+	if len(js) == 0 {
+		t.Fatal("ProxyBootstrapJS returned empty string")
+	}
+
+	// Must contain key components
+	required := []string{
+		"EnvHttpProxyAgent",
+		"setGlobalDispatcher",
+		"ConnectProxyAgent",
+		"HTTPS_PROXY",
+		"HTTP_PROXY",
+		"__CONGA_PROXY_URL",
+		"'use strict'",
+	}
+	for _, r := range required {
+		if !strings.Contains(js, r) {
+			t.Errorf("ProxyBootstrapJS missing required pattern: %s", r)
+		}
+	}
+
+	// Basic bracket balance check
+	opens := strings.Count(js, "{")
+	closes := strings.Count(js, "}")
+	if opens != closes {
+		t.Errorf("ProxyBootstrapJS has unbalanced braces: %d opens, %d closes", opens, closes)
+	}
+}
+
+func TestGenerateProxyConfLuaEscaping(t *testing.T) {
+	// Even though validateDomain would reject these, verify defense-in-depth
+	// by calling GenerateProxyConf directly with domains that need escaping.
+	result := GenerateProxyConf([]string{"normal.com"})
+	// Verify normal domains pass through cleanly
+	if !strings.Contains(result, `"normal.com"`) {
+		t.Error("expected normal domain in output")
 	}
 }

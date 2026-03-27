@@ -5,9 +5,9 @@ import "testing"
 // testChannel is a minimal Channel for testing the registry.
 type testChannel struct{ name string }
 
-func (t *testChannel) Name() string                        { return t.name }
-func (t *testChannel) ValidateBinding(string, string) error { return nil }
-func (t *testChannel) SharedSecrets() []SecretDef           { return nil }
+func (t *testChannel) Name() string                          { return t.name }
+func (t *testChannel) ValidateBinding(string, string) error  { return nil }
+func (t *testChannel) SharedSecrets() []SecretDef            { return nil }
 func (t *testChannel) HasCredentials(map[string]string) bool { return false }
 func (t *testChannel) OpenClawChannelConfig(string, ChannelBinding, map[string]string) (map[string]any, error) {
 	return nil, nil

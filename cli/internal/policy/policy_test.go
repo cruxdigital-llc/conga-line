@@ -369,6 +369,48 @@ func TestValidateNegativeCostLimits(t *testing.T) {
 	}
 }
 
+func TestValidateDomainRejectsSpecialChars(t *testing.T) {
+	// These characters could enable injection into Lua or other generated configs.
+	badDomains := []string{
+		`evil.com"; os.execute("rm")--`,
+		`evil.com\nprint("hi")`,
+		"domain with]bracket",
+		"domain;semicolon.com",
+		"domain'quote.com",
+		`domain"doublequote.com`,
+		"domain\\backslash.com",
+		"domain{brace.com",
+		"domain(paren.com",
+		"domain/slash.com",
+		"domain@at.com",
+		"*.evil.com\"]; --",
+	}
+	for _, d := range badDomains {
+		err := validateDomain(d)
+		if err == nil {
+			t.Errorf("validateDomain(%q) should reject special characters", d)
+		}
+	}
+}
+
+func TestValidateDomainAcceptsValidDNS(t *testing.T) {
+	validDomains := []string{
+		"api.anthropic.com",
+		"my-service.example.com",
+		"*.slack.com",
+		"a.b.c.d.e.f.example.com",
+		"123.456.789.com",
+		"UPPER.case.COM",
+		"xn--nxasmq6b.com", // punycode
+	}
+	for _, d := range validDomains {
+		err := validateDomain(d)
+		if err != nil {
+			t.Errorf("validateDomain(%q) should accept valid DNS name, got: %v", d, err)
+		}
+	}
+}
+
 // --- helpers ---
 
 func loadFromString(t *testing.T, content string) *PolicyFile {

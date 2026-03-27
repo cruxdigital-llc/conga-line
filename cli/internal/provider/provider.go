@@ -19,12 +19,12 @@ const (
 
 // AgentConfig is the provider-agnostic representation of an agent.
 type AgentConfig struct {
-	Name        string                   `json:"name"`
-	Type        AgentType                `json:"type"`
+	Name        string                    `json:"name"`
+	Type        AgentType                 `json:"type"`
 	Channels    []channels.ChannelBinding `json:"channels,omitempty"`
-	GatewayPort int                      `json:"gateway_port"`
-	IAMIdentity string                   `json:"iam_identity,omitempty"`
-	Paused      bool                     `json:"paused,omitempty"`
+	GatewayPort int                       `json:"gateway_port"`
+	IAMIdentity string                    `json:"iam_identity,omitempty"`
+	Paused      bool                      `json:"paused,omitempty"`
 }
 
 // ChannelBinding returns the first binding for the given platform, or nil.
