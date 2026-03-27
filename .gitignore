@@ -13,10 +13,13 @@ terraform/terraform.tfvars
 # CLI build artifacts
 cli/conga
 cli/dist/
+bin/
 
 # MCP config (user-specific)
 .mcp.json
 
 # User-specific policy config
 conga-policy.yaml
-DEMO.md
+
+# Other local files
+demo.*
