@@ -905,7 +905,9 @@ func (p *RemoteProvider) cleanupDockerByPrefix(ctx context.Context) {
 // the latest routing.json (which is a read-only bind mount).
 func (p *RemoteProvider) restartRouter(ctx context.Context) {
 	if p.containerExists(ctx, routerContainer) {
-		p.removeContainer(ctx, routerContainer)
+		if err := p.removeContainer(ctx, routerContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove router container: %v\n", err)
+		}
 	}
 	if err := p.ensureRouter(ctx, false); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: router not started: %v\n", err)
@@ -920,7 +922,9 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context, restart bool) error {
 		if err == nil && state.Running && !restart {
 			return nil // already running, no restart requested
 		}
-		p.removeContainer(ctx, routerContainer)
+		if err := p.removeContainer(ctx, routerContainer); err != nil {
+			return fmt.Errorf("failed to remove existing router container: %w", err)
+		}
 	}
 
 	routerEnvPath := posixpath.Join(p.remoteConfigDir(), "router.env")
@@ -958,9 +962,14 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context, restart bool) error {
 		return fmt.Errorf("failed to start router: %w", err)
 	}
 
-	agents, _ := p.ListAgents(ctx)
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not list agents for router network connections: %v\n", err)
+	}
 	for _, a := range agents {
-		p.connectNetwork(ctx, networkName(a.Name), routerContainer)
+		if err := p.connectNetwork(ctx, networkName(a.Name), routerContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to connect router to %s network: %v\n", a.Name, err)
+		}
 	}
 
 	fmt.Println("  Router started.")

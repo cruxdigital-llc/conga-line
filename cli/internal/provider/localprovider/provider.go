@@ -283,7 +283,9 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 			fmt.Fprintf(os.Stderr, "Warning: router not started: %v\n", err)
 		}
 		if containerExists(ctx, routerContainer) {
-			connectNetwork(ctx, netName, routerContainer)
+			if err := connectNetwork(ctx, netName, routerContainer); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to connect router to agent network: %v\n", err)
+			}
 		}
 	}
 
@@ -1143,7 +1145,9 @@ func (p *LocalProvider) ensureRouter(ctx context.Context, restart bool) error {
 			return nil // already running, no restart requested
 		}
 		// Exists but not running (or restart requested) — remove and recreate
-		removeContainer(ctx, routerContainer)
+		if err := removeContainer(ctx, routerContainer); err != nil {
+			return fmt.Errorf("failed to remove existing router container: %w", err)
+		}
 	}
 
 	routerEnvPath := filepath.Join(p.configDir(), "router.env")
@@ -1167,9 +1171,14 @@ func (p *LocalProvider) ensureRouter(ctx context.Context, restart bool) error {
 	}
 
 	// Connect router to all existing agent networks
-	agents, _ := p.ListAgents(ctx)
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not list agents for router network connections: %v\n", err)
+	}
 	for _, a := range agents {
-		connectNetwork(ctx, networkName(a.Name), routerContainer)
+		if err := connectNetwork(ctx, networkName(a.Name), routerContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to connect router to %s network: %v\n", a.Name, err)
+		}
 	}
 
 	fmt.Println("  Router started.")

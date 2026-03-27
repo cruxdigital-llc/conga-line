@@ -31,7 +31,7 @@ BindChannel(ctx context.Context, agentName string, binding channels.ChannelBindi
 UnbindChannel(ctx context.Context, agentName string, platform string) error
 ```
 
-This brings the Provider interface from 24 to 29 methods. The new section sits between "Secrets" and "Connectivity".
+This brings the Provider interface from 21 to 26 methods. The new section sits between "Secrets" and "Connectivity".
 
 ### 1.3 `hasAnyChannel` Promotion
 
@@ -150,7 +150,7 @@ New file: `cli/internal/provider/localprovider/channels.go`
 
 **Preconditions**:
 - Agent must exist
-- Agent must have a binding for this platform — if not, return nil (no-op with message)
+- Agent must have a binding for this platform — if not, return error
 
 **Steps**:
 1. Load agent config
@@ -185,7 +185,9 @@ func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.
     }
 
     // Re-chown data dir for container user
-    exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run()
+    if err := exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run(); err != nil {
+        return fmt.Errorf("failed to set ownership on %s: %w", dataDir, err)
+    }
     return nil
 }
 ```
@@ -510,11 +512,11 @@ This better showcases the modular architecture and makes the demo resilient to S
 | `channels bind` when channel not configured | Error: `"slack is not configured; run 'conga channels add slack' first"` |
 | `channels bind` when agent already bound | Error: `"agent 'aaron' already has a slack binding; use 'channels unbind' first"` |
 | `channels bind` with wrong ID type | Error from `ch.ValidateBinding()`: `"user agents require a Slack member ID (U...), not a channel ID (C...)"` |
-| `channels unbind` when agent has no binding | No-op. Print "agent 'aaron' has no slack binding." Return nil. |
+| `channels unbind` when agent has no binding | Error: `"agent 'aaron' has no slack binding"` |
 | `channels unbind` on paused agent | Works. Updates config on disk. Changes take effect when agent is unpaused. |
 | `channels add` when setup hasn't been run | Error: `"conga is not set up; run 'conga admin setup' first"` (check for config dir) |
 | Router fails to start after `channels add` | Error propagated. Secrets are still saved (can retry by re-running `channels add`). |
-| Agent refresh fails after `bind` | Error propagated. Config files are updated. Container will pick up changes on next manual refresh. |
+| Agent refresh fails after `bind` | Warning printed to stderr. Config files are updated. Container will pick up changes on next manual refresh. |
 
 ## 10. File Inventory
 
@@ -522,8 +524,8 @@ This better showcases the modular architecture and makes the demo resilient to S
 
 | File | Lines (est.) | Purpose |
 |------|-------------|---------|
-| `cli/internal/provider/localprovider/channels.go` | ~200 | Local provider: AddChannel, RemoveChannel, ListChannels, BindChannel, UnbindChannel + helpers |
-| `cli/internal/provider/remoteprovider/channels.go` | ~220 | Remote provider: same methods, SSH/SFTP transport |
+| `cli/internal/provider/localprovider/channels.go` | ~320 | Local provider: AddChannel, RemoveChannel, ListChannels, BindChannel, UnbindChannel + helpers |
+| `cli/internal/provider/remoteprovider/channels.go` | ~320 | Remote provider: same methods, SSH/SFTP transport |
 | `cli/cmd/channels.go` | ~250 | CLI commands: channels add/remove/list/bind/unbind |
 | `cli/internal/mcpserver/tools_channels.go` | ~250 | MCP tool handlers for all 5 channel management tools |
 | `cli/internal/mcpserver/tools_channels_test.go` | ~150 | MCP tool handler tests |
@@ -569,7 +571,7 @@ Focus on local provider (remote uses same logic over SSH):
 | `TestBindChannel_DuplicateBinding` | Error when agent already bound |
 | `TestBindChannel_ValidationError` | Error for invalid ID format |
 | `TestUnbindChannel_RemovesBinding` | Agent config updated, binding removed |
-| `TestUnbindChannel_Noop` | No error when no binding exists |
+| `TestUnbindChannel_NoBoundPlatform` | Error when agent has no binding for platform |
 
 ### MCP Tool Handler Tests (~10 tests)
 

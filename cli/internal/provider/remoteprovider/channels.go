@@ -13,7 +13,7 @@ import (
 )
 
 // AddChannel configures a messaging channel platform on the remote host by
-// uploading its shared secrets and starting the router.
+// uploading its shared secrets and starting (or restarting) the router.
 func (p *RemoteProvider) AddChannel(ctx context.Context, platform string, secrets map[string]string) error {
 	ch, ok := channels.Get(platform)
 	if !ok {
