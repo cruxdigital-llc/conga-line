@@ -76,9 +76,9 @@ type Identity struct {
 // ChannelStatus reports the state of a configured channel platform.
 type ChannelStatus struct {
 	Platform      string   `json:"platform"`       // "slack"
-	Configured    bool     `json:"configured"`      // shared secrets present
-	RouterRunning bool     `json:"router_running"`  // router container is running
-	BoundAgents   []string `json:"bound_agents"`    // agent names with this channel binding
+	Configured    bool     `json:"configured"`     // shared secrets present
+	RouterRunning bool     `json:"router_running"` // router container is running
+	BoundAgents   []string `json:"bound_agents"`   // agent names with this channel binding
 }
 
 // ConnectInfo is returned by Connect for display to the user.

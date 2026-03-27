@@ -294,4 +294,3 @@ func (p *LocalProvider) writeRouterEnv() error {
 	routerEnvPath := filepath.Join(p.configDir(), "router.env")
 	return os.WriteFile(routerEnvPath, []byte(common.BuildRouterEnvContent(shared)), 0400)
 }
-

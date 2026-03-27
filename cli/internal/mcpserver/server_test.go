@@ -32,12 +32,12 @@ type mockProvider struct {
 	connectInfo *provider.ConnectInfo
 
 	// Capture call args.
-	lastAgentName    string
-	lastSecretName   string
-	lastSecretValue  string
-	lastCommand      []string
-	lastProvisionCfg provider.AgentConfig
-	lastDeleteSecret bool
+	lastAgentName      string
+	lastSecretName     string
+	lastSecretValue    string
+	lastCommand        []string
+	lastProvisionCfg   provider.AgentConfig
+	lastDeleteSecret   bool
 	lastSetupCfg       *provider.SetupConfig
 	lastLogLines       int
 	lastPlatform       string

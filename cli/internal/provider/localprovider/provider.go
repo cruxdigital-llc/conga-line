@@ -1508,4 +1508,3 @@ func copyDir(src, dst string) error {
 		return os.WriteFile(dstPath, data, 0644)
 	})
 }
-

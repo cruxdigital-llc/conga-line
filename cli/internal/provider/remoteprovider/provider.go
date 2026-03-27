@@ -1215,4 +1215,3 @@ func generateToken() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
-

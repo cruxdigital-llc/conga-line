@@ -293,4 +293,3 @@ func (p *RemoteProvider) writeRouterEnv() error {
 	routerEnvPath := posixpath.Join(p.remoteConfigDir(), "router.env")
 	return p.ssh.Upload(routerEnvPath, []byte(common.BuildRouterEnvContent(shared)), 0400)
 }
-
