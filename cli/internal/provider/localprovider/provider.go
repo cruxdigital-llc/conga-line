@@ -278,7 +278,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	}
 
 	// 10. Ensure router is running and connected (only if any channel has credentials)
-	if hasAnyChannel(shared) {
+	if common.HasAnyChannel(shared) {
 		p.ensureRouter(ctx)
 		if containerExists(ctx, routerContainer) {
 			connectNetwork(ctx, netName, routerContainer)
@@ -845,30 +845,15 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 		changed++
 	}
 
-	// --- Shared secrets (all optional — channels not required for gateway-only mode) ---
+	// --- Shared secrets (non-channel only — channel secrets are managed via `conga channels add`) ---
 	type secretItem struct {
 		name, description string
 		isSecret          bool
 	}
-	var secretItems []secretItem
-
-	// Collect secrets from all registered channels
-	for _, ch := range channels.All() {
-		for _, def := range ch.SharedSecrets() {
-			secretItems = append(secretItems, secretItem{
-				name:        def.Name,
-				description: def.Prompt,
-				isSecret:    true,
-			})
-		}
+	secretItems := []secretItem{
+		{"google-client-id", "Google OAuth client ID", false},
+		{"google-client-secret", "Google OAuth client secret", true},
 	}
-	// Non-channel shared secrets
-	secretItems = append(secretItems,
-		secretItem{"google-client-id", "Google OAuth client ID", false},
-		secretItem{"google-client-secret", "Google OAuth client secret", true},
-	)
-
-	fmt.Println("\nChannel integration is optional. Skip all tokens to run in gateway-only mode (web UI).")
 
 	for _, item := range secretItems {
 		path := filepath.Join(p.sharedSecretsDir(), item.name)
@@ -982,24 +967,27 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 	// --- Start egress proxy ---
 	p.ensureEgressProxy(ctx)
 
-	// --- Router (only if any channel has credentials) ---
-	shared, _ := p.readSharedSecrets()
-	if hasAnyChannel(shared) {
-		routerEnvPath := filepath.Join(p.configDir(), "router.env")
-		var routerEnvBuf strings.Builder
+	// --- Auto-configure channels if secrets were provided in SetupConfig (backwards compat) ---
+	if cfg != nil {
 		for _, ch := range channels.All() {
-			if ch.HasCredentials(shared.Values) {
-				for k, v := range ch.RouterEnvVars(shared.Values) {
-					fmt.Fprintf(&routerEnvBuf, "%s=%s\n", k, v)
+			channelSecrets := map[string]string{}
+			hasRequired := true
+			for _, def := range ch.SharedSecrets() {
+				val := cfg.SecretValue(def.Name)
+				if val != "" {
+					channelSecrets[def.Name] = val
+				} else if def.Required {
+					hasRequired = false
+					break
+				}
+			}
+			if hasRequired && len(channelSecrets) > 0 {
+				fmt.Printf("\nAuto-configuring %s channel from provided secrets...\n", ch.Name())
+				if err := p.AddChannel(ctx, ch.Name(), channelSecrets); err != nil {
+					return fmt.Errorf("auto-configure %s channel: %w", ch.Name(), err)
 				}
 			}
 		}
-		if err := os.WriteFile(routerEnvPath, []byte(routerEnvBuf.String()), 0400); err != nil {
-			return fmt.Errorf("failed to write router env file: %w", err)
-		}
-		p.ensureRouter(ctx)
-	} else {
-		fmt.Println("\nNo channel credentials configured — router skipped. Agents will run in gateway-only mode (web UI).")
 	}
 
 	// --- Save provider config ---
@@ -1017,8 +1005,9 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 		fmt.Println("\nAll values already configured.")
 	}
 	fmt.Println("\nLocal deployment ready! Next steps:")
-	fmt.Println("  conga admin add-user <name> [--channel slack:U0123456789]    # channel optional for gateway-only mode")
-	fmt.Println("  conga admin add-team <name> [--channel slack:C0123456789]    # channel optional for gateway-only mode")
+	fmt.Println("  conga channels add slack                                     # optional: add Slack integration")
+	fmt.Println("  conga admin add-user <name>                                  # provision an agent")
+	fmt.Println("  conga channels bind <name> slack:<id>                        # optional: bind agent to Slack")
 	return nil
 }
 
@@ -1499,12 +1488,3 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// hasAnyChannel returns true if any registered channel has its required credentials.
-func hasAnyChannel(shared common.SharedSecrets) bool {
-	for _, ch := range channels.All() {
-		if ch.HasCredentials(shared.Values) {
-			return true
-		}
-	}
-	return false
-}

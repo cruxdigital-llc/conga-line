@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/channels"
 	_ "github.com/cruxdigital-llc/conga-line/cli/internal/channels/slack"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/mcpserver"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
@@ -114,6 +115,23 @@ func (m *mockProvider) Connect(ctx context.Context, agentName string, localPort 
 }
 func (m *mockProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) error {
 	m.lastSetupCfg = cfg
+	return m.err
+}
+func (m *mockProvider) AddChannel(ctx context.Context, platform string, secrets map[string]string) error {
+	return m.err
+}
+func (m *mockProvider) RemoveChannel(ctx context.Context, platform string) error {
+	return m.err
+}
+func (m *mockProvider) ListChannels(ctx context.Context) ([]provider.ChannelStatus, error) {
+	return nil, m.err
+}
+func (m *mockProvider) BindChannel(ctx context.Context, agentName string, binding channels.ChannelBinding) error {
+	m.lastAgentName = agentName
+	return m.err
+}
+func (m *mockProvider) UnbindChannel(ctx context.Context, agentName string, platform string) error {
+	m.lastAgentName = agentName
 	return m.err
 }
 func (m *mockProvider) CycleHost(ctx context.Context) error { return m.err }

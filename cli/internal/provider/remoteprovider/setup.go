@@ -202,57 +202,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 		changed++
 	}
 
-	// --- Shared secrets (all optional) ---
-	// Channel-specific secrets (Slack, Discord, etc.)
-	fmt.Println("\nChannel integrations are optional. Skip all tokens to run in gateway-only mode (web UI).")
-
-	for _, ch := range channels.All() {
-		for _, sec := range ch.SharedSecrets() {
-			remotePath := posixpath.Join(p.sharedSecretsDir(), sec.Name)
-			current := ""
-			if data, err := p.ssh.Download(remotePath); err == nil {
-				current = string(data)
-			}
-
-			cfgValue := cfg.SecretValue(sec.Name)
-			status := "set"
-			if current == "" && cfgValue == "" {
-				status = "not set"
-			}
-			fmt.Printf("\n[secret] %s — %s (optional) (%s)\n", sec.Name, sec.Prompt, status)
-
-			var value string
-			if cfgValue != "" {
-				value = cfgValue
-			} else if cfg != nil {
-				fmt.Println("  Skipped (not in config)")
-				continue
-			} else {
-				if current != "" {
-					if !ui.Confirm("  Update this value?") {
-						continue
-					}
-				}
-
-				value, err = ui.SecretPrompt(fmt.Sprintf("  Enter %s", sec.Name))
-				if err != nil {
-					return err
-				}
-				if value == "" {
-					fmt.Println("  Skipped (empty value)")
-					continue
-				}
-			}
-
-			if err := p.ssh.Upload(remotePath, []byte(value), 0400); err != nil {
-				return fmt.Errorf("failed to save %s: %w", sec.Name, err)
-			}
-			fmt.Printf("  Saved (%s).\n", common.MaskSecret(value))
-			changed++
-		}
-	}
-
-	// Google OAuth secrets (not channel-specific)
+	// --- Shared secrets (non-channel only — channel secrets are managed via `conga channels add`) ---
 	for _, item := range []struct {
 		name, description string
 		isSecret          bool
@@ -385,24 +335,27 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 	// --- Start egress proxy ---
 	p.ensureEgressProxy(ctx)
 
-	// --- Router (only if any channel has credentials) ---
-	shared, _ := p.readSharedSecrets()
-	if hasAnyChannel(shared) {
-		routerEnvPath := posixpath.Join(p.remoteConfigDir(), "router.env")
-		var routerEnvBuf strings.Builder
+	// --- Auto-configure channels if secrets were provided in SetupConfig (backwards compat) ---
+	if cfg != nil {
 		for _, ch := range channels.All() {
-			if ch.HasCredentials(shared.Values) {
-				for k, v := range ch.RouterEnvVars(shared.Values) {
-					fmt.Fprintf(&routerEnvBuf, "%s=%s\n", k, v)
+			channelSecrets := map[string]string{}
+			hasRequired := true
+			for _, def := range ch.SharedSecrets() {
+				val := cfg.SecretValue(def.Name)
+				if val != "" {
+					channelSecrets[def.Name] = val
+				} else if def.Required {
+					hasRequired = false
+					break
+				}
+			}
+			if hasRequired && len(channelSecrets) > 0 {
+				fmt.Printf("\nAuto-configuring %s channel from provided secrets...\n", ch.Name())
+				if err := p.AddChannel(ctx, ch.Name(), channelSecrets); err != nil {
+					return fmt.Errorf("auto-configure %s channel: %w", ch.Name(), err)
 				}
 			}
 		}
-		if err := p.ssh.Upload(routerEnvPath, []byte(routerEnvBuf.String()), 0400); err != nil {
-			return fmt.Errorf("failed to write router env file: %w", err)
-		}
-		p.ensureRouter(ctx)
-	} else {
-		fmt.Println("\nNo channel credentials configured — router skipped. Agents will run in gateway-only mode (web UI).")
 	}
 
 	// --- Save provider config ---
@@ -424,8 +377,9 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 		fmt.Println("\nAll values already configured.")
 	}
 	fmt.Println("\nRemote deployment ready! Next steps:")
-	fmt.Println("  conga admin add-user <name> [slack_member_id]    # Slack ID optional for gateway-only mode")
-	fmt.Println("  conga admin add-team <name> [slack_channel]      # Slack channel optional for gateway-only mode")
+	fmt.Println("  conga channels add slack                                     # optional: add Slack integration")
+	fmt.Println("  conga admin add-user <name>                                  # provision an agent")
+	fmt.Println("  conga channels bind <name> slack:<id>                        # optional: bind agent to Slack")
 	return nil
 }
 

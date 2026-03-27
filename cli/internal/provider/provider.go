@@ -73,6 +73,14 @@ type Identity struct {
 	AgentName string `json:"agent_name,omitempty"` // mapped agent name (empty if unmapped)
 }
 
+// ChannelStatus reports the state of a configured channel platform.
+type ChannelStatus struct {
+	Platform      string   `json:"platform"`       // "slack"
+	Configured    bool     `json:"configured"`      // shared secrets present
+	RouterRunning bool     `json:"router_running"`  // router container is running
+	BoundAgents   []string `json:"bound_agents"`    // agent names with this channel binding
+}
+
 // ConnectInfo is returned by Connect for display to the user.
 type ConnectInfo struct {
 	URL       string
@@ -146,6 +154,25 @@ type Provider interface {
 
 	// DeleteSecret removes a secret.
 	DeleteSecret(ctx context.Context, agentName, secretName string) error
+
+	// --- Channel Management ---
+
+	// AddChannel configures a messaging channel platform (e.g. "slack") by storing
+	// its shared secrets and starting the router. Idempotent: re-adding updates secrets.
+	AddChannel(ctx context.Context, platform string, secrets map[string]string) error
+
+	// RemoveChannel removes a channel platform: stops the router, strips bindings
+	// from all agents, deletes shared secrets.
+	RemoveChannel(ctx context.Context, platform string) error
+
+	// ListChannels returns the status of all registered channel platforms.
+	ListChannels(ctx context.Context) ([]ChannelStatus, error)
+
+	// BindChannel adds a channel binding to an existing agent.
+	BindChannel(ctx context.Context, agentName string, binding channels.ChannelBinding) error
+
+	// UnbindChannel removes a channel binding from an agent.
+	UnbindChannel(ctx context.Context, agentName string, platform string) error
 
 	// --- Connectivity ---
 

@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/internal/channels"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
@@ -873,4 +874,26 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// --- Channel Management (stubs — not yet implemented for AWS) ---
+
+func (p *AWSProvider) AddChannel(_ context.Context, _ string, _ map[string]string) error {
+	return fmt.Errorf("channel management not yet implemented for AWS provider")
+}
+
+func (p *AWSProvider) RemoveChannel(_ context.Context, _ string) error {
+	return fmt.Errorf("channel management not yet implemented for AWS provider")
+}
+
+func (p *AWSProvider) ListChannels(_ context.Context) ([]provider.ChannelStatus, error) {
+	return nil, fmt.Errorf("channel management not yet implemented for AWS provider")
+}
+
+func (p *AWSProvider) BindChannel(_ context.Context, _ string, _ channels.ChannelBinding) error {
+	return fmt.Errorf("channel management not yet implemented for AWS provider")
+}
+
+func (p *AWSProvider) UnbindChannel(_ context.Context, _ string, _ string) error {
+	return fmt.Errorf("channel management not yet implemented for AWS provider")
 }

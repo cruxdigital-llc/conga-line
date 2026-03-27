@@ -38,6 +38,13 @@ func (s *Server) registerTools() {
 		s.toolCycleHost(),
 		s.toolTeardown(),
 
+		// Channel Management
+		s.toolChannelsAdd(),
+		s.toolChannelsRemove(),
+		s.toolChannelsList(),
+		s.toolChannelsBind(),
+		s.toolChannelsUnbind(),
+
 		// Policy
 		s.toolPolicyGet(),
 		s.toolPolicyValidate(),

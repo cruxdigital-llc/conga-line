@@ -19,6 +19,16 @@ type SharedSecrets struct {
 	GoogleClientSecret string
 }
 
+// HasAnyChannel returns true if any registered channel has its required credentials present.
+func HasAnyChannel(shared SharedSecrets) bool {
+	for _, ch := range channels.All() {
+		if ch.HasCredentials(shared.Values) {
+			return true
+		}
+	}
+	return false
+}
+
 // GenerateOpenClawConfig produces the openclaw.json content for an agent.
 // Static settings (model, heartbeat, pruning, etc.) are loaded from the embedded
 // openclaw-defaults.json — the single source of truth for OpenClaw config structure.
