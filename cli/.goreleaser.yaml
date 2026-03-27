@@ -33,6 +33,7 @@ brews:
   - repository:
       owner: cruxdigital-llc
       name: homebrew-conga-line
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     name: conga
     homepage: https://github.com/cruxdigital-llc/conga-line
