@@ -135,6 +135,9 @@ aws s3 cp s3://${state_bucket}/conga/router/src/index.js /opt/conga/router/src/i
 # Download behavior files from S3
 aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region "$AWS_REGION"
 
+# Download policy file from S3 (if uploaded by operator)
+aws s3 cp s3://${state_bucket}/conga/conga-policy.yaml /opt/conga/conga-policy.yaml --region "$AWS_REGION" 2>/dev/null || true
+
 # Install router dependencies
 cd /opt/conga/router && npm install --production
 cd /
@@ -416,6 +419,217 @@ OCCONFIG
   setup_agent_common "$AGENT_NAME" "$GATEWAY_PORT" "team"
 }
 
+# Generate nginx egress conf from conga-policy.yaml for a given agent.
+# Reads global allowed_domains and agent-specific overrides.
+# Output: /opt/conga/config/egress-$AGENT_NAME.conf (or nothing if no domains).
+generate_egress_conf() {
+  # NOTE: This function generates the same Squid config format as policy.GenerateProxyConf() in Go
+  # (cli/internal/policy/egress.go) — keep both implementations in sync when modifying.
+  local AGENT_NAME="$1"
+  local POLICY_FILE="/opt/conga/conga-policy.yaml"
+  local CONF_OUT="/opt/conga/config/egress-$AGENT_NAME.conf"
+
+  if [ ! -f "$POLICY_FILE" ]; then
+    return
+  fi
+
+  # Extract allowed_domains and blocked_domains — check agent override first, fall back to global.
+  # Uses simple grep/sed since yq is not guaranteed on AL2023.
+  local DOMAINS=""
+  local IN_AGENT_SECTION=false
+  local IN_AGENT_EGRESS=false
+  local IN_AGENT_ALLOWED=false
+  local IN_AGENT_BLOCKED=false
+  local IN_GLOBAL_EGRESS=false
+  local IN_GLOBAL_ALLOWED=false
+  local IN_GLOBAL_BLOCKED=false
+  local AGENT_ALLOWED=""
+  local AGENT_BLOCKED=""
+  local GLOBAL_ALLOWED=""
+  local GLOBAL_BLOCKED=""
+
+  while IFS= read -r line; do
+    # Detect agent-specific section
+    if echo "$line" | grep -qE "^  $AGENT_NAME:"; then
+      IN_AGENT_SECTION=true
+      IN_AGENT_EGRESS=false
+      IN_AGENT_ALLOWED=false
+      IN_AGENT_BLOCKED=false
+      continue
+    fi
+    # Detect next agent or top-level key (end of agent section)
+    if $IN_AGENT_SECTION && echo "$line" | grep -qE "^  [a-zA-Z]" && ! echo "$line" | grep -qE "^    "; then
+      IN_AGENT_SECTION=false
+      IN_AGENT_EGRESS=false
+      IN_AGENT_ALLOWED=false
+      IN_AGENT_BLOCKED=false
+    fi
+    # Detect agent egress subsection
+    if $IN_AGENT_SECTION && echo "$line" | grep -qE "^    egress:"; then
+      IN_AGENT_EGRESS=true
+      IN_AGENT_ALLOWED=false
+      IN_AGENT_BLOCKED=false
+      continue
+    fi
+    if $IN_AGENT_EGRESS && echo "$line" | grep -qE "^    [a-z]" && ! echo "$line" | grep -qE "^      "; then
+      IN_AGENT_EGRESS=false
+      IN_AGENT_ALLOWED=false
+      IN_AGENT_BLOCKED=false
+    fi
+    # Detect allowed_domains vs blocked_domains within agent egress
+    if $IN_AGENT_EGRESS && echo "$line" | grep -qE "^      allowed_domains:"; then
+      IN_AGENT_ALLOWED=true
+      IN_AGENT_BLOCKED=false
+      continue
+    fi
+    if $IN_AGENT_EGRESS && echo "$line" | grep -qE "^      blocked_domains:"; then
+      IN_AGENT_BLOCKED=true
+      IN_AGENT_ALLOWED=false
+      continue
+    fi
+    if $IN_AGENT_EGRESS && echo "$line" | grep -qE "^      [a-z]" && ! echo "$line" | grep -qE "^        "; then
+      IN_AGENT_ALLOWED=false
+      IN_AGENT_BLOCKED=false
+    fi
+    # Collect agent allowed domains
+    if $IN_AGENT_ALLOWED && echo "$line" | grep -qE "^        - "; then
+      local d
+      d=$(echo "$line" | sed 's/^        - //; s/^"//; s/"$//' | tr -d "'" | xargs)
+      [ -n "$d" ] && AGENT_ALLOWED="$AGENT_ALLOWED $d"
+    fi
+    # Collect agent blocked domains
+    if $IN_AGENT_BLOCKED && echo "$line" | grep -qE "^        - "; then
+      local d
+      d=$(echo "$line" | sed 's/^        - //; s/^"//; s/"$//' | tr -d "'" | xargs)
+      [ -n "$d" ] && AGENT_BLOCKED="$AGENT_BLOCKED $d"
+    fi
+
+    # Detect global egress section
+    if echo "$line" | grep -qE "^egress:"; then
+      IN_GLOBAL_EGRESS=true
+      IN_GLOBAL_ALLOWED=false
+      IN_GLOBAL_BLOCKED=false
+      continue
+    fi
+    if $IN_GLOBAL_EGRESS && echo "$line" | grep -qE "^[a-z]"; then
+      IN_GLOBAL_EGRESS=false
+      IN_GLOBAL_ALLOWED=false
+      IN_GLOBAL_BLOCKED=false
+    fi
+    # Detect allowed_domains vs blocked_domains within global egress
+    if $IN_GLOBAL_EGRESS && echo "$line" | grep -qE "^  allowed_domains:"; then
+      IN_GLOBAL_ALLOWED=true
+      IN_GLOBAL_BLOCKED=false
+      continue
+    fi
+    if $IN_GLOBAL_EGRESS && echo "$line" | grep -qE "^  blocked_domains:"; then
+      IN_GLOBAL_BLOCKED=true
+      IN_GLOBAL_ALLOWED=false
+      continue
+    fi
+    if $IN_GLOBAL_EGRESS && echo "$line" | grep -qE "^  [a-z]" && ! echo "$line" | grep -qE "^    "; then
+      IN_GLOBAL_ALLOWED=false
+      IN_GLOBAL_BLOCKED=false
+    fi
+    # Collect global allowed domains
+    if $IN_GLOBAL_ALLOWED && echo "$line" | grep -qE "^    - "; then
+      local d
+      d=$(echo "$line" | sed 's/^    - //; s/^"//; s/"$//' | tr -d "'" | xargs)
+      [ -n "$d" ] && GLOBAL_ALLOWED="$GLOBAL_ALLOWED $d"
+    fi
+    # Collect global blocked domains
+    if $IN_GLOBAL_BLOCKED && echo "$line" | grep -qE "^    - "; then
+      local d
+      d=$(echo "$line" | sed 's/^    - //; s/^"//; s/"$//' | tr -d "'" | xargs)
+      [ -n "$d" ] && GLOBAL_BLOCKED="$GLOBAL_BLOCKED $d"
+    fi
+  done < "$POLICY_FILE"
+
+  # Agent override replaces global (shallow merge per spec)
+  local ALLOWED="" BLOCKED=""
+  if [ -n "$AGENT_ALLOWED" ]; then
+    ALLOWED="$AGENT_ALLOWED"
+    BLOCKED="$AGENT_BLOCKED"
+  else
+    ALLOWED="$GLOBAL_ALLOWED"
+    BLOCKED="$GLOBAL_BLOCKED"
+  fi
+
+  # Remove blocked domains from allowed list
+  if [ -n "$BLOCKED" ]; then
+    local FILTERED=""
+    for a in $ALLOWED; do
+      local is_blocked=false
+      a_lower=$(echo "$a" | tr '[:upper:]' '[:lower:]')
+      for b in $BLOCKED; do
+        b_lower=$(echo "$b" | tr '[:upper:]' '[:lower:]')
+        if [ "$a_lower" = "$b_lower" ]; then
+          is_blocked=true
+          break
+        fi
+      done
+      if ! $is_blocked; then
+        FILTERED="$FILTERED $a"
+      fi
+    done
+    ALLOWED="$FILTERED"
+  fi
+
+  # No domains = no egress conf to generate
+  DOMAINS=$(echo "$ALLOWED" | xargs) # trim
+  if [ -z "$DOMAINS" ]; then
+    return
+  fi
+
+  # Generate Squid config with domain-based CONNECT filtering
+  cat > "$CONF_OUT" << 'SQUID_HEADER'
+# Conga Line Egress Proxy — per-agent domain filtering
+# Generated by bootstrap — do not edit manually
+
+http_port 3128
+
+SQUID_HEADER
+
+  # Build dstdomain ACL line
+  local ACL_LINE="acl allowed_domains dstdomain"
+  for d in $DOMAINS; do
+    d=$(echo "$d" | tr '[:upper:]' '[:lower:]')
+    case "$d" in
+      \*.*)
+        # *.example.com → .example.com (Squid matches all subdomains)
+        local base="$${d#\*.}"
+        ACL_LINE="$ACL_LINE .$${base}"
+        ;;
+      *)
+        ACL_LINE="$ACL_LINE $d"
+        ;;
+    esac
+  done
+  echo "$ACL_LINE" >> "$CONF_OUT"
+
+  cat >> "$CONF_OUT" << 'SQUID_FOOTER'
+
+acl SSL_ports port 443
+acl CONNECT method CONNECT
+http_access allow CONNECT allowed_domains SSL_ports
+http_access allow allowed_domains
+http_access deny all
+
+# Disable caching — proxy is for filtering only
+cache deny all
+
+# Log to stdout/stderr for Docker log collection
+access_log stdio:/dev/stdout
+cache_log stdio:/dev/stderr
+
+# Minimal resource usage
+workers 1
+SQUID_FOOTER
+
+  chmod 0400 "$CONF_OUT"
+  log "Generated egress config for $AGENT_NAME with domains: $DOMAINS"
+}
+
 # Shared setup logic for both agent types
 setup_agent_common() {
   local AGENT_NAME="$1" GATEWAY_PORT="$2" AGENT_TYPE="$3"
@@ -441,6 +655,47 @@ setup_agent_common() {
   # Docker network
   docker network create --driver bridge "conga-$AGENT_NAME" || true
 
+  # Generate egress config from policy (if policy file exists on host)
+  generate_egress_conf "$AGENT_NAME"
+
+  # Per-agent egress proxy (when policy-generated config exists)
+  EGRESS_CONF="/opt/conga/config/egress-$AGENT_NAME.conf"
+  EGRESS_PROXY="conga-egress-$AGENT_NAME"
+  EGRESS_DOCKER_ARGS=""
+  if [ -f "$EGRESS_CONF" ]; then
+    log "Starting egress proxy for $AGENT_NAME..."
+    # Build proxy image if not present (alpine + squid)
+    if ! docker image inspect conga-egress-proxy >/dev/null 2>&1; then
+      log "Building egress proxy image..."
+      mkdir -p /tmp/conga-egress-build
+      cat > /tmp/conga-egress-build/Dockerfile << 'PROXYDF'
+FROM alpine:3.21
+RUN apk add --no-cache squid >/dev/null 2>&1
+PROXYDF
+      docker build -t conga-egress-proxy /tmp/conga-egress-build
+      rm -rf /tmp/conga-egress-build
+    fi
+    docker rm -f "$EGRESS_PROXY" 2>/dev/null || true
+    docker run -d \
+      --name "$EGRESS_PROXY" \
+      --network "conga-$AGENT_NAME" \
+      --restart always \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --memory 128m \
+      --read-only \
+      --user squid:squid \
+      --tmpfs /var/run:rw,noexec,nosuid,uid=31,gid=31 \
+      --tmpfs /var/log/squid:rw,noexec,nosuid,uid=31,gid=31 \
+      --tmpfs /var/spool/squid:rw,noexec,nosuid,uid=31,gid=31 \
+      -v "$EGRESS_CONF:/etc/squid/squid.conf:ro" \
+      conga-egress-proxy \
+      squid -N -f /etc/squid/squid.conf
+    # Proxy is on the same Docker network — Docker DNS resolves the container name.
+    EGRESS_DOCKER_ARGS="-e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1"
+    log "Egress proxy started for $AGENT_NAME"
+  fi
+
   # Build -e flags from env file keys
   ENV_FLAGS=""
   while IFS="=" read -r key value; do
@@ -459,7 +714,7 @@ Type=simple
 EnvironmentFile=/opt/conga/config/$AGENT_NAME.env
 ExecStartPre=/bin/bash -c 'aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region ${aws_region} 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh $AGENT_NAME \$(cat /opt/conga/config/$AGENT_NAME.type 2>/dev/null || echo user) 2>/dev/null || true; chown -R 1000:1000 /opt/conga/data/$AGENT_NAME/data/workspace 2>/dev/null || true'
 ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
-ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:$GATEWAY_PORT:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 0.75 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE
+ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:$GATEWAY_PORT:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 0.75 -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $EGRESS_DOCKER_ARGS $ENV_FLAGS $CONGA_IMAGE
 ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
 ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
 StandardOutput=append:/var/log/conga-$AGENT_NAME.log

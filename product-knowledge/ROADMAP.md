@@ -51,9 +51,7 @@ The organizing principle: local → remote → enterprise is a promotion pipelin
 | Area | Deliverable | Status |
 |---|---|---|
 | **Policy schema** | `conga-policy.yaml` with egress, routing, posture sections. Go types, validation, enforcement reporting. `conga policy validate` command. | ✅ Complete — `specs/2026-03-25_feature_policy-schema/` |
-| **Egress — Local** | Validate mode (warn-only, default) + enforce mode (egress proxy container with SNI-based domain filtering). | Spec 2 — next |
-| **Egress — Remote** | iptables OUTPUT rules or dnsmasq DNS filtering on remote host. | Spec 2 |
-| **Egress — Enterprise** | Squid forward proxy with domain allowlist. Blocked requests logged and alerted. | Spec 2 |
+| **Egress — All providers** | Per-agent Squid proxy with domain-based CONNECT filtering. Local: validate (warn) or enforce modes. Remote/AWS: always enforce. Unified mechanism. | ✅ Complete — `specs/2026-03-25_feature_egress-allowlist/` |
 | **Version awareness** | `conga status` shows OpenClaw version + security update availability. | Planned |
 | **Demo playbook** | 5 ready-today scenarios (container escape, network isolation, config tamper, SSRF, IAM deny). | Planned |
 

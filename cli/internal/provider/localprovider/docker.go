@@ -44,9 +44,8 @@ func networkName(agentName string) string {
 // createNetwork creates a Docker bridge network for agent isolation.
 // Each agent gets its own network to prevent inter-container communication.
 // Note: We don't use --internal because it prevents -p port publishing for the
-// gateway web UI. As a result, containers can still reach the internet directly.
-// Full egress restriction requires explicit proxy wiring (HTTPS_PROXY/--dns)
-// or iptables rules — tracked as a deferred item in ROADMAP.md.
+// gateway web UI. Egress restriction is enforced via per-agent Squid proxy
+// wired through HTTPS_PROXY/HTTP_PROXY env vars (see startAgentEgressProxy).
 func createNetwork(ctx context.Context, name string) error {
 	_, err := dockerRun(ctx, "network", "create", name, "--driver", "bridge")
 	return err
@@ -86,6 +85,16 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
 		"-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort),
 	}
+	if opts.EgressEnforce && opts.EgressProxyName != "" {
+		// Proxy is on the same Docker network — Docker DNS resolves the container name.
+		// No --dns override needed since the proxy no longer runs a DNS forwarder.
+		args = append(args,
+			"-e", fmt.Sprintf("HTTPS_PROXY=http://%s:3128", opts.EgressProxyName),
+			"-e", fmt.Sprintf("HTTP_PROXY=http://%s:3128", opts.EgressProxyName),
+			"-e", "NO_PROXY=localhost,127.0.0.1",
+		)
+	}
+
 	args = append(args, opts.Image)
 
 	_, err := dockerRun(ctx, args...)
@@ -93,13 +102,15 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 }
 
 type agentContainerOpts struct {
-	Name        string
-	AgentName   string
-	Network     string
-	EnvFile     string
-	DataDir     string
-	GatewayPort int
-	Image       string
+	Name            string
+	AgentName       string
+	Network         string
+	EnvFile         string
+	DataDir         string
+	GatewayPort     int
+	Image           string
+	EgressEnforce   bool
+	EgressProxyName string
 }
 
 // runRouterContainer starts the router container.

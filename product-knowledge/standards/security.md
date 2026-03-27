@@ -46,13 +46,13 @@ When a policy defines a security control, each provider enforces it with the bes
 
 | Control | Local (Dev) | Remote (Staging) | Enterprise (Prod) |
 |---|---|---|---|
-| **Egress filtering** | Configurable: validate (warns only) or enforce (egress proxy with domain allowlist) | iptables OUTPUT rules (IP-based, best-effort) | Squid forward proxy with domain allowlist. Blocked requests logged and alerted. |
+| **Egress filtering** | Configurable: validate (warns only) or enforce (per-agent Squid proxy with domain-based CONNECT filtering) | Per-agent Squid proxy with domain allowlist (same mechanism as local) | Per-agent Squid proxy with domain allowlist. Blocked attempts logged. |
 | **Host access** | N/A (user's machine) | SSH key-only auth. Gateway via SSH tunnel. | Zero ingress. No SSH. SSM-only. Gateway via SSM tunnel. |
 | **Secrets backend** | File, mode 0400. User owns disk encryption. | File, mode 0400 on remote. | AWS Secrets Manager. Encrypted at rest. IAM-scoped. |
 | **IAM / RBAC** | N/A (single user) | Admin: SSH. End users: CLI-only, scoped to assigned agent. | AWS SSO + IAM roles with explicit deny. Per-user permission sets (planned). |
 | **Monitoring** | Config integrity + container logs via `conga logs` | Config integrity + container logs. Optional: log aggregator. | VPC flow logs (30-day), CloudWatch alerting, config integrity. Planned: GuardDuty. |
 | **Runtime policy** | Validate: check policy syntax, report unenforced rules. Enforce: activate egress proxy locally. | Enforce egress + routing rules. Report what requires enterprise. | Full enforcement. Planned: OpenShell for per-action interception. |
-| **Container read-only** | Router container only (--read-only + tmpfs). | Router container only. | Router + agent where feasible. systemd ReadOnlyPaths as backup. |
+| **Container read-only** | Router + egress proxy (--read-only + tmpfs). | Router + egress proxy. | Router + egress proxy + agent where feasible. systemd ReadOnlyPaths as backup. |
 | **Isolation upgrade** | N/A | Docker default is sufficient. | Planned: gVisor (Level 2), per-agent subnets (Level 3), per-user VPCs (Level 4). |
 
 ## Egress Policy
@@ -131,7 +131,7 @@ Each level is additive — higher levels include all controls from lower levels.
 |---|---|---|
 | Container escape on shared host | Medium | cap-drop + seccomp + no-new-privileges make this difficult; upgrade path documented |
 | Shared Slack tokens across containers | Low | Channel allowlist + immutable config prevents cross-agent access |
-| Port-443-only egress (until domain allowlisting) | High | Compromised agent can exfiltrate to any HTTPS endpoint. Mitigated by Spec 2 (egress allowlisting). |
+| Cooperative proxy enforcement | Medium | Egress proxy is set via `HTTPS_PROXY` env var, which well-behaved Node.js HTTP clients honor. A compromised agent using raw sockets or spawned processes could bypass the proxy. Mitigation: `--internal` Docker networks (blocks all direct egress) are the upgrade path but require proxy-based port publishing. |
 | Secrets on disk (local/remote) | Low | Mode 0400 files; disk encryption is operator responsibility. AWS uses Secrets Manager. |
 | IP correlation by external APIs | Low | All traffic exits through same NAT; reveals shared infrastructure but not content |
 | Shared kernel vulnerabilities | Medium | Host kernel CVE affects all containers; mitigated by auto-upgrades; gVisor eliminates |

@@ -275,8 +275,8 @@ func TestEnforcementReportRemote(t *testing.T) {
 	}
 	reports := pf.EnforcementReport("remote")
 	for _, r := range reports {
-		if r.Rule == "domain_allowlist" && r.Level != Partial {
-			t.Errorf("remote egress: expected partial, got %s", r.Level)
+		if r.Rule == "domain_allowlist" && r.Level != Enforced {
+			t.Errorf("remote egress: expected enforced, got %s", r.Level)
 		}
 	}
 }
