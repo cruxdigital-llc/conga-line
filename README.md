@@ -242,6 +242,12 @@ No Terraform, Go, or repo clone required. This is how users manage their agents 
 
 ### Install
 
+**Homebrew (macOS/Linux)**:
+```bash
+brew tap cruxdigital-llc/conga-line
+brew install conga
+```
+
 **macOS (Apple Silicon)** — tested:
 ```bash
 curl -fsSL https://github.com/cruxdigital-llc/conga-line/releases/latest/download/conga_darwin_arm64.tar.gz | tar xz -C /usr/local/bin conga
