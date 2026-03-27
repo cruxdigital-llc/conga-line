@@ -196,11 +196,9 @@ func TestGenerateProxyConfLuaNilAuthorityGuard(t *testing.T) {
 
 func TestGenerateProxyConfDNSFamily(t *testing.T) {
 	result := GenerateProxyConf([]string{"api.anthropic.com"})
-	if strings.Contains(result, "V4_ONLY") {
-		t.Error("dns_lookup_family should be AUTO, not V4_ONLY")
-	}
-	if !strings.Contains(result, "dns_lookup_family: AUTO") {
-		t.Error("expected dns_lookup_family: AUTO")
+	// V4_ONLY is required because Docker bridge networks are IPv4-only
+	if !strings.Contains(result, "dns_lookup_family: V4_ONLY") {
+		t.Error("expected dns_lookup_family: V4_ONLY (Docker bridge networks are IPv4-only)")
 	}
 }
 
