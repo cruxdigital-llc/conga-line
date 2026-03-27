@@ -56,7 +56,7 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
               dns_cache_config:
                 name: dns_cache
-                dns_lookup_family: AUTO
+                dns_lookup_family: V4_ONLY
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -69,4 +69,4 @@ static_resources:
         "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
         dns_cache_config:
           name: dns_cache
-          dns_lookup_family: AUTO
+          dns_lookup_family: V4_ONLY

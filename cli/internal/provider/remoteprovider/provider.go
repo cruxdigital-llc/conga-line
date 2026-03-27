@@ -1061,6 +1061,15 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 		return fmt.Errorf("starting egress proxy: %w", err)
 	}
 
+	// Connect proxy to the egress network so it can reach the internet.
+	// The proxy is started on the agent network (so the agent can reach it),
+	// but also needs external connectivity to forward traffic upstream.
+	if p.networkExists(ctx, egressNetwork) {
+		if err := p.connectNetwork(ctx, egressNetwork, proxyName); err != nil {
+			return fmt.Errorf("connecting egress proxy to egress network: %w", err)
+		}
+	}
+
 	fmt.Printf("  Egress proxy started for %s (%d domains allowed)\n", agentName, len(domains))
 	return nil
 }
