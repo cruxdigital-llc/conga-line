@@ -158,11 +158,13 @@ type Provider interface {
 	// --- Channel Management ---
 
 	// AddChannel configures a messaging channel platform (e.g. "slack") by storing
-	// its shared secrets and starting the router. Idempotent: re-adding updates secrets.
+	// its shared secrets and starting (or restarting) the router.
+	// Idempotent: re-adding overwrites secrets on disk and restarts the router.
 	AddChannel(ctx context.Context, platform string, secrets map[string]string) error
 
 	// RemoveChannel removes a channel platform: stops the router, strips bindings
-	// from all agents, deletes shared secrets.
+	// from all agents, regenerates affected agent configs and routing, and deletes
+	// shared secrets.
 	RemoveChannel(ctx context.Context, platform string) error
 
 	// ListChannels returns the status of all registered channel platforms.

@@ -47,6 +47,22 @@ func ParseBinding(s string) (ChannelBinding, error) {
 	return ChannelBinding{Platform: platform, ID: id}, nil
 }
 
+// RegisteredNames returns a comma-separated list of registered channel platform names.
+func RegisteredNames() string {
+	return strings.Join(registeredNames(), ", ")
+}
+
+// FilterBindings returns bindings with the given platform removed.
+func FilterBindings(bindings []ChannelBinding, platform string) []ChannelBinding {
+	var result []ChannelBinding
+	for _, b := range bindings {
+		if b.Platform != platform {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
 func registeredNames() []string {
 	names := make([]string, 0, len(registered))
 	for n := range registered {

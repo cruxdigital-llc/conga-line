@@ -61,9 +61,19 @@ func TestToolChannelsList(t *testing.T) {
 	text := textContent(t, result)
 	var statuses []provider.ChannelStatus
 	if err := json.Unmarshal([]byte(text), &statuses); err != nil {
-		if text != "null" {
-			t.Errorf("expected valid JSON, got: %s", text)
-		}
+		t.Fatalf("expected valid JSON, got: %s", text)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 channel status, got %d", len(statuses))
+	}
+	if statuses[0].Platform != "slack" {
+		t.Errorf("expected platform 'slack', got %q", statuses[0].Platform)
+	}
+	if !statuses[0].Configured {
+		t.Error("expected channel to be configured")
+	}
+	if len(statuses[0].BoundAgents) != 1 || statuses[0].BoundAgents[0] != "agent1" {
+		t.Errorf("expected bound agent 'agent1', got %v", statuses[0].BoundAgents)
 	}
 }
 

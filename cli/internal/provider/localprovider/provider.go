@@ -279,7 +279,9 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 
 	// 10. Ensure router is running and connected (only if any channel has credentials)
 	if common.HasAnyChannel(shared) {
-		p.ensureRouter(ctx)
+		if err := p.ensureRouter(ctx, false); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: router not started: %v\n", err)
+		}
 		if containerExists(ctx, routerContainer) {
 			connectNetwork(ctx, netName, routerContainer)
 		}
@@ -1030,7 +1032,9 @@ func (p *LocalProvider) CycleHost(ctx context.Context) error {
 
 	// Restart infrastructure containers
 	p.ensureEgressProxy(ctx)
-	p.ensureRouter(ctx)
+	if err := p.ensureRouter(ctx, false); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: router not started: %v\n", err)
+	}
 
 	// Restart agents
 	for _, a := range agents {
@@ -1130,14 +1134,15 @@ func (p *LocalProvider) cleanupDockerByPrefix(ctx context.Context) {
 
 // --- infrastructure helpers ---
 
-// ensureRouter starts the router container if it's not already running.
-func (p *LocalProvider) ensureRouter(ctx context.Context) {
+// ensureRouter starts or restarts the router container.
+// If restart is true and the router is already running, it is replaced to pick up config changes.
+func (p *LocalProvider) ensureRouter(ctx context.Context, restart bool) error {
 	if containerExists(ctx, routerContainer) {
 		state, err := inspectState(ctx, routerContainer)
-		if err == nil && state.Running {
-			return // already running
+		if err == nil && state.Running && !restart {
+			return nil // already running, no restart requested
 		}
-		// Exists but not running — remove and recreate
+		// Exists but not running (or restart requested) — remove and recreate
 		removeContainer(ctx, routerContainer)
 	}
 
@@ -1146,12 +1151,10 @@ func (p *LocalProvider) ensureRouter(ctx context.Context) {
 
 	// Check required files exist
 	if _, err := os.Stat(filepath.Join(p.routerDir(), "src", "index.js")); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: router source not found at %s — router not started\n", p.routerDir())
-		return
+		return fmt.Errorf("router source not found at %s", p.routerDir())
 	}
 	if _, err := os.Stat(routerEnvPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: router.env not found — router not started\n")
-		return
+		return fmt.Errorf("router.env not found — run 'conga channels add' first")
 	}
 
 	fmt.Println("Starting router...")
@@ -1160,8 +1163,7 @@ func (p *LocalProvider) ensureRouter(ctx context.Context) {
 		RouterDir:   p.routerDir(),
 		RoutingJSON: routingPath,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to start router: %v\n", err)
-		return
+		return fmt.Errorf("failed to start router: %w", err)
 	}
 
 	// Connect router to all existing agent networks
@@ -1171,6 +1173,7 @@ func (p *LocalProvider) ensureRouter(ctx context.Context) {
 	}
 
 	fmt.Println("  Router started.")
+	return nil
 }
 
 // ensureEgressProxy starts the egress proxy if not already running.

@@ -14,11 +14,11 @@ import (
 )
 
 // AddChannel configures a messaging channel platform by storing its shared
-// secrets and starting the router. Idempotent: re-adding updates secrets.
+// secrets and starting (or restarting) the router.
 func (p *LocalProvider) AddChannel(ctx context.Context, platform string, secrets map[string]string) error {
 	ch, ok := channels.Get(platform)
 	if !ok {
-		return fmt.Errorf("unknown channel platform %q; registered: %s", platform, registeredChannelNames())
+		return fmt.Errorf("unknown channel platform %q; registered: %s", platform, channels.RegisteredNames())
 	}
 
 	// Validate required secrets are present
@@ -47,8 +47,10 @@ func (p *LocalProvider) AddChannel(ctx context.Context, platform string, secrets
 		return fmt.Errorf("failed to write router env: %w", err)
 	}
 
-	// Start the router
-	p.ensureRouter(ctx)
+	// Start (or restart) the router to pick up the new config
+	if err := p.ensureRouter(ctx, true); err != nil {
+		return fmt.Errorf("failed to start router: %w", err)
+	}
 
 	return nil
 }
@@ -62,21 +64,29 @@ func (p *LocalProvider) RemoveChannel(ctx context.Context, platform string) erro
 	}
 
 	// Check if actually configured
-	shared, _ := p.readSharedSecrets()
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return fmt.Errorf("failed to read shared secrets: %w", err)
+	}
 	if !ch.HasCredentials(shared.Values) {
 		return nil // not configured, no-op
 	}
 
 	// 1. Stop and remove router
 	if containerExists(ctx, routerContainer) {
-		removeContainer(ctx, routerContainer)
+		if err := removeContainer(ctx, routerContainer); err != nil {
+			return fmt.Errorf("failed to remove router container: %w", err)
+		}
 	}
 
 	// 2. Strip bindings from all agents and regenerate their configs
-	agents, _ := p.ListAgents(ctx)
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list agents: %w", err)
+	}
 	for _, a := range agents {
 		if a.ChannelBinding(platform) != nil {
-			a.Channels = filterBindings(a.Channels, platform)
+			a.Channels = channels.FilterBindings(a.Channels, platform)
 			if err := p.saveAgentConfig(&a); err != nil {
 				return fmt.Errorf("failed to update agent %s: %w", a.Name, err)
 			}
@@ -95,18 +105,27 @@ func (p *LocalProvider) RemoveChannel(ctx context.Context, platform string) erro
 
 	// 4. Delete shared secrets for this platform
 	for _, def := range ch.SharedSecrets() {
-		os.Remove(filepath.Join(p.sharedSecretsDir(), def.Name))
+		path := filepath.Join(p.sharedSecretsDir(), def.Name)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete secret %s: %w", def.Name, err)
+		}
 	}
 
 	// 5. Remove router.env
-	os.Remove(filepath.Join(p.configDir(), "router.env"))
+	routerEnvPath := filepath.Join(p.configDir(), "router.env")
+	if err := os.Remove(routerEnvPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove router.env: %w", err)
+	}
 
 	return nil
 }
 
 // ListChannels returns the status of all registered channel platforms.
 func (p *LocalProvider) ListChannels(ctx context.Context) ([]provider.ChannelStatus, error) {
-	shared, _ := p.readSharedSecrets()
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read shared secrets: %w", err)
+	}
 
 	routerRunning := false
 	if containerExists(ctx, routerContainer) {
@@ -116,7 +135,10 @@ func (p *LocalProvider) ListChannels(ctx context.Context) ([]provider.ChannelSta
 		}
 	}
 
-	agents, _ := p.ListAgents(ctx)
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
 
 	var result []provider.ChannelStatus
 	for _, ch := range channels.All() {
@@ -143,7 +165,10 @@ func (p *LocalProvider) BindChannel(ctx context.Context, agentName string, bindi
 	}
 
 	// Check channel is configured
-	shared, _ := p.readSharedSecrets()
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return fmt.Errorf("failed to read shared secrets: %w", err)
+	}
 	if !ch.HasCredentials(shared.Values) {
 		return fmt.Errorf("%s is not configured; run 'conga channels add %s' first", binding.Platform, binding.Platform)
 	}
@@ -183,7 +208,9 @@ func (p *LocalProvider) BindChannel(ctx context.Context, agentName string, bindi
 
 	// Ensure router is connected to this agent's network
 	if containerExists(ctx, routerContainer) {
-		connectNetwork(ctx, networkName(agentName), routerContainer)
+		if err := connectNetwork(ctx, networkName(agentName), routerContainer); err != nil {
+			return fmt.Errorf("failed to connect router to agent network %s: %w", agentName, err)
+		}
 	}
 
 	// Restart agent to pick up new config
@@ -210,11 +237,11 @@ func (p *LocalProvider) UnbindChannel(ctx context.Context, agentName string, pla
 
 	// Check if agent has this binding
 	if a.ChannelBinding(platform) == nil {
-		return nil // no-op
+		return fmt.Errorf("agent %q has no %s binding", agentName, platform)
 	}
 
 	// Remove binding
-	a.Channels = filterBindings(a.Channels, platform)
+	a.Channels = channels.FilterBindings(a.Channels, platform)
 	if err := p.saveAgentConfig(a); err != nil {
 		return err
 	}
@@ -268,7 +295,9 @@ func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.
 	}
 
 	// Re-chown data dir for container user (node, uid 1000)
-	exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run()
+	if err := exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run(); err != nil {
+		return fmt.Errorf("failed to set ownership on %s: %w", dataDir, err)
+	}
 	return nil
 }
 
@@ -292,22 +321,3 @@ func (p *LocalProvider) writeRouterEnv() error {
 	return os.WriteFile(routerEnvPath, []byte(buf.String()), 0400)
 }
 
-// filterBindings returns bindings with the given platform removed.
-func filterBindings(bindings []channels.ChannelBinding, platform string) []channels.ChannelBinding {
-	var result []channels.ChannelBinding
-	for _, b := range bindings {
-		if b.Platform != platform {
-			result = append(result, b)
-		}
-	}
-	return result
-}
-
-// registeredChannelNames returns a comma-separated list of registered channel platforms.
-func registeredChannelNames() string {
-	var names []string
-	for _, ch := range channels.All() {
-		names = append(names, ch.Name())
-	}
-	return strings.Join(names, ", ")
-}

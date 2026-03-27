@@ -17,7 +17,7 @@ import (
 func (p *RemoteProvider) AddChannel(ctx context.Context, platform string, secrets map[string]string) error {
 	ch, ok := channels.Get(platform)
 	if !ok {
-		return fmt.Errorf("unknown channel platform %q; registered: %s", platform, registeredChannelNames())
+		return fmt.Errorf("unknown channel platform %q; registered: %s", platform, channels.RegisteredNames())
 	}
 
 	// Validate required secrets are present
@@ -45,14 +45,17 @@ func (p *RemoteProvider) AddChannel(ctx context.Context, platform string, secret
 		return fmt.Errorf("failed to write router env: %w", err)
 	}
 
-	// Start the router
-	p.ensureRouter(ctx)
+	// Start (or restart) the router to pick up the new config
+	if err := p.ensureRouter(ctx, true); err != nil {
+		return fmt.Errorf("failed to start router: %w", err)
+	}
 
 	return nil
 }
 
 // RemoveChannel removes a channel platform from the remote host: stops the
-// router, strips bindings from all agents, and deletes shared secrets.
+// router, strips bindings from all agents, regenerates configs, deletes shared
+// secrets, and removes router.env.
 func (p *RemoteProvider) RemoveChannel(ctx context.Context, platform string) error {
 	ch, ok := channels.Get(platform)
 	if !ok {
@@ -60,21 +63,29 @@ func (p *RemoteProvider) RemoveChannel(ctx context.Context, platform string) err
 	}
 
 	// Check if actually configured
-	shared, _ := p.readSharedSecrets()
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return fmt.Errorf("failed to read shared secrets: %w", err)
+	}
 	if !ch.HasCredentials(shared.Values) {
 		return nil // not configured, no-op
 	}
 
 	// 1. Stop and remove router
 	if p.containerExists(ctx, routerContainer) {
-		p.removeContainer(ctx, routerContainer)
+		if err := p.removeContainer(ctx, routerContainer); err != nil {
+			return fmt.Errorf("failed to remove router container: %w", err)
+		}
 	}
 
 	// 2. Strip bindings from all agents and regenerate their configs
-	agents, _ := p.ListAgents(ctx)
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list agents: %w", err)
+	}
 	for _, a := range agents {
 		if a.ChannelBinding(platform) != nil {
-			a.Channels = filterBindings(a.Channels, platform)
+			a.Channels = channels.FilterBindings(a.Channels, platform)
 			if err := p.saveAgentConfig(&a); err != nil {
 				return fmt.Errorf("failed to update agent %s: %w", a.Name, err)
 			}
@@ -93,18 +104,27 @@ func (p *RemoteProvider) RemoveChannel(ctx context.Context, platform string) err
 
 	// 4. Delete shared secrets for this platform
 	for _, def := range ch.SharedSecrets() {
-		p.ssh.Run(ctx, fmt.Sprintf("rm -f %s", shellQuote(posixpath.Join(p.sharedSecretsDir(), def.Name))))
+		path := shellQuote(posixpath.Join(p.sharedSecretsDir(), def.Name))
+		if _, err := p.ssh.Run(ctx, fmt.Sprintf("rm -f %s", path)); err != nil {
+			return fmt.Errorf("failed to delete secret %s: %w", def.Name, err)
+		}
 	}
 
 	// 5. Remove router.env
-	p.ssh.Run(ctx, fmt.Sprintf("rm -f %s", shellQuote(posixpath.Join(p.remoteConfigDir(), "router.env"))))
+	routerEnvPath := shellQuote(posixpath.Join(p.remoteConfigDir(), "router.env"))
+	if _, err := p.ssh.Run(ctx, fmt.Sprintf("rm -f %s", routerEnvPath)); err != nil {
+		return fmt.Errorf("failed to remove router.env: %w", err)
+	}
 
 	return nil
 }
 
 // ListChannels returns the status of all registered channel platforms.
 func (p *RemoteProvider) ListChannels(ctx context.Context) ([]provider.ChannelStatus, error) {
-	shared, _ := p.readSharedSecrets()
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read shared secrets: %w", err)
+	}
 
 	routerRunning := false
 	if p.containerExists(ctx, routerContainer) {
@@ -114,7 +134,10 @@ func (p *RemoteProvider) ListChannels(ctx context.Context) ([]provider.ChannelSt
 		}
 	}
 
-	agents, _ := p.ListAgents(ctx)
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
 
 	var result []provider.ChannelStatus
 	for _, ch := range channels.All() {
@@ -141,7 +164,10 @@ func (p *RemoteProvider) BindChannel(ctx context.Context, agentName string, bind
 	}
 
 	// Check channel is configured
-	shared, _ := p.readSharedSecrets()
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return fmt.Errorf("failed to read shared secrets: %w", err)
+	}
 	if !ch.HasCredentials(shared.Values) {
 		return fmt.Errorf("%s is not configured; run 'conga channels add %s' first", binding.Platform, binding.Platform)
 	}
@@ -181,7 +207,9 @@ func (p *RemoteProvider) BindChannel(ctx context.Context, agentName string, bind
 
 	// Ensure router is connected to this agent's network
 	if p.containerExists(ctx, routerContainer) {
-		p.connectNetwork(ctx, networkName(agentName), routerContainer)
+		if err := p.connectNetwork(ctx, networkName(agentName), routerContainer); err != nil {
+			return fmt.Errorf("failed to connect router to agent network %s: %w", agentName, err)
+		}
 	}
 
 	// Restart agent to pick up new config
@@ -208,11 +236,11 @@ func (p *RemoteProvider) UnbindChannel(ctx context.Context, agentName string, pl
 
 	// Check if agent has this binding
 	if a.ChannelBinding(platform) == nil {
-		return nil // no-op
+		return fmt.Errorf("agent %q has no %s binding", agentName, platform)
 	}
 
 	// Remove binding
-	a.Channels = filterBindings(a.Channels, platform)
+	a.Channels = channels.FilterBindings(a.Channels, platform)
 	if err := p.saveAgentConfig(a); err != nil {
 		return err
 	}
@@ -266,7 +294,9 @@ func (p *RemoteProvider) regenerateAgentConfig(ctx context.Context, cfg provider
 	}
 
 	// Re-chown data dir for container user (node, uid 1000)
-	p.ssh.Run(ctx, fmt.Sprintf("chown -R 1000:1000 %s", shellQuote(dataDir)))
+	if _, err := p.ssh.Run(ctx, fmt.Sprintf("chown -R 1000:1000 %s", shellQuote(dataDir))); err != nil {
+		return fmt.Errorf("failed to set ownership on %s: %w", dataDir, err)
+	}
 	return nil
 }
 
@@ -290,22 +320,3 @@ func (p *RemoteProvider) writeRouterEnv() error {
 	return p.ssh.Upload(routerEnvPath, []byte(buf.String()), 0400)
 }
 
-// filterBindings returns bindings with the given platform removed.
-func filterBindings(bindings []channels.ChannelBinding, platform string) []channels.ChannelBinding {
-	var result []channels.ChannelBinding
-	for _, b := range bindings {
-		if b.Platform != platform {
-			result = append(result, b)
-		}
-	}
-	return result
-}
-
-// registeredChannelNames returns a comma-separated list of registered channel platforms.
-func registeredChannelNames() string {
-	var names []string
-	for _, ch := range channels.All() {
-		names = append(names, ch.Name())
-	}
-	return strings.Join(names, ", ")
-}

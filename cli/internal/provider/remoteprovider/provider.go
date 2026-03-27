@@ -809,7 +809,9 @@ func (p *RemoteProvider) CycleHost(ctx context.Context) error {
 	fmt.Println("Restarting...")
 
 	p.ensureEgressProxy(ctx)
-	p.ensureRouter(ctx)
+	if err := p.ensureRouter(ctx, false); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: router not started: %v\n", err)
+	}
 
 	for _, a := range agents {
 		if a.Paused {
@@ -905,14 +907,18 @@ func (p *RemoteProvider) restartRouter(ctx context.Context) {
 	if p.containerExists(ctx, routerContainer) {
 		p.removeContainer(ctx, routerContainer)
 	}
-	p.ensureRouter(ctx)
+	if err := p.ensureRouter(ctx, false); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: router not started: %v\n", err)
+	}
 }
 
-func (p *RemoteProvider) ensureRouter(ctx context.Context) {
+// ensureRouter starts or restarts the router container on the remote host.
+// If restart is true and the router is already running, it is replaced to pick up config changes.
+func (p *RemoteProvider) ensureRouter(ctx context.Context, restart bool) error {
 	if p.containerExists(ctx, routerContainer) {
 		state, err := p.inspectState(ctx, routerContainer)
-		if err == nil && state.Running {
-			return
+		if err == nil && state.Running && !restart {
+			return nil // already running, no restart requested
 		}
 		p.removeContainer(ctx, routerContainer)
 	}
@@ -924,14 +930,12 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 	_, err := p.ssh.Run(ctx, fmt.Sprintf("test -f %s",
 		shellQuote(posixpath.Join(p.remoteRouterDir(), "src", "index.js"))))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: router source not found on remote host — router not started\n")
-		return
+		return fmt.Errorf("router source not found on remote host at %s", p.remoteRouterDir())
 	}
 	// Check router env exists
 	_, err = p.ssh.Run(ctx, fmt.Sprintf("test -f %s", shellQuote(routerEnvPath)))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: router.env not found — router not started\n")
-		return
+		return fmt.Errorf("router.env not found — run 'conga channels add' first")
 	}
 
 	// Install npm dependencies if node_modules is missing
@@ -941,8 +945,7 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 		installCmd := fmt.Sprintf("docker run --rm -v %s:/app -w /app node:22-alpine npm install --production 2>&1",
 			shellQuote(p.remoteRouterDir()))
 		if out, err := p.ssh.Run(ctx, installCmd); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: npm install failed: %v\n%s\n", err, out)
-			return
+			return fmt.Errorf("npm install failed: %v\n%s", err, out)
 		}
 	}
 
@@ -952,8 +955,7 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 		RouterDir:   p.remoteRouterDir(),
 		RoutingJSON: routingPath,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to start router: %v\n", err)
-		return
+		return fmt.Errorf("failed to start router: %w", err)
 	}
 
 	agents, _ := p.ListAgents(ctx)
@@ -962,6 +964,7 @@ func (p *RemoteProvider) ensureRouter(ctx context.Context) {
 	}
 
 	fmt.Println("  Router started.")
+	return nil
 }
 
 func (p *RemoteProvider) ensureEgressProxy(ctx context.Context) {

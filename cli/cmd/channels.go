@@ -9,7 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var channelForce bool
+var (
+	channelRemoveForce bool
+	channelUnbindForce bool
+)
 
 func init() {
 	channelsCmd := &cobra.Command{
@@ -38,7 +41,7 @@ for this platform, and deletes the shared credentials.`,
 		Args: cobra.ExactArgs(1),
 		RunE: channelsRemoveRun,
 	}
-	removeCmd.Flags().BoolVar(&channelForce, "force", false, "Skip confirmation")
+	removeCmd.Flags().BoolVar(&channelRemoveForce, "force", false, "Skip confirmation")
 
 	listCmd := &cobra.Command{
 		Use:   "list",
@@ -64,7 +67,7 @@ Example:
 		Args:  cobra.ExactArgs(2),
 		RunE:  channelsUnbindRun,
 	}
-	unbindCmd.Flags().BoolVar(&channelForce, "force", false, "Skip confirmation")
+	unbindCmd.Flags().BoolVar(&channelUnbindForce, "force", false, "Skip confirmation")
 
 	channelsCmd.AddCommand(addCmd, removeCmd, listCmd, bindCmd, unbindCmd)
 	rootCmd.AddCommand(channelsCmd)
@@ -134,7 +137,7 @@ func channelsRemoveRun(cmd *cobra.Command, args []string) error {
 	platform := args[0]
 
 	// Confirmation
-	if !channelForce && !ui.JSONInputActive {
+	if !channelRemoveForce && !ui.JSONInputActive {
 		statuses, err := prov.ListChannels(ctx)
 		if err != nil {
 			return err
@@ -254,7 +257,7 @@ func channelsUnbindRun(cmd *cobra.Command, args []string) error {
 	agentName := args[0]
 	platform := args[1]
 
-	if !channelForce && !ui.JSONInputActive {
+	if !channelUnbindForce && !ui.JSONInputActive {
 		if !ui.Confirm(fmt.Sprintf("Remove %s binding from agent %s?", platform, agentName)) {
 			fmt.Println("Cancelled.")
 			return nil

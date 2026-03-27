@@ -62,10 +62,9 @@ New file: `cli/internal/provider/localprovider/channels.go`
    }
    os.WriteFile(routerEnvPath, []byte(buf.String()), 0400)
    ```
-5. Start the router: `p.ensureRouter(ctx)`
-6. Connect router to all existing agent networks
+5. Start (or restart) the router: `p.ensureRouter(ctx, true)`
 
-**Idempotency**: If secrets already exist, overwrite them (allows credential rotation). If router is already running, it will be restarted to pick up new router.env.
+**Idempotency**: If secrets already exist, overwrite them (allows credential rotation). The router is always restarted to pick up updated credentials. Network connections are established during `BindChannel`, not `AddChannel`.
 
 **Output** (JSON mode):
 ```json

@@ -879,21 +879,21 @@ func sortedKeys(m map[string]string) []string {
 // --- Channel Management (stubs — not yet implemented for AWS) ---
 
 func (p *AWSProvider) AddChannel(_ context.Context, _ string, _ map[string]string) error {
-	return fmt.Errorf("channel management not yet implemented for AWS provider")
+	return fmt.Errorf("channel management not yet implemented for AWS provider; use --provider local or --provider remote instead")
 }
 
 func (p *AWSProvider) RemoveChannel(_ context.Context, _ string) error {
-	return fmt.Errorf("channel management not yet implemented for AWS provider")
+	return fmt.Errorf("channel management not yet implemented for AWS provider; use --provider local or --provider remote instead")
 }
 
 func (p *AWSProvider) ListChannels(_ context.Context) ([]provider.ChannelStatus, error) {
-	return nil, fmt.Errorf("channel management not yet implemented for AWS provider")
+	return nil, fmt.Errorf("channel management not yet implemented for AWS provider; use --provider local or --provider remote instead")
 }
 
 func (p *AWSProvider) BindChannel(_ context.Context, _ string, _ channels.ChannelBinding) error {
-	return fmt.Errorf("channel management not yet implemented for AWS provider")
+	return fmt.Errorf("channel management not yet implemented for AWS provider; use --provider local or --provider remote instead")
 }
 
 func (p *AWSProvider) UnbindChannel(_ context.Context, _ string, _ string) error {
-	return fmt.Errorf("channel management not yet implemented for AWS provider")
+	return fmt.Errorf("channel management not yet implemented for AWS provider; use --provider local or --provider remote instead")
 }

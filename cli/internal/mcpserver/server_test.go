@@ -38,8 +38,10 @@ type mockProvider struct {
 	lastCommand      []string
 	lastProvisionCfg provider.AgentConfig
 	lastDeleteSecret bool
-	lastSetupCfg     *provider.SetupConfig
-	lastLogLines     int
+	lastSetupCfg       *provider.SetupConfig
+	lastLogLines       int
+	lastPlatform       string
+	lastChannelSecrets map[string]string
 
 	// Error to return.
 	err error
@@ -118,13 +120,21 @@ func (m *mockProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) err
 	return m.err
 }
 func (m *mockProvider) AddChannel(ctx context.Context, platform string, secrets map[string]string) error {
+	m.lastPlatform = platform
+	m.lastChannelSecrets = secrets
 	return m.err
 }
 func (m *mockProvider) RemoveChannel(ctx context.Context, platform string) error {
+	m.lastPlatform = platform
 	return m.err
 }
 func (m *mockProvider) ListChannels(ctx context.Context) ([]provider.ChannelStatus, error) {
-	return nil, m.err
+	if m.err != nil {
+		return nil, m.err
+	}
+	return []provider.ChannelStatus{
+		{Platform: "slack", Configured: true, RouterRunning: true, BoundAgents: []string{"agent1"}},
+	}, nil
 }
 func (m *mockProvider) BindChannel(ctx context.Context, agentName string, binding channels.ChannelBinding) error {
 	m.lastAgentName = agentName
@@ -546,6 +556,11 @@ func TestToolsErrorPropagation(t *testing.T) {
 		{"conga_setup", nil},
 		{"conga_cycle_host", nil},
 		{"conga_teardown", nil},
+		{"conga_channels_add", map[string]any{"platform": "slack", "slack_bot_token": "x", "slack_signing_secret": "x"}},
+		{"conga_channels_remove", map[string]any{"platform": "slack"}},
+		{"conga_channels_list", nil},
+		{"conga_channels_bind", map[string]any{"agent_name": "x", "channel": "slack:U0123456789"}},
+		{"conga_channels_unbind", map[string]any{"agent_name": "x", "platform": "slack"}},
 	}
 
 	for _, tt := range tools {

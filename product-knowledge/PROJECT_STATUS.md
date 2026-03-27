@@ -129,11 +129,6 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] Phase 3: CLI commands (channels add/remove/list/bind/unbind)
 - [x] Phase 4: MCP tool wrappers (5 tools)
 - [x] Phase 5: Tests (7 MCP tool tests) + demo update (gateway-first flow)
-- [ ] Phase 1: Provider interface extension (5 new methods + ChannelStatus type)
-- [ ] Phase 2: Setup flow simplification (remove Slack prompts from admin setup)
-- [ ] Phase 3: CLI commands (channels add/remove/list/bind/unbind)
-- [ ] Phase 4: MCP tool wrappers (5 tools)
-- [ ] Phase 5: Tests + demo update
 
 ### 11. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)

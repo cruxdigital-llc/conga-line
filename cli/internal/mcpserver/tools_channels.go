@@ -13,28 +13,28 @@ func (s *Server) toolChannelsAdd() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{
 			Name:        "conga_channels_add",
-			Description: "Add a messaging channel integration (e.g. Slack). Stores shared credentials and starts the router.",
+			Description: "Add a messaging channel integration. Currently supports Slack only. Stores shared credentials and starts the router.",
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
 					"platform": map[string]any{
 						"type":        "string",
-						"description": "Channel platform (e.g., 'slack')",
+						"description": "Channel platform (currently only 'slack')",
 					},
 					"slack_bot_token": map[string]any{
 						"type":        "string",
-						"description": "Slack bot token (xoxb-...)",
+						"description": "Slack bot token (xoxb-..., required for Slack)",
 					},
 					"slack_signing_secret": map[string]any{
 						"type":        "string",
-						"description": "Slack signing secret",
+						"description": "Slack signing secret (required for Slack)",
 					},
 					"slack_app_token": map[string]any{
 						"type":        "string",
 						"description": "Slack app-level token (xapp-..., optional)",
 					},
 				},
-				Required: []string{"platform", "slack_bot_token", "slack_signing_secret"},
+				Required: []string{"platform"},
 			},
 			Annotations: mcp.ToolAnnotation{
 				IdempotentHint: boolPtr(true),
@@ -65,7 +65,7 @@ func (s *Server) toolChannelsAdd() server.ServerTool {
 			if err := s.prov.AddChannel(ctx, platform, secrets); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			return okResult(fmt.Sprintf("Channel %q configured. Router started.", platform)), nil
+			return okResult(fmt.Sprintf("Channel %q configured and router started.", platform)), nil
 		},
 	}
 }
