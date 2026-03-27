@@ -14,15 +14,9 @@ const EgressProxyImage = "conga-egress-proxy"
 // Envoy handles HTTP CONNECT tunneling with Lua-based domain filtering.
 const EgressProxyBaseImage = "envoyproxy/envoy:v1.32-latest"
 
-// EgressExtNetwork is the shared bridge network that gives egress proxy containers
-// internet access when agent networks are --internal. Standard (not internal) bridge.
-const EgressExtNetwork = "conga-egress-ext"
-
 // EgressProxyDockerfile returns the Dockerfile content for building the egress proxy image.
-// Based on Envoy. Adds socat for DNS forwarding on --internal networks
-// and the local provider's gateway forwarder container.
 func EgressProxyDockerfile() string {
-	return "FROM " + EgressProxyBaseImage + "\nRUN apt-get update -qq && apt-get install -y -qq socat >/dev/null 2>&1 && rm -rf /var/lib/apt/lists/*\n"
+	return "FROM " + EgressProxyBaseImage + "\n"
 }
 
 // LoadEgressPolicy loads the policy file, merges for the given agent, and returns

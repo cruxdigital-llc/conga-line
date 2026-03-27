@@ -7,10 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
-
-	"github.com/cruxdigital-llc/conga-line/cli/internal/policy"
 )
 
 // dockerRun executes a docker command and returns stdout.
@@ -91,16 +90,7 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
 	}
 
-	// When egress is enforced, the network is --internal and -p doesn't work.
-	// Gateway access is provided by a forwarder container (see startPortForwarder).
-	if !opts.EgressEnforce {
-		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
-	}
-
-	// Point DNS at the proxy container's socat DNS forwarder on --internal networks.
-	if opts.ProxyDNS != "" {
-		args = append(args, "--dns", opts.ProxyDNS)
-	}
+	args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
 
 	nodeOpts := "--max-old-space-size=1536"
 	if opts.EgressEnforce && opts.EgressProxyName != "" {
@@ -136,7 +126,6 @@ type agentContainerOpts struct {
 	EgressEnforce      bool
 	EgressProxyName    string
 	ProxyBootstrapPath string // Host path to proxy-bootstrap.js (mounted read-only)
-	ProxyDNS           string // IP of proxy container for DNS resolution on --internal networks
 }
 
 // runRouterContainer starts the router container.
@@ -291,50 +280,64 @@ func containerIPOnNetwork(ctx context.Context, container, network string) (strin
 	return "", fmt.Errorf("no IP found for %s on network %s after retries", container, network)
 }
 
-// forwarderName returns the Docker container name for a gateway port forwarder.
-func forwarderName(agentName string) string {
-	return "conga-fwd-" + agentName
+// networkSubnetCIDR returns the CIDR of a Docker network's subnet.
+func networkSubnetCIDR(ctx context.Context, network string) (string, error) {
+	output, err := dockerRun(ctx, "network", "inspect", network, "--format", "{{(index .IPAM.Config 0).Subnet}}")
+	if err != nil {
+		return "", fmt.Errorf("inspecting subnet for network %s: %w", network, err)
+	}
+	cidr := strings.TrimSpace(output)
+	if cidr == "" {
+		return "", fmt.Errorf("no subnet found for network %s", network)
+	}
+	return cidr, nil
 }
 
-// startPortForwarder starts a socat container that forwards gateway traffic
-// from a published port to the agent container on the internal network.
-// On macOS Docker Desktop, the host can't route to container IPs directly,
-// so we use a container-based forwarder instead of host socat.
-// The forwarder starts on the default bridge (with -p) then connects to the
-// agent's internal network where it resolves the agent by Docker DNS.
-func startPortForwarder(ctx context.Context, agentName string, port int) error {
-	fwdName := forwarderName(agentName)
-	target := containerName(agentName)
-
-	if containerExists(ctx, fwdName) {
-		removeContainer(ctx, fwdName)
+// iptablesRun executes an iptables command on the Docker host.
+// On macOS (Docker Desktop), iptables runs inside the LinuxKit VM via nsenter.
+// On Linux, it runs directly via sh.
+func iptablesRun(ctx context.Context, iptablesCmd string) error {
+	if runtime.GOOS == "darwin" {
+		_, err := dockerRun(ctx, "run", "--rm", "--privileged",
+			"--pid=host", "--network=host",
+			"alpine:latest",
+			"nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+			"sh", "-c", iptablesCmd)
+		return err
 	}
-
-	args := []string{"run", "-d",
-		"--name", fwdName,
-		"--cap-drop", "ALL",
-		"--security-opt", "no-new-privileges",
-		"--memory", "32m",
-		"--read-only",
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", port, port),
-		policy.EgressProxyImage,
-		"socat",
-		fmt.Sprintf("TCP-LISTEN:%d,fork,reuseaddr", port),
-		fmt.Sprintf("TCP:%s:%d", target, port),
+	cmd := exec.CommandContext(ctx, "sh", "-c", iptablesCmd)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("iptables: %s (%w)", strings.TrimSpace(stderr.String()), err)
 	}
-
-	if _, err := dockerRun(ctx, args...); err != nil {
-		return fmt.Errorf("starting port forwarder: %w", err)
-	}
-
-	// Connect to agent's internal network so socat can resolve the agent hostname
-	return connectNetwork(ctx, networkName(agentName), fwdName)
+	return nil
 }
 
-// stopPortForwarder removes the gateway port forwarder container.
-func stopPortForwarder(ctx context.Context, agentName string) {
-	fwdName := forwarderName(agentName)
-	if containerExists(ctx, fwdName) {
-		removeContainer(ctx, fwdName)
+// addEgressIptablesRules adds iptables DROP rules to DOCKER-USER that restrict
+// outbound traffic from the container to only the bridge subnet.
+func addEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) error {
+	cmds := fmt.Sprintf(
+		"iptables -C DOCKER-USER -s %s -j DROP 2>/dev/null || iptables -I DOCKER-USER -s %s -j DROP; "+
+			"iptables -C DOCKER-USER -s %s -d %s -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s %s -d %s -j RETURN; "+
+			"iptables -C DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN",
+		containerIP, containerIP,
+		containerIP, subnetCIDR, containerIP, subnetCIDR,
+		containerIP, containerIP)
+	return iptablesRun(ctx, cmds)
+}
+
+// removeEgressIptablesRules removes iptables egress rules for a container IP.
+func removeEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) {
+	if containerIP == "" {
+		return
 	}
+	cmds := fmt.Sprintf(
+		"iptables -D DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || true; "+
+			"iptables -D DOCKER-USER -s %s -d %s -j RETURN 2>/dev/null || true; "+
+			"iptables -D DOCKER-USER -s %s -j DROP 2>/dev/null || true",
+		containerIP,
+		containerIP, subnetCIDR,
+		containerIP)
+	iptablesRun(ctx, cmds)
 }

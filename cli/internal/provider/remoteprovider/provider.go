@@ -299,7 +299,23 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	// 9. Update routing.json
+	// 9. Apply iptables egress enforcement (DROP non-subnet traffic)
+	if egressEnforce {
+		agentIP, err := p.containerIPOnNetwork(ctx, cName, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get agent container IP: %w", err)
+		}
+		cidr, err := p.networkSubnetCIDR(ctx, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get network subnet: %w", err)
+		}
+		if err := p.addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+			return fmt.Errorf("failed to add iptables egress rules: %w", err)
+		}
+		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
+	}
+
+	// 10. Update routing.json
 	if err := p.regenerateRouting(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
 	}
@@ -319,14 +335,21 @@ func (p *RemoteProvider) RemoveAgent(ctx context.Context, name string, deleteSec
 	cName := containerName(name)
 	netName := networkName(name)
 
+	// Remove iptables egress rules before stopping container (need IP while running)
+	if p.containerExists(ctx, cName) && p.networkExists(ctx, netName) {
+		if ip, err := p.containerIPOnNetwork(ctx, cName, netName); err == nil {
+			if cidr, err := p.networkSubnetCIDR(ctx, netName); err == nil {
+				p.removeEgressIptablesRules(ctx, ip, cidr)
+			}
+		}
+	}
+
 	if p.containerExists(ctx, cName) {
 		p.stopContainer(ctx, cName)
 		p.removeContainer(ctx, cName)
 	}
 
-	// Stop per-agent egress proxy and port forwarder
 	p.stopAgentEgressProxy(ctx, name)
-	p.stopPortForwarder(ctx, name)
 
 	if p.containerExists(ctx, routerContainer) {
 		p.disconnectNetwork(ctx, netName, routerContainer)
@@ -344,7 +367,7 @@ func (p *RemoteProvider) RemoveAgent(ctx context.Context, name string, deleteSec
 		shellQuote(posixpath.Join(p.remoteAgentsDir(), name+".json")),
 		shellQuote(posixpath.Join(p.remoteConfigDir(), name+".env")),
 		shellQuote(posixpath.Join(p.remoteConfigDir(), name+".sha256")),
-		shellQuote(posixpath.Join(p.remoteConfigDir(), fmt.Sprintf("egress-%s.conf", name))),
+		shellQuote(posixpath.Join(p.remoteConfigDir(), fmt.Sprintf("egress-%s.yaml", name))),
 	))
 
 	if deleteSecrets {
@@ -422,16 +445,24 @@ func (p *RemoteProvider) PauseAgent(ctx context.Context, name string) error {
 	}
 
 	cName := containerName(name)
+	netName := networkName(name)
+
+	// Remove iptables egress rules before stopping container
+	if p.containerExists(ctx, cName) && p.networkExists(ctx, netName) {
+		if ip, err := p.containerIPOnNetwork(ctx, cName, netName); err == nil {
+			if cidr, err := p.networkSubnetCIDR(ctx, netName); err == nil {
+				p.removeEgressIptablesRules(ctx, ip, cidr)
+			}
+		}
+	}
+
 	if p.containerExists(ctx, cName) {
 		p.stopContainer(ctx, cName)
 		p.removeContainer(ctx, cName)
 	}
 
-	// Stop egress proxy and port forwarder
 	p.stopAgentEgressProxy(ctx, name)
-	p.stopPortForwarder(ctx, name)
 
-	netName := networkName(name)
 	if p.containerExists(ctx, routerContainer) {
 		p.disconnectNetwork(ctx, netName, routerContainer)
 	}
@@ -531,24 +562,30 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 	}
 
 	cName := containerName(agentName)
+	netName := networkName(agentName)
+
+	// Remove old iptables egress rules before stopping container (need IP while running)
+	if p.containerExists(ctx, cName) && p.networkExists(ctx, netName) {
+		if ip, err := p.containerIPOnNetwork(ctx, cName, netName); err == nil {
+			if cidr, err := p.networkSubnetCIDR(ctx, netName); err == nil {
+				p.removeEgressIptablesRules(ctx, ip, cidr)
+			}
+		}
+	}
+
 	if p.containerExists(ctx, cName) {
 		p.stopContainer(ctx, cName)
 		p.removeContainer(ctx, cName)
 	}
 
-	// Stop old egress proxy and port forwarder
 	p.stopAgentEgressProxy(ctx, agentName)
-	p.stopPortForwarder(ctx, agentName)
 
 	image := p.getConfigValue("image")
 	if image == "" {
 		image = "ghcr.io/openclaw/openclaw:latest"
 	}
 
-	// Recreate network with correct --internal flag.
-	// The network type may need to change (standard → internal or vice versa)
-	// when the egress policy changes.
-	netName := networkName(agentName)
+	// Recreate network (standard bridge, not --internal).
 	if p.networkExists(ctx, netName) {
 		if p.containerExists(ctx, routerContainer) {
 			p.disconnectNetwork(ctx, netName, routerContainer)
@@ -600,6 +637,22 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		ProxyBootstrapPath: bootstrapPath,
 	}); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
+	}
+
+	// Apply iptables egress enforcement
+	if egressEnforce {
+		agentIP, err := p.containerIPOnNetwork(ctx, cName, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get agent container IP: %w", err)
+		}
+		cidr, err := p.networkSubnetCIDR(ctx, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get network subnet: %w", err)
+		}
+		if err := p.addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+			return fmt.Errorf("failed to add iptables egress rules: %w", err)
+		}
+		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
 	if p.containerExists(ctx, egressProxyContainer) {
@@ -756,12 +809,19 @@ func (p *RemoteProvider) Teardown(ctx context.Context) error {
 func (p *RemoteProvider) removeAgentDocker(ctx context.Context, name string) {
 	cName := containerName(name)
 	netName := networkName(name)
+	// Remove iptables rules before stopping (need container IP)
+	if p.containerExists(ctx, cName) && p.networkExists(ctx, netName) {
+		if ip, err := p.containerIPOnNetwork(ctx, cName, netName); err == nil {
+			if cidr, err := p.networkSubnetCIDR(ctx, netName); err == nil {
+				p.removeEgressIptablesRules(ctx, ip, cidr)
+			}
+		}
+	}
 	if p.containerExists(ctx, cName) {
 		p.stopContainer(ctx, cName)
 		p.removeContainer(ctx, cName)
 	}
 	p.stopAgentEgressProxy(ctx, name)
-	p.stopPortForwarder(ctx, name)
 	if p.networkExists(ctx, netName) {
 		p.removeNetwork(ctx, netName)
 	}
@@ -795,10 +855,7 @@ func (p *RemoteProvider) cleanupDockerByPrefix(ctx context.Context) {
 		fmt.Printf("Removing network %s...\n", egressNetwork)
 		p.removeNetwork(ctx, egressNetwork)
 	}
-	if p.networkExists(ctx, policy.EgressExtNetwork) {
-		fmt.Printf("Removing network %s...\n", policy.EgressExtNetwork)
-		p.removeNetwork(ctx, policy.EgressExtNetwork)
-	}
+	// (EgressExtNetwork removed — no longer needed with standard bridge networks)
 
 	// Kill any orphaned socat port forwarders
 	p.ssh.Run(ctx, "pkill -f 'socat.*conga' 2>/dev/null || true")

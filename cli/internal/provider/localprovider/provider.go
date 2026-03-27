@@ -202,21 +202,16 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	netName := networkName(cfg.Name)
 	if !networkExists(ctx, netName) {
 		fmt.Printf("Creating network %s...\n", netName)
-		if err := createNetwork(ctx, netName, egressEnforce); err != nil {
+		if err := createNetwork(ctx, netName, false); err != nil {
 			return fmt.Errorf("failed to create network: %w", err)
 		}
 	}
 
 	// 7. Start per-agent egress proxy (enforce mode only)
-	var proxyDNS string
 	if egressEnforce {
 		domains := policy.EffectiveAllowedDomains(egressPolicy)
 		if err := p.startAgentEgressProxy(ctx, cfg.Name, domains); err != nil {
 			return fmt.Errorf("failed to start egress proxy: %w", err)
-		}
-		proxyDNS, err = containerIPOnNetwork(ctx, policy.EgressProxyName(cfg.Name), netName)
-		if err != nil {
-			return fmt.Errorf("failed to get proxy DNS IP: %w", err)
 		}
 	}
 
@@ -257,16 +252,24 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		EgressEnforce:      egressEnforce,
 		EgressProxyName:    policy.EgressProxyName(cfg.Name),
 		ProxyBootstrapPath: bootstrapPath,
-		ProxyDNS:           proxyDNS,
 	}); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	// Start gateway port forwarder (replaces -p on --internal networks)
+	// Apply iptables egress enforcement (DROP non-subnet traffic)
 	if egressEnforce {
-		if err := startPortForwarder(ctx, cfg.Name, cfg.GatewayPort); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to start port forwarder: %v\n", err)
+		agentIP, err := containerIPOnNetwork(ctx, cName, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get agent container IP: %w", err)
 		}
+		cidr, err := networkSubnetCIDR(ctx, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get network subnet: %w", err)
+		}
+		if err := addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+			return fmt.Errorf("failed to add iptables egress rules: %w", err)
+		}
+		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
 	// 9. Update routing.json
@@ -292,16 +295,22 @@ func (p *LocalProvider) RemoveAgent(ctx context.Context, name string, deleteSecr
 	cName := containerName(name)
 	netName := networkName(name)
 
+	// Remove iptables egress rules before stopping container
+	if containerExists(ctx, cName) && networkExists(ctx, netName) {
+		if ip, err := containerIPOnNetwork(ctx, cName, netName); err == nil {
+			if cidr, err := networkSubnetCIDR(ctx, netName); err == nil {
+				removeEgressIptablesRules(ctx, ip, cidr)
+			}
+		}
+	}
+
 	if containerExists(ctx, cName) {
 		stopContainer(ctx, cName)
 		removeContainer(ctx, cName)
 	}
 
-	// Stop per-agent egress proxy and port forwarder
 	p.stopAgentEgressProxy(ctx, name)
-	stopPortForwarder(ctx, name)
 
-	// Disconnect router and shared egress proxy from network before removing it
 	if containerExists(ctx, routerContainer) {
 		disconnectNetwork(ctx, netName, routerContainer)
 	}
@@ -390,17 +399,24 @@ func (p *LocalProvider) PauseAgent(ctx context.Context, name string) error {
 
 	// Stop container (preserve data)
 	cName := containerName(name)
+	netName := networkName(name)
+
+	// Remove iptables egress rules before stopping container
+	if containerExists(ctx, cName) && networkExists(ctx, netName) {
+		if ip, err := containerIPOnNetwork(ctx, cName, netName); err == nil {
+			if cidr, err := networkSubnetCIDR(ctx, netName); err == nil {
+				removeEgressIptablesRules(ctx, ip, cidr)
+			}
+		}
+	}
+
 	if containerExists(ctx, cName) {
 		stopContainer(ctx, cName)
 		removeContainer(ctx, cName)
 	}
 
-	// Stop egress proxy and port forwarder
 	p.stopAgentEgressProxy(ctx, name)
-	stopPortForwarder(ctx, name)
 
-	// Disconnect router from agent network
-	netName := networkName(name)
 	if containerExists(ctx, routerContainer) {
 		disconnectNetwork(ctx, netName, routerContainer)
 	}
@@ -517,17 +533,25 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		removeContainer(ctx, cName)
 	}
 
-	// Stop old egress proxy and port forwarder before restarting
+	netName := networkName(agentName)
+
+	// Remove old iptables egress rules before stopping container
+	if containerExists(ctx, cName) && networkExists(ctx, netName) {
+		if ip, err := containerIPOnNetwork(ctx, cName, netName); err == nil {
+			if cidr, err := networkSubnetCIDR(ctx, netName); err == nil {
+				removeEgressIptablesRules(ctx, ip, cidr)
+			}
+		}
+	}
+
 	p.stopAgentEgressProxy(ctx, agentName)
-	stopPortForwarder(ctx, agentName)
 
 	image := p.getConfigValue("image")
 	if image == "" {
 		image = "ghcr.io/openclaw/openclaw:latest"
 	}
 
-	// Recreate network with correct --internal flag.
-	netName := networkName(agentName)
+	// Recreate network (standard bridge, not --internal).
 	if networkExists(ctx, netName) {
 		if containerExists(ctx, routerContainer) {
 			disconnectNetwork(ctx, netName, routerContainer)
@@ -539,20 +563,15 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 			return fmt.Errorf("failed to remove network %s: %w", netName, err)
 		}
 	}
-	if err := createNetwork(ctx, netName, egressEnforce); err != nil {
+	if err := createNetwork(ctx, netName, false); err != nil {
 		return fmt.Errorf("failed to create network %s: %w", netName, err)
 	}
 
 	// Start per-agent egress proxy (enforce mode only)
-	var proxyDNS string
 	if egressEnforce {
 		domains := policy.EffectiveAllowedDomains(egressPolicy)
 		if err := p.startAgentEgressProxy(ctx, agentName, domains); err != nil {
 			return fmt.Errorf("failed to start egress proxy: %w", err)
-		}
-		proxyDNS, err = containerIPOnNetwork(ctx, policy.EgressProxyName(agentName), netName)
-		if err != nil {
-			return fmt.Errorf("failed to get proxy DNS IP: %w", err)
 		}
 	}
 
@@ -581,16 +600,24 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		EgressEnforce:      egressEnforce,
 		EgressProxyName:    policy.EgressProxyName(agentName),
 		ProxyBootstrapPath: bootstrapPath,
-		ProxyDNS:           proxyDNS,
 	}); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 
-	// Start gateway port forwarder (replaces -p on --internal networks)
+	// Apply iptables egress enforcement
 	if egressEnforce {
-		if err := startPortForwarder(ctx, agentName, cfg.GatewayPort); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to start port forwarder: %v\n", err)
+		agentIP, err := containerIPOnNetwork(ctx, cName, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get agent container IP: %w", err)
 		}
+		cidr, err := networkSubnetCIDR(ctx, netName)
+		if err != nil {
+			return fmt.Errorf("failed to get network subnet: %w", err)
+		}
+		if err := addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+			return fmt.Errorf("failed to add iptables egress rules: %w", err)
+		}
+		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
 	// Reconnect egress proxy and router
@@ -1062,10 +1089,7 @@ func (p *LocalProvider) cleanupDockerByPrefix(ctx context.Context) {
 		fmt.Printf("Removing network %s...\n", egressNetwork)
 		removeNetwork(ctx, egressNetwork)
 	}
-	if networkExists(ctx, policy.EgressExtNetwork) {
-		fmt.Printf("Removing network %s...\n", policy.EgressExtNetwork)
-		removeNetwork(ctx, policy.EgressExtNetwork)
-	}
+	// (EgressExtNetwork removed — no longer needed with standard bridge networks)
 }
 
 // --- infrastructure helpers ---
@@ -1198,12 +1222,7 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 		}
 	}
 
-	// Ensure external network exists for dual-homing the proxy
-	if !networkExists(ctx, policy.EgressExtNetwork) {
-		if err := createNetwork(ctx, policy.EgressExtNetwork, false); err != nil {
-			return fmt.Errorf("creating egress external network: %w", err)
-		}
-	}
+	// (EgressExtNetwork removed — proxy reaches internet via standard bridge)
 
 	// Write entrypoint script (starts socat DNS forwarder + Envoy)
 	entrypointPath := filepath.Join(p.configDir(), fmt.Sprintf("egress-%s-entrypoint.sh", agentName))
@@ -1232,10 +1251,7 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 		return fmt.Errorf("starting egress proxy: %w", err)
 	}
 
-	// Connect proxy to external network for DNS resolution and internet access.
-	if connectErr := connectNetwork(ctx, policy.EgressExtNetwork, proxyName); connectErr != nil {
-		return fmt.Errorf("connecting proxy to external network: %w", connectErr)
-	}
+	// No ext network needed — proxy reaches internet via standard bridge.
 
 	fmt.Printf("  Egress proxy started for %s (%d domains allowed)\n", agentName, len(domains))
 	return nil

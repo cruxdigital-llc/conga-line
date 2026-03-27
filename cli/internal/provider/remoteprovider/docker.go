@@ -263,43 +263,53 @@ func (p *RemoteProvider) containerIPOnNetwork(ctx context.Context, container, ne
 	return "", fmt.Errorf("no IP found for %s on network %s after retries", container, network)
 }
 
-// portForwarderPidFile returns the PID file path for an agent's socat port forwarder.
-func portForwarderPidFile(cName string) string {
-	return fmt.Sprintf("/run/conga-fwd-%s.pid", cName)
-}
-
-// startPortForwarder starts a socat process on the remote host that forwards
-// localhost:port to the agent container's IP on the internal network.
-// The host can always route to container IPs on Docker bridges (including
-// --internal ones) because --internal only restricts the container's routing
-// table, not the host's.
-func (p *RemoteProvider) startPortForwarder(ctx context.Context, agentName string, port int) error {
-	cName := containerName(agentName)
-	netName := networkName(agentName)
-
-	// Get container IP on the internal network
-	tpl := fmt.Sprintf("{{(index .NetworkSettings.Networks %q).IPAddress}}", netName)
-	output, err := p.dockerRun(ctx, "inspect", "-f", tpl, cName)
+// networkSubnetCIDR returns the CIDR of a Docker network's subnet.
+func (p *RemoteProvider) networkSubnetCIDR(ctx context.Context, network string) (string, error) {
+	output, err := p.dockerRun(ctx, "network", "inspect", network, "--format", "{{(index .IPAM.Config 0).Subnet}}")
 	if err != nil {
-		return fmt.Errorf("getting container IP: %w", err)
+		return "", fmt.Errorf("inspecting subnet for network %s: %w", network, err)
 	}
-	ip := strings.TrimSpace(output)
-	if ip == "" {
-		return fmt.Errorf("container %s has no IP on network %s", cName, netName)
+	cidr := strings.TrimSpace(output)
+	if cidr == "" {
+		return "", fmt.Errorf("no subnet found for network %s", network)
 	}
-
-	pidFile := portForwarderPidFile(cName)
-	cmd := fmt.Sprintf(
-		"nohup socat TCP-LISTEN:%d,bind=127.0.0.1,fork,reuseaddr TCP:%s:%d </dev/null >/dev/null 2>&1 & echo $! > %s",
-		port, ip, port, pidFile)
-	_, err = p.ssh.Run(ctx, cmd)
-	return err
+	return cidr, nil
 }
 
-// stopPortForwarder kills the socat process for an agent's gateway forwarder.
-func (p *RemoteProvider) stopPortForwarder(ctx context.Context, agentName string) {
-	pidFile := portForwarderPidFile(containerName(agentName))
-	p.ssh.Run(ctx, fmt.Sprintf(
-		"if [ -f %s ]; then kill $(cat %s) 2>/dev/null; rm -f %s; fi",
-		pidFile, pidFile, pidFile))
+// addEgressIptablesRules adds iptables DROP rules to DOCKER-USER that restrict
+// outbound traffic from the container to only the bridge subnet (where the proxy
+// and Docker DNS live). Uses DROP (not REJECT) so the app sees ETIMEDOUT instead
+// of ENETUNREACH which would crash Node.js.
+func (p *RemoteProvider) addEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) error {
+	// Insert in reverse order (-I pushes to top) so final chain order is:
+	//   1. ESTABLISHED,RELATED → RETURN (allow response traffic)
+	//   2. dst=subnet → RETURN (allow proxy + intra-network)
+	//   3. DROP (block everything else)
+	cmds := fmt.Sprintf(
+		"iptables -C DOCKER-USER -s %s -j DROP 2>/dev/null || iptables -I DOCKER-USER -s %s -j DROP; "+
+			"iptables -C DOCKER-USER -s %s -d %s -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s %s -d %s -j RETURN; "+
+			"iptables -C DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN",
+		containerIP, containerIP,
+		containerIP, subnetCIDR, containerIP, subnetCIDR,
+		containerIP, containerIP)
+	if _, err := p.ssh.Run(ctx, cmds); err != nil {
+		return fmt.Errorf("adding iptables egress rules for %s: %w", containerIP, err)
+	}
+	return nil
+}
+
+// removeEgressIptablesRules removes iptables egress rules for a container IP.
+// Idempotent — ignores errors from missing rules.
+func (p *RemoteProvider) removeEgressIptablesRules(ctx context.Context, containerIP, subnetCIDR string) {
+	if containerIP == "" {
+		return
+	}
+	cmds := fmt.Sprintf(
+		"iptables -D DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || true; "+
+			"iptables -D DOCKER-USER -s %s -d %s -j RETURN 2>/dev/null || true; "+
+			"iptables -D DOCKER-USER -s %s -j DROP 2>/dev/null || true",
+		containerIP,
+		containerIP, subnetCIDR,
+		containerIP)
+	p.ssh.Run(ctx, cmds)
 }
