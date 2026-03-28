@@ -20,6 +20,15 @@ jobs:
         with:
           go-version-file: cli/go.mod
 
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: Build
         run: go build ./...
 
@@ -34,15 +43,6 @@ jobs:
           go test ./... -coverprofile=coverage.out -count=1
           go tool cover -func=coverage.out | tail -1
 
-      - name: Format check
-        run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "Unformatted files:"
-            echo "$unformatted"
-            exit 1
-          fi
-
   terraform:
     name: Terraform Validate
     runs-on: ubuntu-latest
@@ -56,11 +56,11 @@ jobs:
         with:
           terraform_version: "~> 1.5"
 
+      - name: Format check
+        run: terraform fmt -check -recursive
+
       - name: Init (backend disabled)
         run: terraform init -backend=false
 
       - name: Validate
         run: terraform validate
-
-      - name: Format check
-        run: terraform fmt -check -recursive
