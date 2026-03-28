@@ -594,7 +594,9 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
-	p.ssh.MkdirAll(dataDir, 0755)
+	if err := p.ssh.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory %s: %w", dataDir, err)
+	}
 	if err := p.ssh.Upload(posixpath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
 		return err
 	}
@@ -637,8 +639,12 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 	}
 
 	if p.containerExists(ctx, cName) {
-		p.stopContainer(ctx, cName)
-		p.removeContainer(ctx, cName)
+		if err := p.stopContainer(ctx, cName); err != nil {
+			return fmt.Errorf("failed to stop container %s: %w", cName, err)
+		}
+		if err := p.removeContainer(ctx, cName); err != nil {
+			return fmt.Errorf("failed to remove container %s: %w", cName, err)
+		}
 	}
 
 	p.stopAgentEgressProxy(ctx, agentName)

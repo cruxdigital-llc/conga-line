@@ -604,7 +604,8 @@ generate_egress_conf() {
     # Sanity check: if the policy file mentions allowed_domains but we parsed zero,
     # the YAML structure may not match our grep/sed heuristics (e.g., tabs, anchors).
     if grep -q "allowed_domains:" "$POLICY_FILE" 2>/dev/null; then
-      log "WARNING: Policy file contains allowed_domains but none were parsed for $AGENT_NAME — check YAML indentation"
+      log "ERROR: Policy file contains allowed_domains but none were parsed for $AGENT_NAME — check YAML indentation. Refusing to start agent without egress protection."
+      return 1
     fi
     return
   fi
@@ -693,7 +694,7 @@ $DENY_ACTION
               "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
               dns_cache_config:
                 name: dns_cache
-                dns_lookup_family: AUTO
+                dns_lookup_family: V4_ONLY
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router

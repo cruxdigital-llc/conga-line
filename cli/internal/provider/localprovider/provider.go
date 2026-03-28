@@ -554,7 +554,9 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
-	os.MkdirAll(dataDir, 0755)
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory %s: %w", dataDir, err)
+	}
 	if err := os.WriteFile(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
 		return err
 	}
@@ -599,8 +601,12 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	}
 
 	if containerExists(ctx, cName) {
-		stopContainer(ctx, cName)
-		removeContainer(ctx, cName)
+		if err := stopContainer(ctx, cName); err != nil {
+			return fmt.Errorf("failed to stop container %s: %w", cName, err)
+		}
+		if err := removeContainer(ctx, cName); err != nil {
+			return fmt.Errorf("failed to remove container %s: %w", cName, err)
+		}
 	}
 
 	p.stopAgentEgressProxy(ctx, agentName)

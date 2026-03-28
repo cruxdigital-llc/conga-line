@@ -453,7 +453,14 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			pf, err := policy.Load(path)
+			policyBytes, err := os.ReadFile(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return mcp.NewToolResultError("no policy file found — create one with conga_policy_set_egress or conga_policy_set_routing first"), nil
+				}
+				return mcp.NewToolResultError(fmt.Sprintf("failed to read policy file: %v", err)), nil
+			}
+			pf, err := policy.LoadFromBytes(policyBytes)
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -463,16 +470,10 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 			if err := pf.Validate(); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("policy validation failed: %v — fix the policy before deploying", err)), nil
 			}
+			policyContent := string(policyBytes)
 
 			ctx, cancel := toolCtx(ctx)
 			defer cancel()
-
-			// Read raw policy content for upload to remote hosts
-			policyBytes, err := os.ReadFile(path)
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("failed to read policy file: %v", err)), nil
-			}
-			policyContent := string(policyBytes)
 
 			agent := req.GetString("agent", "")
 

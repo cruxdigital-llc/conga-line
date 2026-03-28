@@ -8,9 +8,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Save marshals the PolicyFile to YAML and writes it atomically.
+// Save validates, marshals the PolicyFile to YAML, and writes it atomically.
 // The parent directory is created if it does not exist.
 func Save(pf *PolicyFile, path string) error {
+	if err := pf.Validate(); err != nil {
+		return fmt.Errorf("policy validation failed: %w", err)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("creating policy directory: %w", err)
 	}

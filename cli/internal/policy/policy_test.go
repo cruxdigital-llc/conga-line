@@ -190,9 +190,9 @@ func TestMergeForAgentWithOverride(t *testing.T) {
 	if merged.Egress.AllowedDomains[1] != "*.trello.com" {
 		t.Errorf("expected *.trello.com, got %s", merged.Egress.AllowedDomains[1])
 	}
-	// Mode should be empty (agent override replaces entire section)
-	if merged.Egress.Mode != "" {
-		t.Errorf("expected empty mode (shallow replace), got %q", merged.Egress.Mode)
+	// Mode should be normalized to enforce (default) after merge
+	if merged.Egress.Mode != EgressModeEnforce {
+		t.Errorf("expected mode %q after normalization, got %q", EgressModeEnforce, merged.Egress.Mode)
 	}
 	// Posture should remain from global (no override)
 	if merged.Posture.IsolationLevel != "standard" {

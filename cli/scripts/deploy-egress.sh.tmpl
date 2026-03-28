@@ -119,8 +119,9 @@ echo "Agent container restarted with HTTPS_PROXY"
 
 # Reconnect router to agent network (lost on container restart)
 if docker inspect conga-router >/dev/null 2>&1; then
-  if ! docker network connect "$AGENT_NET" conga-router 2>/dev/null; then
-    echo "WARNING: Failed to reconnect conga-router to $AGENT_NET — Slack events may not reach $AGENT_NAME"
+  if ! docker network connect "$AGENT_NET" conga-router; then
+    echo "ERROR: Failed to reconnect conga-router to $AGENT_NET — Slack events will not reach $AGENT_NAME"
+    exit 1
   fi
 fi
 

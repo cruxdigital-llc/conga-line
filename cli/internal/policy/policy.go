@@ -91,7 +91,12 @@ func Load(path string) (*PolicyFile, error) {
 		}
 		return nil, fmt.Errorf("reading policy file: %w", err)
 	}
+	return LoadFromBytes(data)
+}
 
+// LoadFromBytes parses a PolicyFile from raw YAML bytes.
+// Returns an error if the bytes are empty or not valid policy YAML.
+func LoadFromBytes(data []byte) (*PolicyFile, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return nil, fmt.Errorf("policy file is empty")
 	}
@@ -280,6 +285,7 @@ func (pf *PolicyFile) MergeForAgent(agentName string) *PolicyFile {
 		merged.Posture = copyPosture(override.Posture)
 	}
 
+	normalizeDefaults(merged)
 	return merged
 }
 
