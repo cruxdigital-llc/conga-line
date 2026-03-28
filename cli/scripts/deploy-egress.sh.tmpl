@@ -117,6 +117,9 @@ if [ -f "$UNIT_FILE" ]; then
       iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
         iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
       echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
+    else
+      echo "WARNING: Could not apply egress iptables rules in enforce mode — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
+      exit 1
     fi
   fi
 fi

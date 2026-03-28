@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cruxdigital-llc/conga-line/cli/internal/policy"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -38,15 +39,15 @@ func (s *Server) loadPolicy() (*policy.PolicyFile, string, error) {
 }
 
 // getStringSlice extracts a []string from the raw MCP request arguments.
-func getStringSlice(req mcp.CallToolRequest, key string) []string {
+func getStringSlice(req mcp.CallToolRequest, key string) ([]string, error) {
 	args := req.GetArguments()
 	raw, ok := args[key]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	arr, ok := raw.([]any)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("%s must be an array, got %T", key, raw)
 	}
 	result := make([]string, 0, len(arr))
 	for _, v := range arr {
@@ -54,7 +55,7 @@ func getStringSlice(req mcp.CallToolRequest, key string) []string {
 			result = append(result, s)
 		}
 	}
-	return result
+	return result, nil
 }
 
 // getCostLimits extracts a CostLimits from the raw MCP request arguments.
@@ -236,9 +237,17 @@ func (s *Server) toolPolicySetEgress() server.ServerTool {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
+			allowedDomains, err := getStringSlice(req, "allowed_domains")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			blockedDomains, err := getStringSlice(req, "blocked_domains")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			patch := &policy.EgressPolicy{
-				AllowedDomains: getStringSlice(req, "allowed_domains"),
-				BlockedDomains: getStringSlice(req, "blocked_domains"),
+				AllowedDomains: allowedDomains,
+				BlockedDomains: blockedDomains,
 				Mode:           req.GetString("mode", ""),
 			}
 
@@ -298,9 +307,13 @@ func (s *Server) toolPolicySetRouting() server.ServerTool {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
+			fallbackChain, err := getStringSlice(req, "fallback_chain")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			patch := &policy.RoutingPolicy{
 				DefaultModel:  req.GetString("default_model", ""),
-				FallbackChain: getStringSlice(req, "fallback_chain"),
+				FallbackChain: fallbackChain,
 				CostLimits:    getCostLimits(req),
 			}
 
@@ -362,11 +375,15 @@ func (s *Server) toolPolicySetPosture() server.ServerTool {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
+			complianceFrameworks, err := getStringSlice(req, "compliance_frameworks")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			patch := &policy.PostureDeclarations{
 				IsolationLevel:       req.GetString("isolation_level", ""),
 				SecretsBackend:       req.GetString("secrets_backend", ""),
 				Monitoring:           req.GetString("monitoring", ""),
-				ComplianceFrameworks: getStringSlice(req, "compliance_frameworks"),
+				ComplianceFrameworks: complianceFrameworks,
 			}
 
 			policy.SetPosture(pf, req.GetString("agent", ""), patch)
@@ -428,7 +445,10 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 			defer cancel()
 
 			// Read raw policy content for upload to remote hosts
-			policyBytes, _ := os.ReadFile(path)
+			policyBytes, err := os.ReadFile(path)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to read policy file: %v", err)), nil
+			}
 			policyContent := string(policyBytes)
 
 			agent := req.GetString("agent", "")
@@ -452,7 +472,7 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 				}
 			}
 
-			// Check if provider supports direct egress deployment (AWS)
+			// Check if provider supports direct egress deployment (e.g., AWS via SSM)
 			type egressDeployer interface {
 				DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig, mode string) error
 			}
@@ -466,7 +486,11 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 					merged := pf.MergeForAgent(name)
 					domains := policy.EffectiveAllowedDomains(merged.Egress)
 					mode := merged.Egress.Mode
-					envoyConfig := policy.GenerateProxyConf(domains, mode)
+					envoyConfig, err := policy.GenerateProxyConf(domains, mode)
+					if err != nil {
+						errors = append(errors, fmt.Sprintf("%s: %v", name, err))
+						continue
+					}
 
 					if err := deployer.DeployEgress(ctx, name, policyContent, envoyConfig, mode); err != nil {
 						errors = append(errors, fmt.Sprintf("%s: %v", name, err))
@@ -489,6 +513,9 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 				}
 			}
 
+			if len(errors) > 0 && len(deployed) == 0 {
+				return mcp.NewToolResultError(fmt.Sprintf("deploy failed for all agents: %s", strings.Join(errors, "; "))), nil
+			}
 			result := deployResult{
 				Validated: true,
 				Deployed:  deployed,

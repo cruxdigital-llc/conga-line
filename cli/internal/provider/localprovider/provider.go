@@ -196,7 +196,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		if egressPolicy.Mode == "enforce" {
 			egressEnforce = true
 		} else {
-			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging only). Set mode: enforce to activate domain filtering + iptables.\n")
+			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
 		}
 	}
 
@@ -219,7 +219,9 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 
 	// Connect shared egress proxy if running (legacy / passthrough)
 	if containerExists(ctx, egressProxyContainer) {
-		connectNetwork(ctx, netName, egressProxyContainer)
+		if err := connectNetwork(ctx, netName, egressProxyContainer); err != nil {
+			return fmt.Errorf("failed to connect egress proxy to network %s: %w", netName, err)
+		}
 	}
 
 	// 8. Start container
@@ -391,7 +393,11 @@ func (p *LocalProvider) GetStatus(ctx context.Context, agentName string) (*provi
 // container and re-applies them if missing. Handles IP changes after container restart.
 func (p *LocalProvider) ensureEgressIptables(ctx context.Context, agentName string) {
 	egressPolicy, err := policy.LoadEgressPolicy(p.dataDir, agentName)
-	if err != nil || egressPolicy == nil || egressPolicy.Mode != "enforce" || len(egressPolicy.AllowedDomains) == 0 {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy for %s: %v\n", agentName, err)
+		return
+	}
+	if egressPolicy == nil || egressPolicy.Mode != "enforce" || len(egressPolicy.AllowedDomains) == 0 {
 		return
 	}
 
@@ -403,15 +409,19 @@ func (p *LocalProvider) ensureEgressIptables(ctx context.Context, agentName stri
 
 	ip, err := containerIPOnNetwork(ctx, cName, netName)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to get container IP for %s: %v\n", agentName, err)
 		return
 	}
 	cidr, err := networkSubnetCIDR(ctx, netName)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to get network CIDR for %s: %v\n", agentName, err)
 		return
 	}
 
 	if !checkEgressIptablesRules(ctx, ip, cidr) {
-		addEgressIptablesRules(ctx, ip, cidr)
+		if err := addEgressIptablesRules(ctx, ip, cidr); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to re-apply egress iptables rules for %s: %v\n", agentName, err)
+		}
 	}
 }
 
@@ -568,7 +578,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		if egressPolicy.Mode == "enforce" {
 			egressEnforce = true
 		} else {
-			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging only). Set mode: enforce to activate domain filtering + iptables.\n")
+			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
 		}
 	}
 
@@ -669,10 +679,14 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 
 	// Reconnect egress proxy and router
 	if containerExists(ctx, egressProxyContainer) {
-		connectNetwork(ctx, netName, egressProxyContainer)
+		if err := connectNetwork(ctx, netName, egressProxyContainer); err != nil {
+			return fmt.Errorf("failed to reconnect egress proxy to network %s: %w", netName, err)
+		}
 	}
 	if containerExists(ctx, routerContainer) {
-		connectNetwork(ctx, netName, routerContainer)
+		if err := connectNetwork(ctx, netName, routerContainer); err != nil {
+			return fmt.Errorf("failed to reconnect router to network %s: %w", netName, err)
+		}
 	}
 	return nil
 }
@@ -1258,7 +1272,10 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 	}
 
 	// Generate Envoy config
-	conf := policy.GenerateProxyConf(domains, mode)
+	conf, err := policy.GenerateProxyConf(domains, mode)
+	if err != nil {
+		return fmt.Errorf("generating envoy config: %w", err)
+	}
 	confPath := filepath.Join(p.configDir(), fmt.Sprintf("egress-%s.yaml", agentName))
 	if err := os.MkdirAll(filepath.Dir(confPath), 0700); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
@@ -1298,8 +1315,7 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 	}
 	args = append(args, policy.EgressProxyImage, "sh", "/opt/entrypoint.sh")
 
-	_, err := dockerRun(ctx, args...)
-	if err != nil {
+	if _, err := dockerRun(ctx, args...); err != nil {
 		return fmt.Errorf("starting egress proxy: %w", err)
 	}
 

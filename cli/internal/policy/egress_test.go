@@ -116,7 +116,10 @@ func TestEgressProxyName(t *testing.T) {
 
 func TestGenerateProxyConfAllowlist(t *testing.T) {
 	domains := []string{"api.anthropic.com", "*.slack.com", "github.com"}
-	result := GenerateProxyConf(domains, "enforce")
+	result, err := GenerateProxyConf(domains, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if !strings.Contains(result, "port_value: 3128") {
 		t.Error("expected envoy listener on port 3128")
@@ -143,7 +146,10 @@ func TestGenerateProxyConfWildcardDedup(t *testing.T) {
 	// When *.slack.com is present, the Lua filter puts .slack.com in SUFFIXES
 	// and slack.com in EXACT. Both appear because Envoy Lua handles them separately.
 	domains := []string{"api.anthropic.com", "slack.com", "*.slack.com"}
-	result := GenerateProxyConf(domains, "enforce")
+	result, err := GenerateProxyConf(domains, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if !strings.Contains(result, `".slack.com"`) {
 		t.Error("expected .slack.com in SUFFIXES table")
@@ -157,7 +163,10 @@ func TestGenerateProxyConfWildcardDedup(t *testing.T) {
 }
 
 func TestGenerateProxyConfPassthrough(t *testing.T) {
-	result := GenerateProxyConf(nil, "enforce")
+	result, err := GenerateProxyConf(nil, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if strings.Contains(result, "envoy.filters.http.lua") {
 		t.Error("expected no Lua filter in passthrough mode")
 	}
@@ -170,7 +179,10 @@ func TestGenerateProxyConfPassthrough(t *testing.T) {
 }
 
 func TestGenerateProxyConfEmptySlice(t *testing.T) {
-	result := GenerateProxyConf([]string{}, "enforce")
+	result, err := GenerateProxyConf([]string{}, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if strings.Contains(result, "envoy.filters.http.lua") {
 		t.Error("expected no Lua filter with empty domains")
 	}
@@ -184,7 +196,10 @@ func TestEgressProxyDockerfile(t *testing.T) {
 }
 
 func TestGenerateProxyConfLuaNilAuthorityGuard(t *testing.T) {
-	result := GenerateProxyConf([]string{"api.anthropic.com"}, "enforce")
+	result, err := GenerateProxyConf([]string{"api.anthropic.com"}, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	// Lua should guard against nil match result before calling :lower()
 	if !strings.Contains(result, "if not m then") {
 		t.Error("expected Lua nil guard for empty :authority match")
@@ -195,7 +210,10 @@ func TestGenerateProxyConfLuaNilAuthorityGuard(t *testing.T) {
 }
 
 func TestGenerateProxyConfDNSFamily(t *testing.T) {
-	result := GenerateProxyConf([]string{"api.anthropic.com"}, "enforce")
+	result, err := GenerateProxyConf([]string{"api.anthropic.com"}, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	// V4_ONLY is required because Docker bridge networks are IPv4-only
 	if !strings.Contains(result, "dns_lookup_family: V4_ONLY") {
 		t.Error("expected dns_lookup_family: V4_ONLY (Docker bridge networks are IPv4-only)")
@@ -255,7 +273,10 @@ func TestProxyBootstrapJSSyntax(t *testing.T) {
 func TestGenerateProxyConfLuaEscaping(t *testing.T) {
 	// Even though validateDomain would reject these, verify defense-in-depth
 	// by calling GenerateProxyConf directly with domains that need escaping.
-	result := GenerateProxyConf([]string{"normal.com"}, "enforce")
+	result, err := GenerateProxyConf([]string{"normal.com"}, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	// Verify normal domains pass through cleanly
 	if !strings.Contains(result, `"normal.com"`) {
 		t.Error("expected normal domain in output")
@@ -264,7 +285,10 @@ func TestGenerateProxyConfLuaEscaping(t *testing.T) {
 
 func TestGenerateProxyConfValidateMode(t *testing.T) {
 	domains := []string{"api.anthropic.com", "*.slack.com"}
-	result := GenerateProxyConf(domains, "validate")
+	result, err := GenerateProxyConf(domains, "validate")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if !strings.Contains(result, "envoy.filters.http.lua") {
 		t.Error("expected Lua filter in validate mode")
@@ -286,7 +310,10 @@ func TestGenerateProxyConfValidateMode(t *testing.T) {
 
 func TestGenerateProxyConfEnforceMode403(t *testing.T) {
 	domains := []string{"api.anthropic.com"}
-	result := GenerateProxyConf(domains, "enforce")
+	result, err := GenerateProxyConf(domains, "enforce")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if !strings.Contains(result, `":status"] = "403"`) {
 		t.Error("enforce mode should deny with 403")

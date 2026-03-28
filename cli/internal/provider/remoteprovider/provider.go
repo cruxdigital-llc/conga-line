@@ -240,7 +240,7 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		if egressPolicy.Mode == "enforce" {
 			egressEnforce = true
 		} else {
-			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging only). Set mode: enforce to activate domain filtering + iptables.\n")
+			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
 		}
 	}
 
@@ -263,7 +263,9 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 
 	// Connect shared egress proxy if running (legacy / passthrough)
 	if p.containerExists(ctx, egressProxyContainer) {
-		p.connectNetwork(ctx, netName, egressProxyContainer)
+		if err := p.connectNetwork(ctx, netName, egressProxyContainer); err != nil {
+			return fmt.Errorf("failed to connect egress proxy to network %s: %w", netName, err)
+		}
 	}
 
 	// 8. Start container
@@ -439,7 +441,11 @@ func (p *RemoteProvider) GetStatus(ctx context.Context, agentName string) (*prov
 // Only applies when egress policy mode is "enforce".
 func (p *RemoteProvider) ensureEgressIptables(ctx context.Context, agentName string) {
 	egressPolicy, err := policy.LoadEgressPolicy(p.dataDir, agentName)
-	if err != nil || egressPolicy == nil || egressPolicy.Mode != "enforce" || len(egressPolicy.AllowedDomains) == 0 {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy for %s: %v\n", agentName, err)
+		return
+	}
+	if egressPolicy == nil || egressPolicy.Mode != "enforce" || len(egressPolicy.AllowedDomains) == 0 {
 		return
 	}
 
@@ -451,15 +457,19 @@ func (p *RemoteProvider) ensureEgressIptables(ctx context.Context, agentName str
 
 	ip, err := p.containerIPOnNetwork(ctx, cName, netName)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to get container IP for %s: %v\n", agentName, err)
 		return
 	}
 	cidr, err := p.networkSubnetCIDR(ctx, netName)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to get network CIDR for %s: %v\n", agentName, err)
 		return
 	}
 
 	if !p.checkEgressIptablesRules(ctx, ip, cidr) {
-		p.addEgressIptablesRules(ctx, ip, cidr)
+		if err := p.addEgressIptablesRules(ctx, ip, cidr); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to re-apply egress iptables rules for %s: %v\n", agentName, err)
+		}
 	}
 }
 
@@ -606,7 +616,7 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		if egressPolicy.Mode == "enforce" {
 			egressEnforce = true
 		} else {
-			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging only). Set mode: enforce to activate domain filtering + iptables.\n")
+			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
 		}
 	}
 
@@ -705,10 +715,14 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 	}
 
 	if p.containerExists(ctx, egressProxyContainer) {
-		p.connectNetwork(ctx, netName, egressProxyContainer)
+		if err := p.connectNetwork(ctx, netName, egressProxyContainer); err != nil {
+			return fmt.Errorf("failed to reconnect egress proxy to network %s: %w", netName, err)
+		}
 	}
 	if p.containerExists(ctx, routerContainer) {
-		p.connectNetwork(ctx, netName, routerContainer)
+		if err := p.connectNetwork(ctx, netName, routerContainer); err != nil {
+			return fmt.Errorf("failed to reconnect router to network %s: %w", netName, err)
+		}
 	}
 	return nil
 }
@@ -1054,7 +1068,10 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 	}
 
 	// Generate and upload Envoy config
-	conf := policy.GenerateProxyConf(domains, mode)
+	conf, err := policy.GenerateProxyConf(domains, mode)
+	if err != nil {
+		return fmt.Errorf("generating envoy config: %w", err)
+	}
 	confPath := posixpath.Join(p.remoteConfigDir(), fmt.Sprintf("egress-%s.yaml", agentName))
 	if err := p.ssh.Upload(confPath, []byte(conf), 0444); err != nil {
 		return fmt.Errorf("uploading egress config: %w", err)

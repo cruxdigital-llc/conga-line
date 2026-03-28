@@ -613,10 +613,10 @@ generate_egress_conf() {
   if [ "$EFFECTIVE_MODE" = "validate" ]; then
     log "Egress proxy for $AGENT_NAME in validate mode (logging only)."
     local DENY_ACTION='                    h:logWarn("egress-validate: would deny " .. host)'
-    local MISSING_HOST_ACTION='                      return'
+    local MISSING_HOST_ACTION='                    if not m then return end'
   else
     local DENY_ACTION='                    h:respond({[":status"] = "403"}, "egress denied: " .. host .. "\\n")'
-    local MISSING_HOST_ACTION='                      h:respond({[":status"] = "403"}, "egress denied: missing host\\n"); return'
+    local MISSING_HOST_ACTION='                    if not m then h:respond({[":status"] = "403"}, "egress denied: missing host\\n"); return end'
   fi
 
   # Generate Envoy config with Lua-based domain filtering
@@ -679,7 +679,6 @@ $(echo -e "$SUFFIX_ENTRIES")                  }
                     local a = h:headers():get(":authority") or ""
                     local m = a:match("^([^:]+)")
 $MISSING_HOST_ACTION
-                    end
                     local host = m:lower()
                     if EXACT[host] then return end
                     for _, s in ipairs(SUFFIXES) do
