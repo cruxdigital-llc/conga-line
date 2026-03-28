@@ -13,7 +13,7 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 - **NAT**: fck-nat via `RaJiska/fck-nat/aws` module v1.4.0 (not AWS NAT Gateway)
 - **Terraform state**: S3 bucket `<project_name>-terraform-state-<account_id>` + DynamoDB `<project_name>-terraform-locks`
 - **Configuration**: Environment-specific values are in gitignored `terraform/terraform.tfvars` and `terraform/backend.tf`. See `.example` files.
-- **Separation of concerns**: Terraform manages AWS infrastructure. CLI manages configuration (`admin setup`) and agents (`admin add-user/add-team`). On AWS, agents are discovered from SSM Parameter Store at `/conga/agents/<name>` at boot time. On local, agents are stored as JSON files in `~/.conga/agents/`. On remote, agents are stored as JSON files on the remote host at `/opt/conga/agents/`.
+- **Separation of concerns**: Terraform manages AWS infrastructure. CLI manages configuration (`admin setup`), agents (`admin add-user/add-team`), policies (`policy validate/deploy/set-*`), and channels (`channels add/remove/bind/unbind`). On AWS, agents are discovered from SSM Parameter Store at `/conga/agents/<name>` at boot time. On local, agents are stored as JSON files in `~/.conga/agents/`. On remote, agents are stored as JSON files on the remote host at `/opt/conga/agents/`.
 
 ## Provider System
 

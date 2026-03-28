@@ -25,7 +25,7 @@ Self-host a fleet of isolated [OpenClaw](https://github.com/openclaw/openclaw) A
 ```
 ┌─────────────────────────────────────────────────┐
 │                 CLI Commands                     │
-│  (setup, add-user, status, logs, connect, ...)   │
+│  (setup, add-user, policy, channels, status, ...) │
 └────────────────────┬────────────────────────────┘
                      │ Provider interface
          ┌───────────┼───────────┐
@@ -46,6 +46,8 @@ Self-host a fleet of isolated [OpenClaw](https://github.com/openclaw/openclaw) A
 | **Infrastructure** | Terraform (AWS), `conga admin setup` (remote/local) | VPC/EC2, remote host, or local Docker environment |
 | **Configuration** | CLI (`conga admin setup`) | Shared secrets, Docker image, deployment settings |
 | **Agents** | CLI (`conga admin add-user/add-team`) | Per-agent containers, configs, routing, secrets |
+| **Policies** | CLI (`conga policy`) | Egress rules, security posture, routing enforcement |
+| **Channels** | CLI (`conga channels`) | Messaging platform integrations, agent-channel bindings |
 
 ## Quick Start (Local Docker)
 

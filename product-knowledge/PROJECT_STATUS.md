@@ -133,7 +133,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 18. OpenShell-Inspired Security Hardening — Specified, Ready for Implementation
 *See `specs/2026-03-22_feature_openshell-inspired-hardening/` for full trace*
 - [ ] **Feature D: Credential-in-Chat Defense** — Behavioral guardrail in SOUL.md + credential pattern scanner
-- [ ] **Feature C: Egress Allowlist Proxy** — Wire existing nginx proxy with SNI-based domain filtering
+- [x] ~~**Feature C: Egress Allowlist Proxy**~~ — Superseded by Envoy-based egress policy (Features 15-17)
 - [ ] **Feature A: Credential Proxy Sidecar** — Go reverse proxy holds real API keys; agent sees only proxy URL
 - [ ] **Feature B: Landlock Filesystem Isolation** — Kernel-enforced write restrictions via init wrapper
 - Standards gate: passed (1 warning — proxy env file on disk, same as current model)

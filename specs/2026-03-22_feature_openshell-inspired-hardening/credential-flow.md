@@ -195,9 +195,9 @@ User runs: conga refresh --agent myagent
    │ ANTHROPIC_BASE_URL=  │ │ BRAVE_API_KEY=BSA...        │
    │  http://conga-proxy- │ │ TRELLO_API_KEY=abc...       │
    │  myagent:8080          │ │ TRELLO_TOKEN=def...         │
-   │ HTTPS_PROXY=         │ │ GOOGLE_CLIENT_ID=123...     │
-   │  http://conga-egress │ │ GOOGLE_CLIENT_SECRET=xyz... │
-   │  -proxy:3128         │ └──────────────────────────────┘
+   │                      │ │ GOOGLE_CLIENT_ID=123...     │
+   │                      │ │ GOOGLE_CLIENT_SECRET=xyz... │
+   │                      │ └──────────────────────────────┘
    └──────────────────────┘     mounted ONLY by proxy container
 
    mounted by agent container      Local: ~/.conga/config/myagent-proxy.env
@@ -369,7 +369,7 @@ Slack credentials follow a different path and are **not** part of the credential
 | Proxy crashes | Agent loses all outbound API access (fail-closed) | `conga status` shows proxy stopped; agent logs show connection refused | `conga refresh` restarts both |
 | Proxy env file missing | Proxy won't start → agent starts but can't make API calls | `conga status` shows proxy not-found | `conga refresh` regenerates env files |
 | Wrong secret value | Proxy sends bad auth → upstream returns 401/403 | Agent logs show API errors | `conga secrets set` + `conga refresh` |
-| Agent tries to bypass proxy | HTTP to arbitrary host blocked by egress proxy (Feature C) | Egress proxy logs blocked connection | Behavioral guardrail (Feature D) |
+| Agent tries to bypass proxy | HTTP to arbitrary host blocked by Envoy egress proxy (egress policy system) | Egress proxy logs blocked connection | Behavioral guardrail (Feature D) |
 | Secret file deleted from disk | Next refresh generates env file without that secret | Proxy starts but missing route returns 502 | `conga secrets set` to re-add |
 
 ---

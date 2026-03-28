@@ -6,13 +6,13 @@ A comparison of our Conga Line deployment platform with NVIDIA's OpenShell proje
 
 1. **Credential isolation** — OpenShell's agent process never sees real API keys (proxy rewrites auth headers). Our agents read real keys from env vars.
 2. **Filesystem enforcement** — OpenShell uses Linux Landlock LSM for kernel-enforced filesystem boundaries. We use hash-based monitoring (detection, not prevention).
-3. **Egress control** — OpenShell uses OPA + TLS MITM for per-destination network policies. We have NACL-level port filtering only.
+3. ~~**Egress control**~~ — *Closed.* Now implemented via the Envoy-based egress policy system (`conga-policy.yaml`, `cli/internal/policy/`). See Features 15-17.
 
-This spec plans lightweight implementations of all three, without adopting OpenShell as a dependency or introducing its K3s/Rust/OPA overhead.
+This spec plans lightweight implementations of the remaining gaps, without adopting OpenShell as a dependency or introducing its K3s/Rust/OPA overhead.
 
 ## Goal
 
-Close the three identified security gaps by implementing native solutions within our existing Docker + Go CLI architecture, maintaining compatibility with both AWS and local providers.
+Close the remaining security gaps (credential isolation, filesystem enforcement, credential-in-chat defense) by implementing native solutions within our existing Docker + Go CLI architecture, maintaining compatibility with both AWS and local providers. Egress control is already addressed by the Envoy-based policy system.
 
 ## Success Criteria
 
@@ -38,16 +38,8 @@ Close the three identified security gaps by implementing native solutions within
 - [ ] Container restarts and systemd lifecycle unaffected
 - [ ] Replaces hash-based config integrity monitoring as the primary control (monitoring can remain as defense-in-depth)
 
-### Feature C: Egress Allowlist Proxy
-- [ ] Agent containers can only reach allowlisted domains (not arbitrary HTTPS endpoints)
-- [ ] Default allowlist covers: `api.anthropic.com`, `*.slack.com`, `slack.com`, `api.trello.com`, `api.search.brave.com`, `accounts.google.com`, `www.googleapis.com`, `github.com`, `*.github.com`
-- [ ] Allowlist is configurable (version-controlled file, not hardcoded)
-- [ ] SNI-based filtering (no TLS MITM, no CA cert injection, no broken certificate chains)
-- [ ] Single shared proxy per host (not per-agent) to minimize resource overhead
-- [ ] DNS resolution goes through the proxy (prevents DNS-based exfiltration or circumvention)
-- [ ] Works on both AWS and local providers
-- [ ] Blocked domains return a clear connection-refused error (not a hang or timeout)
-- [ ] `conga admin setup` configures the allowlist; `conga refresh` picks up changes
+### ~~Feature C: Egress Allowlist Proxy~~ — Superseded
+> Implemented by the Envoy-based egress policy system (Features 15-17). Per-agent domain allowlisting via `conga-policy.yaml` with MCP tools for policy management. All original success criteria met or exceeded.
 
 ### Feature D: Credential-in-Chat Defense
 - [ ] Agent behavioral guardrail: refuses credentials posted in chat, directs user to `conga secrets set`
@@ -60,8 +52,8 @@ Close the three identified security gaps by implementing native solutions within
 
 ## Non-Goals
 
-- No OPA/Rego policy engine — our egress needs are simple domain allowlisting, not per-binary L7 inspection
-- No TLS MITM — SNI-based filtering is sufficient and avoids cert management complexity
+- No OPA/Rego policy engine — egress is handled by the existing Envoy-based policy system
+- No TLS MITM — egress filtering uses Envoy CONNECT passthrough, not certificate interception
 - No GPU passthrough or inference routing — not relevant to our always-on assistant use case
 - No OpenShell as a runtime dependency
 - No changes to the Provider interface — these are container-level enhancements, not new provider methods
@@ -69,18 +61,18 @@ Close the three identified security gaps by implementing native solutions within
 
 ## Constraints
 
-- **Resource budget**: Combined overhead of all three features must stay under 256MB RAM per agent (proxy ~32MB, Landlock wrapper ~0, egress proxy ~64MB shared)
+- **Resource budget**: Combined overhead of credential proxy + Landlock must stay under 64MB RAM per agent (proxy ~32MB, Landlock wrapper ~0). Egress proxy overhead is already accounted for in the policy system.
 - **ARM64**: All components must work on ARM64 (r6g instances on AWS, Apple Silicon locally)
 - **No Docker-in-Docker**: Solutions must work within standard Docker, not nested containers
 - **Provider parity**: Both AWS and local providers must support all three features
 - **Backwards compatibility**: Existing `conga` CLI commands (secrets, status, logs, refresh, connect) must work without modification from the user's perspective
-- **Existing egress proxy**: The nginx-based egress proxy in `deploy/egress-proxy/` is already deployed but not wired. Feature C should build on this, not replace it from scratch.
+- **Existing egress proxy**: The Envoy-based egress proxy is already deployed and enforced via `conga-policy.yaml`. The credential proxy sidecar should integrate with it (proxy's outbound traffic routes through the egress proxy).
 
 ## Architect Review
 
-**Architecture fit**: All three features are additive container-level enhancements. They don't change the Provider interface, agent lifecycle, or routing architecture. The credential proxy is a new sidecar container per agent (similar pattern to the router). Landlock is an entrypoint wrapper inside the existing container. The egress proxy is already deployed — Feature C wires it up.
+**Architecture fit**: All remaining features are additive container-level enhancements. They don't change the Provider interface, agent lifecycle, or routing architecture. The credential proxy is a new sidecar container per agent (similar pattern to the router). Landlock is an entrypoint wrapper inside the existing container. Egress is already handled by the Envoy-based policy system.
 
-**New dependencies**: Feature A introduces a small Go HTTP reverse proxy binary (compiled into a container image). Feature B introduces a small C or Go init binary. Feature C has zero new dependencies (existing nginx proxy).
+**New dependencies**: Feature A introduces a small Go HTTP reverse proxy binary (compiled into a container image). Feature B introduces a small Go init binary. No new egress dependencies (already implemented).
 
 **Concern — credential proxy failure mode**: If the proxy sidecar crashes, the agent loses all outbound API access. This is actually *better* than the current model (fail-closed vs fail-open), but we need clear observability. The proxy should be a simple, low-surface-area binary with minimal crash risk.
 
@@ -94,9 +86,7 @@ Close the three identified security gaps by implementing native solutions within
 
 **Edge case — Landlock and OpenClaw upgrades**: Future OpenClaw versions may write to new directories. The Landlock allowlist must be configurable (not hardcoded) so it can be updated when upgrading the image.
 
-**Edge case — egress proxy and MCP tools**: OpenClaw's MCP tool servers (if enabled) may need to reach additional domains. The allowlist must be extensible per-agent or globally.
-
-**Edge case — DNS and SNI mismatch**: If OpenClaw resolves DNS independently and connects by IP, SNI-based filtering won't work. Verify that `HTTPS_PROXY` forces DNS resolution through the proxy.
+**Edge case — egress proxy and MCP tools**: OpenClaw's MCP tool servers (if enabled) may need to reach additional domains. The egress allowlist in `conga-policy.yaml` supports per-agent overrides for this.
 
 **Failure mode — cascading restart**: When `conga refresh` restarts an agent, it must restart the credential proxy first (to have fresh secrets), then the agent container. Order matters.
 

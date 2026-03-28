@@ -4,66 +4,10 @@
 
 Features are ordered by value-to-effort ratio and dependency:
 
-1. **Feature C: Egress Allowlist Proxy** — Wire up the existing nginx proxy. Lowest effort (infrastructure already deployed). Establishes the network control plane that Feature A benefits from.
-2. **Feature A: Credential Proxy Sidecar** — New sidecar container. Highest security value. Benefits from Feature C being in place (proxy's outbound traffic also goes through egress allowlist).
-3. **Feature B: Landlock Filesystem Isolation** — Container entrypoint wrapper. Independent of A and C but lowest priority (hash monitoring is working, and config is already root-owned 0444).
+1. **Feature A: Credential Proxy Sidecar** — New sidecar container. Highest security value. Benefits from the existing Envoy-based egress policy (proxy's outbound traffic goes through egress allowlist).
+2. **Feature B: Landlock Filesystem Isolation** — Container entrypoint wrapper. Independent of A but lowest priority (hash monitoring is working, and config is already root-owned 0444).
 
----
-
-## Feature C: Egress Allowlist Proxy
-
-### Current State
-- nginx proxy container exists at `deploy/egress-proxy/` (Dockerfile + nginx.conf)
-- `ensureEgressProxy()` in `localprovider/provider.go` starts the container on a `conga-egress` network
-- Proxy is connected to all agent networks via `docker network connect`
-- **Not wired**: agent containers don't route traffic through it (no `HTTPS_PROXY` env var, no DNS override)
-
-### Plan
-
-#### Step 1: Allowlist Configuration File
-- Create `deploy/egress-proxy/allowlist.conf` with default allowed domains
-- Format: one domain per line, supports wildcards (`.slack.com` matches `*.slack.com`)
-- nginx `map` block reads this at startup to build the SNI allowlist
-- The allowlist file is version-controlled (committed to repo)
-- CLI copies it to `~/.conga/config/egress-allowlist.conf` during `admin setup`
-
-#### Step 2: Upgrade nginx.conf for SNI Filtering
-- Current config does passthrough on port 3128 with `ssl_preread on` — good foundation
-- Add `map $ssl_preread_server_name $upstream` block that checks SNI against allowlist
-- Allowed domains → upstream to the resolved IP
-- Blocked domains → return 0 (close connection immediately, no hang)
-- Log blocked attempts for observability
-
-#### Step 3: Wire Agent Containers to Proxy
-- Add `HTTPS_PROXY=http://conga-egress-proxy:3128` to agent env files (`GenerateEnvFile()`)
-- Add `--dns` flag pointing to the egress proxy's DNS forwarder (port 53) so agents resolve DNS through the proxy, preventing direct-IP circumvention
-- Both providers: env file generation is in `common/config.go` — change applies to both
-- AWS: bootstrap script `docker run` adds the same env var and DNS flag
-- Local: `localprovider/docker.go` `runAgentContainer()` adds the flags
-
-#### Step 4: Provider Integration
-- **Local provider**: `ensureEgressProxy()` already runs — add allowlist volume mount, DNS exposure
-- **AWS provider**: Add egress proxy to bootstrap script (same Docker image, same nginx.conf, deployed alongside agent containers)
-- Both providers: `RefreshAgent()` and `RefreshAll()` restart egress proxy if allowlist changed
-
-#### Step 5: Testing
-- Integration test: agent container can reach `api.anthropic.com` (allowed)
-- Integration test: agent container cannot reach `evil.example.com` (blocked)
-- Integration test: DNS queries from agent resolve through proxy (not directly to public DNS)
-- Verify: OpenClaw conversations work end-to-end with proxy in path
-- Verify: Slack webhook delivery unaffected (inbound to container, not outbound through proxy)
-
-### Files Modified
-- `deploy/egress-proxy/nginx.conf` — SNI allowlist logic
-- `deploy/egress-proxy/allowlist.conf` — new, default domain list
-- `cli/internal/common/config.go` — `GenerateEnvFile()` adds `HTTPS_PROXY`
-- `cli/internal/provider/localprovider/docker.go` — `runAgentContainer()` adds `--dns` flag
-- `cli/internal/provider/localprovider/provider.go` — `ensureEgressProxy()` mounts allowlist
-- `terraform/bootstrap.sh` — AWS: deploy egress proxy container alongside agents
-
-### Resource Cost
-- nginx container: ~64MB RAM (already deployed, shared across all agents)
-- No per-agent overhead
+> **Note**: Feature C (Egress Allowlist Proxy) was originally part of this spec but has been superseded by the Envoy-based egress policy system implemented in Features 15-17 (see `specs/2026-03-25_feature_egress-allowlist/`, `specs/2026-03-26_feature_network-level-egress-enforcement/`, `specs/2026-03-26_feature_mcp-policy-tools/`). The egress policy system provides per-agent domain allowlisting via `conga-policy.yaml`, Envoy proxy enforcement, and MCP tools for policy management — all of which exceed what Feature C originally proposed.
 
 ---
 
@@ -249,7 +193,7 @@ For an environment with 2 agents (`myagent`, `leadership`), the complete contain
 | `conga-leadership` | OpenClaw agent | Per-agent | openclaw:2026.3.11 | ~2GB |
 | `conga-proxy-leadership` | Credential proxy (outbound API auth) | Per-agent | credential-proxy:latest | ~32MB |
 | `conga-router` | Slack event router (inbound Socket Mode → HTTP fan-out) | Shared | node:22-alpine | ~128MB |
-| `conga-egress-proxy` | Egress allowlist (SNI-based domain filtering) | Shared | nginx:alpine | ~64MB |
+| `conga-egress-{name}` | Egress allowlist (Envoy-based domain filtering) | Per-agent | envoyproxy/envoy:v1.32 | ~64MB |
 
 **Total for 2 agents**: 6 containers, ~4.3GB RAM
 
@@ -457,22 +401,20 @@ The residual risk is: a pasted credential sits in encrypted conversation history
 | Week | Feature | Milestone |
 |---|---|---|
 | 1 | D: Credential-in-Chat | Behavior file update (immediate, zero-cost) |
-| 1 | C: Egress Proxy | Allowlist config + nginx upgrade + agent wiring |
-| 1 | C: Egress Proxy | AWS + local provider integration + testing |
-| 2 | A: Credential Proxy | Go proxy binary + Dockerfile + unit tests |
+| 1 | A: Credential Proxy | Go proxy binary + Dockerfile + unit tests |
 | 2 | A: Credential Proxy | Env file split + provider lifecycle integration |
-| 3 | A: Credential Proxy | OpenClaw config changes + end-to-end testing |
+| 2 | A: Credential Proxy | OpenClaw config changes + end-to-end testing |
 | 3 | B: Landlock Init | Init binary + custom image layer |
 | 3 | D: Credential Scanner | Pattern scanner + systemd timer + alerting |
-| 4 | B: Landlock Init | Provider integration + testing + documentation |
+| 3 | B: Landlock Init | Provider integration + testing + documentation |
+
+> **Note**: Feature C (Egress Proxy) rows removed — egress is already implemented via the Envoy-based policy system.
 
 ## Risk Register
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | OpenClaw doesn't respect `ANTHROPIC_BASE_URL` | Low | Blocks Feature A | Verify with current pinned image before building proxy. Fallback: configure via openclaw.json model config. |
-| OpenClaw's Node.js runtime ignores `HTTPS_PROXY` for some connections | Medium | Partial Feature C bypass | Test all outbound connection paths. Node.js `http` module respects `HTTPS_PROXY` natively; verify WebSocket connections (Slack) also route through proxy. |
-| nginx SNI filtering blocks legitimate traffic | Medium | Agent downtime | Start with a permissive allowlist, tighten over time. Log all blocked connections for audit. |
 | Landlock init breaks on future OpenClaw image updates | Medium | Container won't start | Configurable write paths via env var. CI test that verifies container starts with Landlock enabled. |
 | Credential proxy adds latency to API calls | Low | Degraded UX | Proxy is on the same Docker network (sub-millisecond). No TLS termination on the proxy side (HTTP between agent and proxy). |
 | Anthropic SDK doesn't send `x-api-key` to non-Anthropic URLs | Medium | Blocks Feature A | Proxy injects the key itself — the SDK just sends requests to the base URL without auth. Verify SDK behavior. |
@@ -484,6 +426,5 @@ The residual risk is: a pasted credential sits in encrypted conversation history
 This plan is ready for `/glados:spec-feature` to create detailed technical specifications for each sub-feature. Recommended spec order:
 
 1. **Feature D** (behavior file update is immediate, scanner is simple)
-2. **Feature C** (lowest infrastructure effort, unblocks integration testing for A)
-3. **Feature A** (highest security value, depends on C for full egress coverage)
-4. **Feature B** (independent, lowest priority)
+2. **Feature A** (highest security value, egress already in place for full coverage)
+3. **Feature B** (independent, lowest priority)

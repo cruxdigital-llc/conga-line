@@ -15,10 +15,10 @@
 - Git for version control
 
 ## Decisions
-1. **Four sub-features identified** (three from OpenShell comparison, one from credential lifecycle analysis):
+1. **Four sub-features originally identified** (three from OpenShell comparison, one from credential lifecycle analysis):
    - Feature A: Credential Proxy Sidecar (highest security value, per-agent)
    - Feature B: Landlock Filesystem Isolation (medium effort, Linux-only)
-   - Feature C: Egress Allowlist Proxy (already partially deployed)
+   - ~~Feature C: Egress Allowlist Proxy~~ — **Superseded** by Envoy-based egress policy system (Features 15-17)
    - Feature D: Credential-in-Chat Defense (behavioral guardrail + pattern scanner)
 2. **No OpenShell dependency** — cherry-pick the ideas, implement natively in our stack
 3. **Per-agent proxy, not shared** — preserves isolation boundary (shared proxy = single point of credential leakage for all agents)

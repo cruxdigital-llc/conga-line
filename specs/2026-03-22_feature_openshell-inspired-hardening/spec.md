@@ -2,7 +2,9 @@
 
 ## Overview
 
-Four features that layer to close security gaps identified in the NVIDIA OpenShell comparison. Each feature is independently deployable. Implementation order: D → C → A → B.
+Three remaining features that layer to close security gaps identified in the NVIDIA OpenShell comparison. Each feature is independently deployable. Implementation order: D → A → B.
+
+> **Note**: Feature C (Egress Allowlist Proxy) was originally part of this spec but has been superseded by the Envoy-based egress policy system implemented in Features 15-17. See `specs/2026-03-25_feature_egress-allowlist/`, `specs/2026-03-26_feature_network-level-egress-enforcement/`, and `specs/2026-03-26_feature_mcp-policy-tools/`.
 
 ---
 
@@ -122,228 +124,6 @@ Maps to existing SNS alarm topic (same as config integrity violations).
 | Credential in a code block or file attachment | Scanner searches all text content in data directory recursively |
 | Scanner false positive on random strings | Patterns use known prefixes with high specificity (`sk-ant-`, `xoxb-`). Generic `sk-` pattern requires 32+ chars to reduce noise. |
 | Agent ignores behavioral guardrail (prompt injection) | Scanner detects after the fact. Feature A (credential proxy) limits damage — agent can't use the credential to authenticate directly. |
-
----
-
-## Feature C: Egress Allowlist Proxy
-
-### C.1 Configuration Schema
-
-**New file**: `deploy/egress-proxy/allowlist.conf`
-
-```
-# Egress domain allowlist — one domain per line.
-# Prefix with . for wildcard subdomains (e.g., .slack.com matches *.slack.com).
-# Lines starting with # are comments. Empty lines are ignored.
-# This is a deployment-wide policy applied to all agent containers.
-
-# LLM providers
-api.anthropic.com
-api.openai.com
-
-# Slack
-.slack.com
-slack.com
-wss-primary.slack.com
-wss-backup.slack.com
-
-# Productivity tools
-api.trello.com
-api.search.brave.com
-
-# Google OAuth + APIs
-accounts.google.com
-www.googleapis.com
-oauth2.googleapis.com
-
-# GitHub (for coding tools)
-github.com
-.github.com
-api.github.com
-raw.githubusercontent.com
-
-# npm registry (for OpenClaw skill installation)
-registry.npmjs.org
-```
-
-**Deployed path**:
-- Local: `~/.conga/config/egress-allowlist.conf`
-- AWS: `/opt/conga/config/egress-allowlist.conf`
-
-Admin can edit after `conga admin setup`. Changes take effect on `conga admin refresh-all` (egress proxy container restart).
-
-### C.2 nginx.conf — Updated
-
-```nginx
-# Conga Line Egress Proxy
-# SNI-based domain allowlist. Blocks HTTPS to non-allowlisted domains.
-# DNS forwarding to prevent direct DNS resolution by agent containers.
-
-events {
-    worker_connections 256;
-}
-
-stream {
-    # Log format for blocked/allowed connections
-    log_format egress '$remote_addr [$time_local] '
-                      '$ssl_preread_server_name $upstream '
-                      '$status $bytes_sent $bytes_received';
-
-    access_log /dev/stdout egress;
-
-    # Load allowlist from included file.
-    # Generated at container build or mount time from allowlist.conf.
-    # Format: map entries of "hostname upstream_value;"
-    # Blocked domains map to "" (empty), which triggers return 0 (close).
-    map $ssl_preread_server_name $upstream {
-        include /etc/nginx/allowlist.map;
-        default "";  # Block by default
-    }
-
-    # HTTPS passthrough (port 3128) via SNI
-    server {
-        listen 3128;
-
-        # If $upstream is empty (blocked domain), close the connection.
-        # nginx closes immediately — agent sees connection refused, not a hang.
-        proxy_pass $upstream;
-        ssl_preread on;
-        resolver 8.8.8.8 valid=300s;
-        resolver_timeout 5s;
-    }
-
-    # DNS forwarding (UDP)
-    server {
-        listen 53 udp;
-        proxy_pass 8.8.8.8:53;
-        proxy_timeout 5s;
-    }
-
-    # DNS forwarding (TCP)
-    server {
-        listen 53;
-        proxy_pass 8.8.8.8:53;
-        proxy_timeout 5s;
-    }
-}
-```
-
-### C.3 Allowlist Compilation
-
-The `allowlist.conf` (human-readable, one domain per line) is compiled into `allowlist.map` (nginx map format) at container start. This is handled by an entrypoint script in the egress proxy container:
-
-**New file**: `deploy/egress-proxy/entrypoint.sh`
-
-```bash
-#!/bin/sh
-# Convert allowlist.conf → allowlist.map (nginx map format)
-# Run at container startup before nginx starts.
-
-ALLOWLIST="/etc/nginx/allowlist.conf"
-MAP="/etc/nginx/allowlist.map"
-
-> "$MAP"
-while IFS= read -r line; do
-    # Skip comments and blank lines
-    case "$line" in \#*|"") continue ;; esac
-
-    if [ "${line:0:1}" = "." ]; then
-        # Wildcard: .slack.com matches *.slack.com AND slack.com
-        domain="${line:1}"
-        echo "~\\.${domain//./\\.}$ ${domain}:443;" >> "$MAP"
-        echo "${domain} ${domain}:443;" >> "$MAP"
-    else
-        echo "${line} ${line}:443;" >> "$MAP"
-    fi
-done < "$ALLOWLIST"
-
-exec nginx -g "daemon off;"
-```
-
-**Updated Dockerfile**: `deploy/egress-proxy/Dockerfile`
-
-```dockerfile
-FROM nginx:alpine
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY allowlist.conf /etc/nginx/allowlist.conf
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-EXPOSE 3128 53
-ENTRYPOINT ["/entrypoint.sh"]
-```
-
-The allowlist file can be overridden at runtime by mounting the deployment copy over `/etc/nginx/allowlist.conf`.
-
-### C.4 Agent Container Wiring
-
-**Changes to `cli/internal/common/config.go` — `GenerateEnvFile()`**:
-
-Add to env file output:
-
-```
-HTTPS_PROXY=http://conga-egress-proxy:3128
-NO_PROXY=localhost,127.0.0.1,conga-proxy-{name}
-```
-
-`NO_PROXY` ensures agent-to-credential-proxy traffic (HTTP, same network) doesn't route through the egress proxy.
-
-**Changes to `cli/internal/provider/localprovider/docker.go` — `runAgentContainer()`**:
-
-Add DNS flag to docker run args:
-
-```go
-"--dns", egressProxyIP,
-```
-
-Where `egressProxyIP` is the IP of `conga-egress-proxy` on the agent's network (resolved via `docker inspect`). This forces agent DNS resolution through the proxy, preventing direct-IP circumvention of SNI filtering.
-
-**Changes to `cli/internal/provider/localprovider/provider.go` — `ensureEgressProxy()`**:
-
-Add volume mount for the deployed allowlist:
-
-```go
-"-v", fmt.Sprintf("%s:/etc/nginx/allowlist.conf:ro", allowlistPath),
-```
-
-### C.5 AWS Bootstrap Integration
-
-Add to `terraform/bootstrap.sh` after Docker install, before agent containers:
-
-```bash
-# Build and start egress proxy
-docker build -t conga-egress-proxy /opt/conga/deploy/egress-proxy/
-docker run -d \
-    --name conga-egress-proxy \
-    --network conga-egress \
-    --cap-drop ALL \
-    --security-opt no-new-privileges \
-    --memory 64m \
-    --read-only \
-    --tmpfs /tmp:rw,noexec,nosuid \
-    -v /opt/conga/config/egress-allowlist.conf:/etc/nginx/allowlist.conf:ro \
-    conga-egress-proxy
-```
-
-Each agent's docker run in the bootstrap loop adds:
-```bash
---dns $(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' conga-egress-proxy)
-```
-
-And the egress proxy is connected to each agent network:
-```bash
-docker network connect conga-$AGENT_NAME conga-egress-proxy
-```
-
-### C.6 Edge Cases
-
-| Scenario | Handling |
-|---|---|
-| Agent sets `HTTPS_PROXY=""` to bypass | Can't — env var is set via `--env-file` at container start, not writable by the process. Agent could override in Node.js code, but that requires prompt injection + coding tool use. |
-| OpenClaw skill installs npm packages | `registry.npmjs.org` is in the default allowlist. If a skill pulls from a custom registry, admin adds it to the allowlist. |
-| MCP tool server needs external access | Admin adds the domain to `egress-allowlist.conf` and runs `conga admin refresh-all`. |
-| Agent connects by IP instead of hostname | No SNI header → `$ssl_preread_server_name` is empty → maps to `""` (blocked). Direct-IP connections are blocked by default. |
-| Wildcard matching | `.slack.com` matches `wss-primary.slack.com` and `api.slack.com`. Does NOT match `notslack.com` (regex anchored). |
-| Egress proxy container crashes | All agent outbound HTTPS fails (fail-closed). `conga status` shows egress proxy down. `conga admin refresh-all` restarts it. |
 
 ---
 
@@ -567,6 +347,8 @@ Replace `GenerateEnvFile()` with two functions:
 ```go
 // GenerateAgentEnvFile produces the env file for the agent container.
 // Contains ZERO real credentials — only config pointing to the credential proxy.
+// Note: HTTPS_PROXY and egress-related env vars are managed by the egress policy
+// system (cli/internal/policy/), not by this function.
 func GenerateAgentEnvFile(agent provider.AgentConfig, proxyEnabled bool) []byte {
     var buf []byte
     appendEnv := func(key, val string) {
@@ -580,8 +362,6 @@ func GenerateAgentEnvFile(agent provider.AgentConfig, proxyEnabled bool) []byte 
     if proxyEnabled {
         proxyHost := fmt.Sprintf("conga-proxy-%s", agent.Name)
         appendEnv("ANTHROPIC_BASE_URL", fmt.Sprintf("http://%s:8080/anthropic", proxyHost))
-        appendEnv("HTTPS_PROXY", "http://conga-egress-proxy:3128")
-        appendEnv("NO_PROXY", fmt.Sprintf("localhost,127.0.0.1,%s", proxyHost))
     }
 
     return buf
@@ -886,13 +666,12 @@ LANDLOCK_WRITE_PATHS=/home/node/.openclaw/data:/home/node/.openclaw/memory:/tmp
 
 ## Provider Interface
 
-**No changes to the Provider interface.** All four features are implemented within existing provider methods:
+**No changes to the Provider interface.** All three features are implemented within existing provider methods:
 
 | Feature | Integration point | How |
 |---|---|---|
 | D: Behavior | Existing behavior file sync in `RefreshAgent()` | New content in SOUL.md, same deployment path |
 | D: Scanner | New systemd timer (AWS) / CLI command (local) | Added in bootstrap, not in Provider interface |
-| C: Egress | `ensureEgressProxy()` + env file changes | Already exists, just wired up |
 | A: Credential Proxy | `ProvisionAgent()`, `RemoveAgent()`, `RefreshAgent()`, `PauseAgent()`, `UnpauseAgent()` | New container managed alongside agent container |
 | B: Landlock | Image reference change | Different image in `runAgentContainer()` |
 
@@ -915,18 +694,7 @@ LANDLOCK_WRITE_PATHS=/home/node/.openclaw/data:/home/node/.openclaw/memory:/tmp
 | **Health** | `GET /healthz` returns JSON array of route statuses |
 | **Logging** | JSON to stdout (docker logs) |
 
-### Egress Proxy Container (`conga-egress-proxy`)
-
-| Property | Value |
-|---|---|
-| **Image** | `conga-egress-proxy:latest` (locally built) |
-| **Ports** | 3128 (HTTPS passthrough), 53 (DNS UDP+TCP) |
-| **Network** | `conga-egress` + connected to all agent networks |
-| **Volume** | `egress-allowlist.conf` mounted at `/etc/nginx/allowlist.conf:ro` |
-| **Memory** | 64m |
-| **Capabilities** | `--cap-drop ALL` |
-| **Filesystem** | `--read-only` + tmpfs `/tmp` |
-| **Logging** | Access log to stdout with SNI hostname, upstream, status |
+> **Note**: The egress proxy container (`conga-egress-{name}`) is managed by the egress policy system (`cli/internal/policy/`). See the egress enforcement specs for its container contract.
 
 ### Agent Container (`conga-{name}`) — Changes
 
@@ -934,8 +702,7 @@ LANDLOCK_WRITE_PATHS=/home/node/.openclaw/data:/home/node/.openclaw/memory:/tmp
 |---|---|---|
 | **Image** | `ghcr.io/openclaw/openclaw:2026.3.11` | `conga-openclaw:2026.3.11-landlock` (custom layer) |
 | **Env file** | `{name}.env` (all secrets + config) | `{name}.env` (config only, zero secrets) |
-| **New env vars** | — | `ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `NO_PROXY`, `LANDLOCK_WRITE_PATHS` |
-| **DNS** | Docker default | `--dns` pointing to egress proxy |
+| **New env vars** | — | `ANTHROPIC_BASE_URL`, `LANDLOCK_WRITE_PATHS` |
 | **Entrypoint** | `node` | `conga-landlock-init node` |
 
 ---
@@ -944,14 +711,15 @@ LANDLOCK_WRITE_PATHS=/home/node/.openclaw/data:/home/node/.openclaw/memory:/tmp
 
 Features can be enabled incrementally. No big-bang cutover required.
 
-### Phase 1 (Week 1): D + C
+### Phase 1 (Week 1): D
 1. Update `behavior/base/SOUL.md` with credential hygiene section
-2. Wire egress proxy with allowlist
-3. `conga admin refresh-all` deploys both changes
-4. **Verify**: conversations work end-to-end, blocked domains return errors
-5. **Rollback**: remove `HTTPS_PROXY` and `--dns` from env file / docker run
+2. `conga admin refresh-all` deploys the change
+3. **Verify**: agent refuses credentials posted in chat
+4. **Rollback**: revert SOUL.md change
 
-### Phase 2 (Week 2-3): A
+> **Note**: Egress proxy is already deployed and enforced via the policy system. No Phase 1 egress work needed.
+
+### Phase 2 (Week 1-2): A
 1. Build credential proxy image
 2. Split env files
 3. Deploy proxy sidecar per agent
@@ -985,7 +753,6 @@ Features can be enabled incrementally. No big-bang cutover required.
 | Missing env var returns 502 with error message | A | `deploy/credential-proxy/main_test.go` |
 | `GenerateAgentEnvFile()` contains zero secrets | A | `cli/internal/common/config_test.go` |
 | `GenerateProxyEnvFile()` contains all secrets | A | `cli/internal/common/config_test.go` |
-| Allowlist compilation (plain domain, wildcard, comments) | C | `deploy/egress-proxy/entrypoint_test.sh` |
 | Scanner pattern matching (true positive, false positive) | D | `deploy/credential-scanner/scan_test.sh` |
 | Landlock ABI detection + graceful degradation | B | `deploy/landlock-init/main_test.go` |
 
@@ -997,8 +764,6 @@ Features can be enabled incrementally. No big-bang cutover required.
 | Agent env has proxy base URL | A | `docker exec conga-{name} printenv ANTHROPIC_BASE_URL` → `http://conga-proxy-...` |
 | Proxy /healthz returns route status | A | `docker exec conga-{name} wget -qO- http://conga-proxy-{name}:8080/healthz` |
 | Agent can complete Claude conversation | A | End-to-end Slack/web UI test |
-| Allowed domain reachable | C | `docker exec conga-{name} wget -qO- https://api.anthropic.com/` → connection succeeds |
-| Blocked domain unreachable | C | `docker exec conga-{name} wget -qO- https://evil.example.com/` → connection refused |
 | Config file not writable | B | `docker exec conga-{name} touch /home/node/.openclaw/openclaw.json` → EACCES |
 | Data directory writable | B | `docker exec conga-{name} touch /home/node/.openclaw/data/test` → success |
 | Scanner detects planted credential | D | Plant `sk-ant-test123456789012345678901` in data dir, run scan.sh, check output |
@@ -1011,7 +776,7 @@ Post-implementation, the defense-in-depth stack for a single agent:
 
 | Layer | Control | Type | What it prevents |
 |---|---|---|---|
-| 1 | Egress allowlist (C) | Prevention | Agent reaching unauthorized domains |
+| 1 | Egress allowlist (existing — Envoy policy) | Prevention | Agent reaching unauthorized domains |
 | 2 | Credential proxy (A) | Prevention | Agent reading/leaking API keys from env |
 | 3 | Landlock (B) | Prevention | Agent modifying its own config |
 | 4 | Behavioral guardrail (D) | Guidance | Users posting credentials in chat |
