@@ -253,7 +253,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		DataDir:            dataDir,
 		GatewayPort:        cfg.GatewayPort,
 		Image:              image,
-		EgressEnforce:      egressProxy,
+		EgressProxy:      egressProxy,
 		EgressProxyName:    policy.EgressProxyName(cfg.Name),
 		ProxyBootstrapPath: bootstrapPath,
 	}); err != nil {
@@ -654,7 +654,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		DataDir:            dataDir,
 		GatewayPort:        cfg.GatewayPort,
 		Image:              image,
-		EgressEnforce:      egressProxy,
+		EgressProxy:      egressProxy,
 		EgressProxyName:    policy.EgressProxyName(agentName),
 		ProxyBootstrapPath: bootstrapPath,
 	}); err != nil {

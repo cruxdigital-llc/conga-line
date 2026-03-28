@@ -432,6 +432,38 @@ func TestPolicySetRoutingRejectsBadCostLimits(t *testing.T) {
 	}
 }
 
+func TestPolicySetEgressRejectsNonArrayDomains(t *testing.T) {
+	_, client := newPolicyTestEnv(t, "")
+
+	result := callTool(t, client, "conga_policy_set_egress", map[string]any{
+		"allowed_domains": "api.anthropic.com",
+	})
+	if !result.IsError {
+		t.Fatal("expected error for non-array allowed_domains")
+	}
+	text := textContent(t, result)
+	if !strings.Contains(text, "must be an array") {
+		t.Errorf("error = %q, want it to mention 'must be an array'", text)
+	}
+}
+
+func TestPolicySetRoutingRejectsNonNumericCostLimitField(t *testing.T) {
+	_, client := newPolicyTestEnv(t, "")
+
+	result := callTool(t, client, "conga_policy_set_routing", map[string]any{
+		"cost_limits": map[string]any{
+			"daily_per_agent": "five",
+		},
+	})
+	if !result.IsError {
+		t.Fatal("expected error for non-numeric cost_limits field")
+	}
+	text := textContent(t, result)
+	if !strings.Contains(text, "must be a number") {
+		t.Errorf("error = %q, want it to mention 'must be a number'", text)
+	}
+}
+
 // --- Deploy tool tests ---
 
 func TestPolicyDeployNoFile(t *testing.T) {
@@ -668,6 +700,85 @@ egress:
 	}
 	if !dr.PartialFailure {
 		t.Error("expected partial_failure=true")
+	}
+}
+
+func TestPolicyDeployViaEgressDeployerSingleAgent(t *testing.T) {
+	yaml := `apiVersion: conga.dev/v1alpha1
+egress:
+  allowed_domains:
+    - api.anthropic.com
+  mode: enforce
+`
+	mock := &mockEgressProvider{
+		mockProvider: mockProvider{
+			name: "aws",
+			agents: []provider.AgentConfig{
+				{Name: "agent1", Type: provider.AgentTypeUser},
+				{Name: "agent2", Type: provider.AgentTypeTeam},
+			},
+			agent: &provider.AgentConfig{
+				Name: "agent1", Type: provider.AgentTypeUser,
+			},
+		},
+	}
+	client := newEgressDeployerTestEnv(t, yaml, mock)
+
+	result := callTool(t, client, "conga_policy_deploy", map[string]any{
+		"agent": "agent1",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	if len(mock.deployedAgents) != 1 || mock.deployedAgents[0] != "agent1" {
+		t.Errorf("DeployEgress called for %v, want [agent1]", mock.deployedAgents)
+	}
+
+	var dr struct {
+		Deployed []string `json:"deployed"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &dr); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(dr.Deployed) != 1 || dr.Deployed[0] != "agent1" {
+		t.Errorf("deployed = %v, want [agent1]", dr.Deployed)
+	}
+}
+
+func TestPolicyDeployViaEgressDeployerSkipsEmptyDomains(t *testing.T) {
+	yaml := `apiVersion: conga.dev/v1alpha1
+egress:
+  allowed_domains:
+    - api.anthropic.com
+  mode: enforce
+agents:
+  agent2:
+    egress:
+      allowed_domains: []
+`
+	mock := &mockEgressProvider{
+		mockProvider: mockProvider{
+			name: "aws",
+			agents: []provider.AgentConfig{
+				{Name: "agent1", Type: provider.AgentTypeUser},
+				{Name: "agent2", Type: provider.AgentTypeTeam},
+			},
+			agent: &provider.AgentConfig{
+				Name: "agent1", Type: provider.AgentTypeUser,
+			},
+		},
+	}
+	client := newEgressDeployerTestEnv(t, yaml, mock)
+
+	result := callTool(t, client, "conga_policy_deploy", nil)
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	// agent2 has empty domains after merge — should be skipped
+	if len(mock.deployedAgents) != 1 || mock.deployedAgents[0] != "agent1" {
+		t.Errorf("DeployEgress called for %v, want [agent1] (agent2 should be skipped)", mock.deployedAgents)
 	}
 }
 

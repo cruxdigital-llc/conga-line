@@ -81,6 +81,13 @@ docker run -d \
   conga-egress-proxy \
   -c /etc/envoy/envoy.yaml --log-level warn
 
+# Verify proxy is running
+sleep 2
+if ! docker inspect -f '{{`{{.State.Running}}`}}' "$EGRESS_PROXY" 2>/dev/null | grep -q true; then
+  echo "ERROR: Egress proxy $EGRESS_PROXY failed to start — check config"
+  docker logs "$EGRESS_PROXY" 2>&1 | tail -20 || true
+  exit 1
+fi
 echo "Egress proxy started for $AGENT_NAME (mode=$EGRESS_MODE)"
 
 # Update agent container's systemd unit to include HTTPS_PROXY
@@ -108,9 +115,7 @@ if [ -f "$UNIT_FILE" ]; then
   echo "Agent container restarted with HTTPS_PROXY"
 
   # Reconnect router to agent network (lost on container restart)
-  if ! docker network connect "$AGENT_NET" conga-router 2>&1; then
-    echo "WARNING: Failed to reconnect router to $AGENT_NET — Slack events may not reach $AGENT_NAME"
-  fi
+  docker network connect "$AGENT_NET" conga-router 2>/dev/null || true
 
   # Apply iptables (enforce mode only)
   if [ "$EGRESS_MODE" = "enforce" ]; then

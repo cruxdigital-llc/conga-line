@@ -76,7 +76,7 @@ if egressPolicy != nil && len(egressPolicy.AllowedDomains) > 0 {
     if egressPolicy.Mode == "enforce" {
         egressEnforce = true
     } else {
-        fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (passthrough). Set mode: enforce to activate domain filtering + iptables.\n")
+        fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
     }
 }
 ```
@@ -159,7 +159,7 @@ The proxy is **always started** when domains are defined. In both modes, the Lua
 
 ### 3.3 Proxy startup is no longer gated on mode
 
-The existing proxy startup code (lines 711-743) is gated on `[ -f "$EGRESS_CONF" ]`. Since `generate_egress_conf()` now always generates a config when domains exist (passthrough in validate, filtering in enforce), the proxy always starts. No changes needed to the proxy startup section.
+The existing proxy startup code (lines 711-743) is gated on `[ -f "$EGRESS_CONF" ]`. Since `generate_egress_conf()` now always generates a config when domains exist (log-and-allow in validate, filtering in enforce), the proxy always starts. No changes needed to the proxy startup section.
 
 ### 3.4 Add iptables DROP rules to bootstrap (enforce mode only)
 
@@ -393,7 +393,7 @@ func egressReport(e *EgressPolicy, providerName string) []RuleReport {
 				detail = "Per-agent Envoy proxy with domain filtering + iptables DROP rules"
 			} else {
 				level = ValidateOnly
-				detail = "Per-agent Envoy proxy in passthrough mode (no iptables). Set mode: enforce to activate filtering."
+				detail = "Per-agent Envoy proxy with domain logging (violations logged, not blocked). Set mode: enforce to activate domain filtering + iptables."
 			}
 		default:
 			level = NotApplicable
@@ -494,7 +494,7 @@ With:
 ```yaml
   # Enforcement mode (all providers).
   #   enforce  — proxy with domain filtering + iptables DROP rules (default)
-  #   validate — proxy in passthrough mode, no iptables (traffic observed, not blocked)
+  #   validate — proxy with domain logging, no iptables (violations logged, not blocked)
   mode: enforce
 ```
 
@@ -548,7 +548,7 @@ In the `conga-policy.yaml.example` comment reference in the Secrets section, no 
 | `mode: validate` with no domains | No proxy (no domains = nothing to proxy) |
 | Agent override with different mode | Agent's mode overrides global (per existing `MergeForAgent()` shallow merge) |
 | Policy file doesn't exist | No proxy (nil policy, no-op — unchanged) |
-| Transition enforce → validate | `RefreshAgent` / `RefreshAll` reconfigures proxy to passthrough, removes iptables |
+| Transition enforce → validate | `RefreshAgent` / `RefreshAll` reconfigures proxy to log-and-allow, removes iptables |
 | Transition validate → enforce | `RefreshAgent` / `RefreshAll` reconfigures proxy with filtering, applies iptables |
 | Container restart (IP change) | Systemd `ExecStartPost` applies iptables (enforce only); proxy stays running |
 | Docker daemon restart | Systemd restarts containers; `ExecStartPost` re-applies iptables (enforce only) |
@@ -557,6 +557,6 @@ In the `conga-policy.yaml.example` comment reference in the Secrets section, no 
 ## Migration Impact
 
 - **Operators with `mode: enforce`**: Proxy and iptables active as before (local/remote). AWS gains iptables rules.
-- **Operators with `mode: validate`**: Proxy now deployed in passthrough mode (previously skipped). Traffic flows through proxy but nothing is blocked. No iptables.
+- **Operators with `mode: validate`**: Proxy now deployed in log-and-allow mode (previously skipped). Traffic flows through proxy with domain logging but nothing is blocked. No iptables.
 - **Operators with no mode field**: The default is now `enforce`. Full enforcement on all providers.
 - **Existing AWS deployments**: Gain egress proxy + iptables DROP rules on next host cycle. This strengthens security — a container that bypasses `HTTPS_PROXY` can no longer reach the internet directly.

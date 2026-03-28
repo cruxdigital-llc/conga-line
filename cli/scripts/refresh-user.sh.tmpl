@@ -44,7 +44,21 @@ done < /opt/conga/config/$AGENT_NAME.env
 # Extract existing port mapping from current systemd unit
 PORT_FLAG=$(grep -oE '\-p 127\.0\.0\.1:[0-9]+:18789' /etc/systemd/system/conga-$AGENT_NAME.service || echo "")
 
-sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS=\"--max-old-space-size=1536\" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE|" /etc/systemd/system/conga-$AGENT_NAME.service
+# Detect and preserve egress proxy configuration from the current unit
+EGRESS_DOCKER_ARGS=""
+NODE_OPTS="--max-old-space-size=1536"
+EGRESS_MODE_FILE="/opt/conga/config/egress-$AGENT_NAME.mode"
+if [ -f "$EGRESS_MODE_FILE" ] && [ -f "/opt/conga/config/egress-$AGENT_NAME.yaml" ]; then
+  EGRESS_PROXY="conga-egress-$AGENT_NAME"
+  BOOTSTRAP_PATH="/opt/conga/config/proxy-bootstrap.js"
+  EGRESS_DOCKER_ARGS="-e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1"
+  if [ -f "$BOOTSTRAP_PATH" ]; then
+    EGRESS_DOCKER_ARGS="$EGRESS_DOCKER_ARGS -v $BOOTSTRAP_PATH:/opt/proxy-bootstrap.js:ro"
+    NODE_OPTS="$NODE_OPTS --require /opt/proxy-bootstrap.js"
+  fi
+fi
+
+sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS=\"$NODE_OPTS\" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $EGRESS_DOCKER_ARGS $ENV_FLAGS $CONGA_IMAGE|" /etc/systemd/system/conga-$AGENT_NAME.service
 
 systemctl daemon-reload
 systemctl restart conga-$AGENT_NAME
@@ -72,7 +86,8 @@ if [ "$EGRESS_MODE" = "enforce" ]; then
       iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
     echo "Egress iptables: DROP rules applied for conga-$AGENT_NAME ($AGENT_IP)"
   else
-    echo "WARNING: Could not apply egress iptables rules — container IP or subnet not found"
+    echo "ERROR: Could not apply egress iptables rules in enforce mode — container IP or subnet not found"
+    exit 1
   fi
 fi
 

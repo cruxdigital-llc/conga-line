@@ -90,7 +90,7 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 	args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
 
 	nodeOpts := "--max-old-space-size=1536"
-	if opts.EgressEnforce && opts.EgressProxyName != "" {
+	if opts.EgressProxy && opts.EgressProxyName != "" {
 		// Proxy is on the same Docker network — Docker DNS resolves the container name.
 		args = append(args,
 			"-e", fmt.Sprintf("HTTPS_PROXY=http://%s:3128", opts.EgressProxyName),
@@ -120,7 +120,7 @@ type agentContainerOpts struct {
 	DataDir            string
 	GatewayPort        int
 	Image              string
-	EgressEnforce      bool
+	EgressProxy      bool
 	EgressProxyName    string
 	ProxyBootstrapPath string // Host path to proxy-bootstrap.js (mounted read-only)
 }

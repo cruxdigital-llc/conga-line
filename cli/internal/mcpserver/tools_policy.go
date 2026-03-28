@@ -504,6 +504,11 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 				for _, name := range targetAgents {
 					merged := pf.MergeForAgent(name)
 					domains := policy.EffectiveAllowedDomains(merged.Egress)
+					if len(domains) == 0 {
+						// Agent override cleared egress domains — skip direct deploy,
+						// RefreshAll will handle reconfiguring this agent.
+						continue
+					}
 					mode := merged.Egress.Mode
 					envoyConfig, err := policy.GenerateProxyConf(domains, mode)
 					if err != nil {
