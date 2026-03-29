@@ -68,16 +68,12 @@ fi
 systemctl daemon-reload
 systemctl restart conga-$AGENT_NAME
 
-# Apply iptables IMMEDIATELY after restart (enforce mode only).
+# Apply iptables IMMEDIATELY after restart.
 # Minimize the window between container start and network-level enforcement.
+# Always applied — in validate mode the proxy logs+allows, but iptables ensures
+# nothing bypasses the proxy (e.g. tools ignoring HTTP_PROXY).
 # ExecStartPost in the systemd unit may also apply these — belt and suspenders.
-EGRESS_MODE=$(cat /opt/conga/config/egress-$AGENT_NAME.mode 2>/dev/null || echo "")
-if [ -f "/opt/conga/config/egress-$AGENT_NAME.yaml" ] && [ -z "$EGRESS_MODE" ]; then
-  echo "WARNING: Egress config exists but mode file missing for $AGENT_NAME — defaulting to enforce" >&2
-  EGRESS_MODE="enforce"
-  echo "$EGRESS_MODE" > "/opt/conga/config/egress-$AGENT_NAME.mode"
-fi
-if [ "$EGRESS_MODE" = "enforce" ]; then
+if [ -f "/opt/conga/config/egress-$AGENT_NAME.yaml" ]; then
   # Wait for container to be running
   AGENT_IP=""
   for i in $(seq 1 10); do
@@ -95,7 +91,7 @@ if [ "$EGRESS_MODE" = "enforce" ]; then
       iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
     echo "Egress iptables: DROP rules applied for conga-$AGENT_NAME ($AGENT_IP)"
   else
-    echo "ERROR: Could not apply egress iptables rules in enforce mode — container IP or subnet not found"
+    echo "ERROR: Could not apply egress iptables rules — container IP or subnet not found"
     exit 1
   fi
 fi

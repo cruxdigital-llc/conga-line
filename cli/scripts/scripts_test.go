@@ -54,7 +54,7 @@ egress:
 	}
 }
 
-func TestDeployEgressScriptValidateModeOmitsIptables(t *testing.T) {
+func TestDeployEgressScriptValidateModeAppliesIptables(t *testing.T) {
 	tmpl, err := template.New("deploy-egress").Parse(DeployEgressScript)
 	if err != nil {
 		t.Fatalf("failed to parse deploy-egress template: %v", err)
@@ -87,10 +87,10 @@ egress:
 	if !strings.Contains(output, `EGRESS_MODE="validate"`) {
 		t.Error("expected EGRESS_MODE=validate in rendered output")
 	}
-	// The iptables enforce block is guarded by: if [ "$EGRESS_MODE" = "enforce" ]; then
-	// Verify the guard is present so iptables rules won't execute in validate mode.
-	if !strings.Contains(output, `if [ "$EGRESS_MODE" = "enforce" ]`) {
-		t.Error("expected enforce-mode guard for iptables rules")
+	// iptables rules are always applied (even in validate mode) to force all traffic
+	// through the proxy. The proxy itself handles validate vs enforce behavior.
+	if !strings.Contains(output, "iptables -I DOCKER-USER") {
+		t.Error("expected iptables rules in validate mode output")
 	}
 	// Verify cleanup section (iptables -D) is NOT guarded — it should always run
 	if !strings.Contains(output, "iptables -D DOCKER-USER") {
@@ -160,7 +160,7 @@ func TestAddUserScriptTemplateRender(t *testing.T) {
 		"proxy bootstrap":       "require('http')",
 		"HTTPS_PROXY":           "HTTPS_PROXY=http://",
 		"proxy bootstrap mount": "$BOOTSTRAP_PATH:/opt/proxy-bootstrap.js",
-		"iptables guard":        `if [ "$EGRESS_MODE" = "enforce" ]`,
+		"iptables rules":        "iptables -I DOCKER-USER",
 		"egress proxy run":      "conga-egress-proxy",
 	}
 	for desc, want := range checks {
@@ -202,7 +202,7 @@ func TestAddTeamScriptTemplateRender(t *testing.T) {
 		"egress mode":      `EGRESS_MODE="enforce"`,
 		"envoy config":     "static_resources",
 		"HTTPS_PROXY":      "HTTPS_PROXY=http://",
-		"iptables guard":   `if [ "$EGRESS_MODE" = "enforce" ]`,
+		"iptables rules":   "iptables -I DOCKER-USER",
 		"egress proxy run": "conga-egress-proxy",
 		"channel routing":  "channels",
 	}

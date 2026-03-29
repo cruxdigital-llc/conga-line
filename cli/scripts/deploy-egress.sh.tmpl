@@ -130,29 +130,29 @@ systemctl daemon-reload
 systemctl restart "conga-$AGENT_NAME"
 echo "Agent container restarted with HTTPS_PROXY"
 
-# Apply iptables IMMEDIATELY after restart (enforce mode only).
+# Apply iptables IMMEDIATELY after restart.
 # Minimize the window between container start and network-level enforcement.
+# Always applied — in validate mode the proxy logs+allows, but iptables ensures
+# nothing bypasses the proxy (e.g. tools ignoring HTTP_PROXY).
 # ExecStartPost in the systemd unit may also apply these — belt and suspenders.
-if [ "$EGRESS_MODE" = "enforce" ]; then
-  # Wait for container to get an IP
-  for i in $(seq 1 10); do
-    AGENT_IP=$(docker inspect -f "{{`{{(index .NetworkSettings.Networks \"conga-$AGENT_NAME\").IPAddress}}`}}" "$AGENT_CONTAINER" 2>/dev/null || echo "")
-    [ -n "$AGENT_IP" ] && break
-    sleep 1
-  done
-  NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "$AGENT_NET" 2>/dev/null || echo "")
-  if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
-    iptables -C DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || \
-      iptables -I DOCKER-USER -s "$AGENT_IP" -j DROP
-    iptables -C DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || \
-      iptables -I DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN
-    iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
-      iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-    echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
-  else
-    echo "ERROR: Could not apply egress iptables rules in enforce mode — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
-    exit 1
-  fi
+# Wait for container to get an IP
+for i in $(seq 1 10); do
+  AGENT_IP=$(docker inspect -f "{{`{{(index .NetworkSettings.Networks \"conga-$AGENT_NAME\").IPAddress}}`}}" "$AGENT_CONTAINER" 2>/dev/null || echo "")
+  [ -n "$AGENT_IP" ] && break
+  sleep 1
+done
+NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "$AGENT_NET" 2>/dev/null || echo "")
+if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
+  iptables -C DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || \
+    iptables -I DOCKER-USER -s "$AGENT_IP" -j DROP
+  iptables -C DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || \
+    iptables -I DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN
+  iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
+    iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+  echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
+else
+  echo "ERROR: Could not apply egress iptables rules — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
+  exit 1
 fi
 
 # Reconnect router to agent network (lost on container restart) — after iptables to minimize enforcement gap

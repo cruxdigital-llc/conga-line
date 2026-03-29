@@ -528,7 +528,7 @@ func (p *AWSProvider) RefreshAll(ctx context.Context) error {
 
 // DeployEgress deploys the egress proxy for a single agent without requiring a host cycle.
 // It uploads the policy file and pre-generated Envoy config, starts the proxy container,
-// restarts the agent container with HTTPS_PROXY, and applies iptables rules (enforce mode only).
+// restarts the agent container with HTTPS_PROXY, and applies iptables rules (all modes).
 func (p *AWSProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig string, mode policy.EgressMode) error {
 	instanceID, err := p.findInstance(ctx)
 	if err != nil {

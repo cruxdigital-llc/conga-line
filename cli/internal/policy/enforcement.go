@@ -50,7 +50,7 @@ func egressReport(e *EgressPolicy, providerName string) []RuleReport {
 				detail = "Per-agent Envoy proxy with domain-based CONNECT filtering + iptables DROP rules"
 			} else {
 				level = ValidateOnly
-				detail = "Per-agent Envoy proxy with domain logging (violations logged, not blocked). Set mode: enforce to block non-allowlisted traffic and apply iptables DROP rules."
+				detail = "Per-agent Envoy proxy with domain logging + iptables DROP rules (violations logged, not blocked). Set mode: enforce to block non-allowlisted traffic."
 			}
 		default:
 			level = NotApplicable

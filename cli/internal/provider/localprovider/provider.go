@@ -188,10 +188,8 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	if policyErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
 	}
-	egressEnforce := true // Default: deny-all with iptables
 	if egressPolicy != nil && egressPolicy.Mode == policy.EgressModeValidate {
-		egressEnforce = false
-		fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
+		fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, not blocking). iptables still forces all traffic through the proxy.\n")
 	} else if egressPolicy == nil {
 		fmt.Fprintf(os.Stderr, "No egress policy configured — proxy will deny all outbound traffic. Use 'conga policy set-egress' to allow domains.\n")
 	}
@@ -244,18 +242,18 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	// Apply iptables egress enforcement (defense-in-depth, best-effort on macOS)
-	if egressEnforce {
-		agentIP, err := containerIPOnNetwork(ctx, cName, netName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not get agent IP for iptables: %v\n", err)
-		} else if cidr, err := networkSubnetCIDR(ctx, netName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not get network CIDR for iptables: %v\n", err)
-		} else if err := addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: iptables egress rules not applied (expected on macOS): %v\n", err)
-		} else {
-			fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
-		}
+	// Apply iptables egress rules (defense-in-depth, best-effort on macOS).
+	// Always applied — in validate mode the proxy logs+allows, but iptables ensures
+	// nothing bypasses the proxy (e.g. tools ignoring HTTP_PROXY).
+	agentIP, err := containerIPOnNetwork(ctx, cName, netName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not get agent IP for iptables: %v\n", err)
+	} else if cidr, err := networkSubnetCIDR(ctx, netName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not get network CIDR for iptables: %v\n", err)
+	} else if err := addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: iptables egress rules not applied (expected on macOS): %v\n", err)
+	} else {
+		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
 	// 9. Update routing.json
@@ -370,18 +368,9 @@ func (p *LocalProvider) GetStatus(ctx context.Context, agentName string) (*provi
 
 // ensureEgressIptables checks if iptables egress rules are in place for a running
 // container and re-applies them if missing. Handles IP changes after container restart.
-// Only applies when egress policy mode is "enforce" or no policy exists (deny-all).
-// Skipped in validate mode where iptables are not used.
+// Always applied — in validate mode the proxy logs+allows, but iptables ensures
+// nothing bypasses the proxy (e.g. tools ignoring HTTP_PROXY).
 func (p *LocalProvider) ensureEgressIptables(ctx context.Context, agentName string) {
-	egressPolicy, err := policy.LoadEgressPolicy(p.dataDir, agentName)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy for %s: %v\n", agentName, err)
-		return
-	}
-	if egressPolicy != nil && egressPolicy.Mode == policy.EgressModeValidate {
-		return
-	}
-
 	cName := containerName(agentName)
 	netName := networkName(agentName)
 	if !networkExists(ctx, netName) {
@@ -555,10 +544,8 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	if policyErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
 	}
-	egressEnforce := true // Default: deny-all with iptables
 	if egressPolicy != nil && egressPolicy.Mode == policy.EgressModeValidate {
-		egressEnforce = false
-		fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
+		fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, not blocking). iptables still forces all traffic through the proxy.\n")
 	} else if egressPolicy == nil {
 		fmt.Fprintf(os.Stderr, "No egress policy configured — proxy will deny all outbound traffic. Use 'conga policy set-egress' to allow domains.\n")
 	}
@@ -637,18 +624,18 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 
-	// Apply iptables egress enforcement (defense-in-depth, best-effort on macOS)
-	if egressEnforce {
-		agentIP, err := containerIPOnNetwork(ctx, cName, netName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not get agent IP for iptables: %v\n", err)
-		} else if cidr, err := networkSubnetCIDR(ctx, netName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not get network CIDR for iptables: %v\n", err)
-		} else if err := addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: iptables egress rules not applied (expected on macOS): %v\n", err)
-		} else {
-			fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
-		}
+	// Apply iptables egress rules (defense-in-depth, best-effort on macOS).
+	// Always applied — in validate mode the proxy logs+allows, but iptables ensures
+	// nothing bypasses the proxy (e.g. tools ignoring HTTP_PROXY).
+	agentIP, err := containerIPOnNetwork(ctx, cName, netName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not get agent IP for iptables: %v\n", err)
+	} else if cidr, err := networkSubnetCIDR(ctx, netName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not get network CIDR for iptables: %v\n", err)
+	} else if err := addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: iptables egress rules not applied (expected on macOS): %v\n", err)
+	} else {
+		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
 	// Reconnect router

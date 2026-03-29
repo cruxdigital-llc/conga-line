@@ -205,26 +205,25 @@ systemctl daemon-reload
 systemctl enable conga-$AGENT_NAME.service
 systemctl start conga-$AGENT_NAME.service
 
-# Apply iptables egress enforcement (enforce mode only)
-if [ "$EGRESS_MODE" = "enforce" ]; then
-  for i in $(seq 1 10); do
-    AGENT_IP=$(docker inspect -f "{{`{{(index .NetworkSettings.Networks \"conga-$AGENT_NAME\").IPAddress}}`}}" "conga-$AGENT_NAME" 2>/dev/null || echo "")
-    [ -n "$AGENT_IP" ] && break
-    sleep 1
-  done
-  NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "conga-$AGENT_NAME" 2>/dev/null || echo "")
-  if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
-    iptables -C DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || \
-      iptables -I DOCKER-USER -s "$AGENT_IP" -j DROP
-    iptables -C DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || \
-      iptables -I DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN
-    iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
-      iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-    echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
-  else
-    echo "ERROR: Could not apply egress iptables rules — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
-    exit 1
-  fi
+# Apply iptables egress rules — always applied (validate mode: proxy logs+allows,
+# but iptables ensures nothing bypasses the proxy).
+for i in $(seq 1 10); do
+  AGENT_IP=$(docker inspect -f "{{`{{(index .NetworkSettings.Networks \"conga-$AGENT_NAME\").IPAddress}}`}}" "conga-$AGENT_NAME" 2>/dev/null || echo "")
+  [ -n "$AGENT_IP" ] && break
+  sleep 1
+done
+NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "conga-$AGENT_NAME" 2>/dev/null || echo "")
+if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
+  iptables -C DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || \
+    iptables -I DOCKER-USER -s "$AGENT_IP" -j DROP
+  iptables -C DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || \
+    iptables -I DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN
+  iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
+    iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+  echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
+else
+  echo "ERROR: Could not apply egress iptables rules — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
+  exit 1
 fi
 
 # Update routing config with the team's channel entry (channel routing only)
