@@ -565,8 +565,10 @@ egress:
 // mockEgressProvider embeds mockProvider and implements DeployEgress.
 type mockEgressProvider struct {
 	mockProvider
-	deployedAgents []string
-	deployErr      map[string]error // agent name -> error
+	deployedAgents  []string
+	deployedConfigs map[string]string      // agent name -> envoy config
+	deployedModes   map[string]policy.EgressMode // agent name -> mode
+	deployErr       map[string]error        // agent name -> error
 }
 
 func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig string, mode policy.EgressMode) error {
@@ -574,6 +576,14 @@ func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policy
 		return err
 	}
 	m.deployedAgents = append(m.deployedAgents, agentName)
+	if m.deployedConfigs == nil {
+		m.deployedConfigs = make(map[string]string)
+	}
+	if m.deployedModes == nil {
+		m.deployedModes = make(map[string]policy.EgressMode)
+	}
+	m.deployedConfigs[agentName] = envoyConfig
+	m.deployedModes[agentName] = mode
 	return nil
 }
 
@@ -746,7 +756,7 @@ egress:
 	}
 }
 
-func TestPolicyDeployViaEgressDeployerSkipsEmptyDomains(t *testing.T) {
+func TestPolicyDeployViaEgressDeployerDeploysEmptyDomains(t *testing.T) {
 	yaml := `apiVersion: conga.dev/v1alpha1
 egress:
   allowed_domains:
@@ -776,9 +786,25 @@ agents:
 		t.Fatalf("unexpected error: %s", textContent(t, result))
 	}
 
-	// agent2 has empty domains after merge — should be skipped
-	if len(mock.deployedAgents) != 1 || mock.deployedAgents[0] != "agent1" {
-		t.Errorf("DeployEgress called for %v, want [agent1] (agent2 should be skipped)", mock.deployedAgents)
+	// Both agents should be deployed — agent2 gets deny-all (empty domains)
+	if len(mock.deployedAgents) != 2 {
+		t.Errorf("DeployEgress called for %v, want [agent1 agent2] (both should be deployed)", mock.deployedAgents)
+	}
+
+	// agent2 has empty domains — should get deny-all config with Lua filter
+	if conf, ok := mock.deployedConfigs["agent2"]; ok {
+		if !strings.Contains(conf, "envoy.filters.http.lua") {
+			t.Error("agent2 should get Lua filter in deny-all config")
+		}
+		if !strings.Contains(conf, `egress denied:`) {
+			t.Error("agent2 deny-all config should contain enforce-mode 403 response")
+		}
+	}
+	// agent2 mode should be enforce (default for empty domains)
+	if mode, ok := mock.deployedModes["agent2"]; ok {
+		if mode != policy.EgressModeEnforce {
+			t.Errorf("agent2 mode = %q, want %q", mode, policy.EgressModeEnforce)
+		}
 	}
 }
 

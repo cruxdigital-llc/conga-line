@@ -187,29 +187,76 @@ func TestGenerateProxyConfWildcardDedup(t *testing.T) {
 	}
 }
 
-func TestGenerateProxyConfPassthrough(t *testing.T) {
+func TestGenerateProxyConfDenyAllNilPolicy(t *testing.T) {
 	result, err := GenerateProxyConf(nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Contains(result, "envoy.filters.http.lua") {
-		t.Error("expected no Lua filter in passthrough mode")
+	if !strings.Contains(result, "envoy.filters.http.lua") {
+		t.Error("expected Lua filter for deny-all (nil policy)")
 	}
 	if !strings.Contains(result, "port_value: 3128") {
-		t.Error("expected port directive in passthrough mode")
+		t.Error("expected port directive")
 	}
 	if !strings.Contains(result, "dynamic_forward_proxy") {
-		t.Error("expected dynamic forward proxy cluster in passthrough mode")
+		t.Error("expected dynamic forward proxy cluster")
+	}
+	// Deny-all: empty EXACT table, enforce mode (403 response)
+	if !strings.Contains(result, `local EXACT = {`) {
+		t.Error("expected EXACT table in Lua filter")
+	}
+	if !strings.Contains(result, `egress denied:`) {
+		t.Error("expected enforce-mode deny action for nil policy")
 	}
 }
 
-func TestGenerateProxyConfEmptySlice(t *testing.T) {
+func TestGenerateProxyConfDenyAllEmptySlice(t *testing.T) {
 	result, err := GenerateProxyConf(egressPolicy([]string{}, EgressModeEnforce))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Contains(result, "envoy.filters.http.lua") {
-		t.Error("expected no Lua filter with empty domains")
+	if !strings.Contains(result, "envoy.filters.http.lua") {
+		t.Error("expected Lua filter for deny-all (empty domains)")
+	}
+	if !strings.Contains(result, `egress denied:`) {
+		t.Error("expected enforce-mode deny action for empty domains")
+	}
+}
+
+func TestGenerateProxyConfDenyAllNilPolicyEnforcesMode(t *testing.T) {
+	// nil policy must always produce enforce mode (403), never validate
+	result, err := GenerateProxyConf(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(result, "egress-validate") {
+		t.Error("nil policy should produce enforce mode, not validate")
+	}
+	if !strings.Contains(result, `":status"] = "403"`) {
+		t.Error("nil policy should produce 403 response (enforce mode)")
+	}
+}
+
+func TestGenerateProxyConfDenyAllAllBlocked(t *testing.T) {
+	// When all allowed domains are also blocked, effective = empty = deny-all
+	ep := &EgressPolicy{
+		AllowedDomains: []string{"api.anthropic.com"},
+		BlockedDomains: []string{"api.anthropic.com"},
+		Mode:           EgressModeEnforce,
+	}
+	result, err := GenerateProxyConf(ep)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "envoy.filters.http.lua") {
+		t.Error("expected Lua filter for deny-all (all domains blocked)")
+	}
+	// EXACT table should be empty since all domains are blocked
+	if strings.Contains(result, `"api.anthropic.com"`) {
+		t.Error("blocked domain should not appear in EXACT table")
+	}
+	if !strings.Contains(result, `egress denied:`) {
+		t.Error("expected enforce-mode deny action when all domains blocked")
 	}
 }
 

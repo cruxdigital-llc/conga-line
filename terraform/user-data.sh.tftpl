@@ -433,13 +433,16 @@ generate_egress_conf() {
   local POLICY_FILE="/opt/conga/conga-policy.yaml"
   local CONF_OUT="/opt/conga/config/egress-$AGENT_NAME.yaml"
 
+  local DOMAINS=""
+  local EFFECTIVE_MODE="enforce"
+
   if [ ! -f "$POLICY_FILE" ]; then
-    return
-  fi
+    # No policy file — deny-all config (empty allowlist)
+    log "No egress policy for $AGENT_NAME — generating deny-all config"
+  else
 
   # Extract allowed_domains and blocked_domains — check agent override first, fall back to global.
   # Uses simple grep/sed since yq is not guaranteed on AL2023.
-  local DOMAINS=""
   local IN_AGENT_SECTION=false
   local IN_AGENT_EGRESS=false
   local IN_AGENT_ALLOWED=false
@@ -570,7 +573,6 @@ generate_egress_conf() {
   fi
 
   # Resolve effective mode (agent override takes precedence, default is "enforce")
-  local EFFECTIVE_MODE=""
   if [ -n "$AGENT_ALLOWED" ]; then
     EFFECTIVE_MODE="$${AGENT_MODE:-$$GLOBAL_MODE}"
   else
@@ -598,7 +600,7 @@ generate_egress_conf() {
     ALLOWED="$FILTERED"
   fi
 
-  # No domains = no egress conf to generate
+  # Apply effective domains from parsed policy
   DOMAINS=$(echo "$ALLOWED" | xargs) # trim
   if [ -z "$DOMAINS" ]; then
     # Sanity check: if the policy file mentions allowed_domains but we parsed zero,
@@ -607,8 +609,10 @@ generate_egress_conf() {
       log "ERROR: Policy file contains allowed_domains but none were parsed for $AGENT_NAME — check YAML indentation. Refusing to start agent without egress protection."
       return 1
     fi
-    return
+    log "No allowed domains in policy for $AGENT_NAME — generating deny-all config"
   fi
+
+  fi # end of policy file exists block
 
   # Determine deny action based on mode
   # validate: log what would be denied but allow traffic through
@@ -742,7 +746,7 @@ setup_agent_common() {
   # Docker network
   docker network create --driver bridge "conga-$AGENT_NAME" || true
 
-  # Generate egress config from policy (if policy file exists on host)
+  # Generate egress config from policy (deny-all when no policy exists)
   if ! generate_egress_conf "$AGENT_NAME"; then
     # Check if the policy specifies enforce mode — refuse to start without egress protection
     AGENT_EGRESS_MODE=$(cat "/opt/conga/config/egress-$AGENT_NAME.mode" 2>/dev/null || echo "")

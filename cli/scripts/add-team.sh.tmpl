@@ -116,6 +116,62 @@ fi
 
 docker network create --driver bridge "conga-$AGENT_NAME" || true
 
+# Deploy egress proxy (deny-all when no policy, enforce by default)
+EGRESS_MODE="{{.EgressMode}}"
+EGRESS_CONF="/opt/conga/config/egress-$AGENT_NAME.yaml"
+EGRESS_PROXY="conga-egress-$AGENT_NAME"
+BOOTSTRAP_PATH="/opt/conga/config/proxy-bootstrap.js"
+
+cat > "$EGRESS_CONF" << 'ENVOYEOF'
+{{.EnvoyConfig}}
+ENVOYEOF
+chmod 0444 "$EGRESS_CONF"
+
+cat > "$BOOTSTRAP_PATH" << 'BOOTSTRAPEOF'
+{{.ProxyBootstrapJS}}
+BOOTSTRAPEOF
+chmod 0444 "$BOOTSTRAP_PATH"
+
+echo "$EGRESS_MODE" > "/opt/conga/config/egress-$AGENT_NAME.mode"
+
+if ! docker image inspect conga-egress-proxy >/dev/null 2>&1; then
+  echo "Building egress proxy image..."
+  mkdir -p /tmp/conga-egress-build
+  cat > /tmp/conga-egress-build/Dockerfile << 'PROXYDF'
+FROM envoyproxy/envoy:v1.32-latest
+PROXYDF
+  docker build -t conga-egress-proxy /tmp/conga-egress-build
+  rm -rf /tmp/conga-egress-build
+fi
+
+docker rm -f "$EGRESS_PROXY" 2>/dev/null || true
+docker run -d \
+  --name "$EGRESS_PROXY" \
+  --network "conga-$AGENT_NAME" \
+  --restart always \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --memory 128m \
+  --user 101:101 \
+  --entrypoint /usr/local/bin/envoy \
+  -v "$EGRESS_CONF:/etc/envoy/envoy.yaml:ro" \
+  conga-egress-proxy \
+  -c /etc/envoy/envoy.yaml --log-level warn
+
+# Verify proxy started
+for i in $(seq 1 5); do
+  if docker inspect -f '{{`{{.State.Running}}`}}' "$EGRESS_PROXY" 2>/dev/null | grep -q true; then
+    break
+  fi
+  sleep 1
+done
+if ! docker inspect -f '{{`{{.State.Running}}`}}' "$EGRESS_PROXY" 2>/dev/null | grep -q true; then
+  echo "FATAL: Egress proxy $EGRESS_PROXY failed to start"
+  docker logs "$EGRESS_PROXY" 2>&1 | tail -20 || true
+  exit 1
+fi
+echo "Egress proxy started for $AGENT_NAME (mode=$EGRESS_MODE)"
+
 ENV_FLAGS=""
 while IFS="=" read -r key value; do
   [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
@@ -131,7 +187,7 @@ Requires=docker.service
 Type=simple
 EnvironmentFile=/opt/conga/config/$AGENT_NAME.env
 ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
-ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $ENV_FLAGS $CONGA_IMAGE
+ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536 --require /opt/proxy-bootstrap.js" -e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1 --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw -v $BOOTSTRAP_PATH:/opt/proxy-bootstrap.js:ro $ENV_FLAGS $CONGA_IMAGE
 ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
 ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
 StandardOutput=append:/var/log/conga-$AGENT_NAME.log
@@ -148,6 +204,28 @@ UNIT
 systemctl daemon-reload
 systemctl enable conga-$AGENT_NAME.service
 systemctl start conga-$AGENT_NAME.service
+
+# Apply iptables egress enforcement (enforce mode only)
+if [ "$EGRESS_MODE" = "enforce" ]; then
+  for i in $(seq 1 10); do
+    AGENT_IP=$(docker inspect -f "{{`{{(index .NetworkSettings.Networks \"conga-$AGENT_NAME\").IPAddress}}`}}" "conga-$AGENT_NAME" 2>/dev/null || echo "")
+    [ -n "$AGENT_IP" ] && break
+    sleep 1
+  done
+  NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "conga-$AGENT_NAME" 2>/dev/null || echo "")
+  if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
+    iptables -C DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || \
+      iptables -I DOCKER-USER -s "$AGENT_IP" -j DROP
+    iptables -C DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || \
+      iptables -I DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN
+    iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
+      iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+    echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
+  else
+    echo "ERROR: Could not apply egress iptables rules — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
+    exit 1
+  fi
+fi
 
 # Update routing config with the team's channel entry (channel routing only)
 # Initialize routing.json if it does not exist (first agent on fresh host)

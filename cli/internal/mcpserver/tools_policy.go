@@ -499,37 +499,22 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 			var deployed []string
 			var errors []string
 
-			hasEgressPolicy := pf.Egress != nil && (len(pf.Egress.AllowedDomains) > 0 || len(pf.Egress.BlockedDomains) > 0)
-			if !hasEgressPolicy {
-				for _, override := range pf.Agents {
-					if override != nil && override.Egress != nil && (len(override.Egress.AllowedDomains) > 0 || len(override.Egress.BlockedDomains) > 0) {
-						hasEgressPolicy = true
-						break
-					}
-				}
-			}
-
-			if deployer, ok := s.prov.(egressDeployer); ok && hasEgressPolicy {
+			if deployer, ok := s.prov.(egressDeployer); ok {
 				// Provider supports direct egress deployment — generate configs in Go and push
+				// Always deploys proxy (deny-all when no domains configured)
 				for _, name := range targetAgents {
 					merged := pf.MergeForAgent(name)
-					if merged.Egress == nil || len(policy.EffectiveAllowedDomains(merged.Egress)) == 0 {
-						// Agent override cleared egress domains — fall back to RefreshAgent
-						// to reconfigure this agent (removes proxy env vars, stops proxy container).
-						if err := s.prov.RefreshAgent(ctx, name); err != nil {
-							errors = append(errors, fmt.Sprintf("%s (refresh): %v", name, err))
-						} else {
-							deployed = append(deployed, name)
-						}
-						continue
-					}
 					envoyConfig, err := policy.GenerateProxyConf(merged.Egress)
 					if err != nil {
 						errors = append(errors, fmt.Sprintf("%s: %v", name, err))
 						continue
 					}
 
-					if err := deployer.DeployEgress(ctx, name, policyContent, envoyConfig, merged.Egress.Mode); err != nil {
+					mode := policy.EgressModeEnforce
+					if merged.Egress != nil {
+						mode = merged.Egress.Mode
+					}
+					if err := deployer.DeployEgress(ctx, name, policyContent, envoyConfig, mode); err != nil {
 						errors = append(errors, fmt.Sprintf("%s: %v", name, err))
 					} else {
 						deployed = append(deployed, name)

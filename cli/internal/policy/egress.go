@@ -92,7 +92,8 @@ var envoyConfigTmpl = template.Must(template.New("envoy-config").Parse(templates
 // When mode is "enforce": non-allowlisted requests receive 403 (hard deny).
 // When mode is "validate": non-allowlisted requests are logged as warnings but allowed
 // through, giving administrators visibility into what enforcement would block.
-// When effective domains is nil/empty: no Lua filter at all (pure passthrough).
+// When effective domains is nil/empty: Lua filter with empty allowlists denies all traffic
+// (secure-by-default). A policy with allowed_domains opens specific domains.
 //
 // EffectiveAllowedDomains is called internally to filter blocked domains.
 //
@@ -106,7 +107,7 @@ func GenerateProxyConf(ep *EgressPolicy) (string, error) {
 	}
 
 	data := envoyConfigData{
-		HasDomains:   len(domains) > 0,
+		HasDomains:   true, // Always emit Lua filter — empty allowlist = deny all
 		ValidateMode: mode == EgressModeValidate,
 	}
 

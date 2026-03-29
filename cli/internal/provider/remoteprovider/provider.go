@@ -228,20 +228,17 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		image = "ghcr.io/openclaw/openclaw:latest"
 	}
 
-	// 5. Load egress policy (from local ~/.conga/, not the remote host)
+	// 5. Load egress policy — proxy always deployed (deny-all when no policy)
 	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, cfg.Name)
 	if policyErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
 	}
-	egressProxy := false
-	egressEnforce := false
-	if egressPolicy != nil && len(egressPolicy.AllowedDomains) > 0 {
-		egressProxy = true
-		if egressPolicy.Mode == policy.EgressModeEnforce {
-			egressEnforce = true
-		} else {
-			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
-		}
+	egressEnforce := true // Default: deny-all with iptables
+	if egressPolicy != nil && egressPolicy.Mode == policy.EgressModeValidate {
+		egressEnforce = false
+		fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
+	} else if egressPolicy == nil {
+		fmt.Fprintf(os.Stderr, "No egress policy configured — proxy will deny all outbound traffic. Use 'conga policy set-egress' to allow domains.\n")
 	}
 
 	// 6. Create Docker network
@@ -253,11 +250,9 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		}
 	}
 
-	// 7. Start per-agent egress proxy (always when domains defined)
-	if egressProxy {
-		if err := p.startAgentEgressProxy(ctx, cfg.Name, egressPolicy); err != nil {
-			return fmt.Errorf("failed to start egress proxy: %w", err)
-		}
+	// 7. Start per-agent egress proxy (always — deny-all when no policy)
+	if err := p.startAgentEgressProxy(ctx, cfg.Name, egressPolicy); err != nil {
+		return fmt.Errorf("failed to start egress proxy: %w", err)
 	}
 
 	// Connect shared egress proxy if running (legacy / passthrough)
@@ -280,19 +275,12 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 	}
 
 	// Upload proxy bootstrap script for Node.js CONNECT tunneling
-	var bootstrapPath string
-	if egressProxy {
-		var err error
-		bootstrapPath, err = p.uploadProxyBootstrap(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to upload proxy bootstrap: %w", err)
-		}
+	bootstrapPath, err := p.uploadProxyBootstrap(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to upload proxy bootstrap: %w", err)
 	}
 
-	var provEgressProxyName string
-	if egressProxy {
-		provEgressProxyName = policy.EgressProxyName(cfg.Name)
-	}
+	provEgressProxyName := policy.EgressProxyName(cfg.Name)
 	fmt.Printf("Starting container %s...\n", cName)
 	if err := p.runAgentContainer(ctx, agentContainerOpts{
 		Name:               cName,
@@ -609,20 +597,17 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return err
 	}
 
-	// Load egress policy (from local ~/.conga/, not the remote host)
+	// Load egress policy — proxy always deployed (deny-all when no policy)
 	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, agentName)
 	if policyErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
 	}
-	egressProxy := false
-	egressEnforce := false
-	if egressPolicy != nil && len(egressPolicy.AllowedDomains) > 0 {
-		egressProxy = true
-		if egressPolicy.Mode == policy.EgressModeEnforce {
-			egressEnforce = true
-		} else {
-			fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
-		}
+	egressEnforce := true // Default: deny-all with iptables
+	if egressPolicy != nil && egressPolicy.Mode == policy.EgressModeValidate {
+		egressEnforce = false
+		fmt.Fprintf(os.Stderr, "Egress proxy active in validate mode (logging violations, allowing all traffic). Set mode: enforce to activate domain filtering + iptables.\n")
+	} else if egressPolicy == nil {
+		fmt.Fprintf(os.Stderr, "No egress policy configured — proxy will deny all outbound traffic. Use 'conga policy set-egress' to allow domains.\n")
 	}
 
 	cName := containerName(agentName)
@@ -669,21 +654,15 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return fmt.Errorf("failed to create network %s: %w", netName, err)
 	}
 
-	// Start per-agent egress proxy (always when domains defined)
-	if egressProxy {
-		if err := p.startAgentEgressProxy(ctx, agentName, egressPolicy); err != nil {
-			return fmt.Errorf("failed to start egress proxy: %w", err)
-		}
+	// Start per-agent egress proxy (always — deny-all when no policy)
+	if err := p.startAgentEgressProxy(ctx, agentName, egressPolicy); err != nil {
+		return fmt.Errorf("failed to start egress proxy: %w", err)
 	}
 
 	// Upload proxy bootstrap script for Node.js CONNECT tunneling
-	var bootstrapPath string
-	if egressProxy {
-		var err error
-		bootstrapPath, err = p.uploadProxyBootstrap(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to upload proxy bootstrap: %w", err)
-		}
+	bootstrapPath, err := p.uploadProxyBootstrap(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to upload proxy bootstrap: %w", err)
 	}
 
 	// Ensure all files are owned by the container user before starting.
@@ -691,10 +670,7 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return fmt.Errorf("failed to chown data directory: %w", err)
 	}
 
-	var refreshProxyName string
-	if egressProxy {
-		refreshProxyName = policy.EgressProxyName(agentName)
-	}
+	refreshProxyName := policy.EgressProxyName(agentName)
 	if err := p.runAgentContainer(ctx, agentContainerOpts{
 		Name:               cName,
 		AgentName:          agentName,

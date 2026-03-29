@@ -153,21 +153,40 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 		slackID = slackBinding.ID
 	}
 
+	// Generate egress proxy config (deny-all when no policy, or from existing policy)
+	egressPolicy, _ := policy.LoadEgressPolicy(provider.DefaultDataDir(), cfg.Name)
+	egressMode := policy.EgressModeEnforce
+	if egressPolicy != nil {
+		egressMode = egressPolicy.Mode
+	}
+	envoyConfig, err := policy.GenerateProxyConf(egressPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to generate egress config: %w", err)
+	}
+	proxyBootstrapJS := policy.ProxyBootstrapJS()
+
 	var scriptTemplate string
 	var templateData interface{}
+	type provisionData struct {
+		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
+		GatewayPort                                                     int
+		EnvoyConfig, EgressMode, ProxyBootstrapJS                       string
+	}
 	switch cfg.Type {
 	case provider.AgentTypeUser:
 		scriptTemplate = scripts.AddUserScript
-		templateData = struct {
-			AgentName, SlackMemberID, AWSRegion, StateBucket string
-			GatewayPort                                      int
-		}{cfg.Name, slackID, p.region, stateBucket, cfg.GatewayPort}
+		templateData = provisionData{
+			AgentName: cfg.Name, SlackMemberID: slackID, AWSRegion: p.region,
+			StateBucket: stateBucket, GatewayPort: cfg.GatewayPort,
+			EnvoyConfig: envoyConfig, EgressMode: string(egressMode), ProxyBootstrapJS: proxyBootstrapJS,
+		}
 	case provider.AgentTypeTeam:
 		scriptTemplate = scripts.AddTeamScript
-		templateData = struct {
-			AgentName, SlackChannel, AWSRegion, StateBucket string
-			GatewayPort                                     int
-		}{cfg.Name, slackID, p.region, stateBucket, cfg.GatewayPort}
+		templateData = provisionData{
+			AgentName: cfg.Name, SlackChannel: slackID, AWSRegion: p.region,
+			StateBucket: stateBucket, GatewayPort: cfg.GatewayPort,
+			EnvoyConfig: envoyConfig, EgressMode: string(egressMode), ProxyBootstrapJS: proxyBootstrapJS,
+		}
 	default:
 		return fmt.Errorf("unknown agent type: %s", cfg.Type)
 	}
