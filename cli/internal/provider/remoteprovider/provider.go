@@ -287,20 +287,18 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	// 9. Apply iptables egress enforcement (DROP non-subnet traffic) — enforce mode only
+	// 9. Apply iptables egress enforcement (defense-in-depth, best-effort on non-Linux hosts)
 	if egressEnforce {
 		agentIP, err := p.containerIPOnNetwork(ctx, cName, netName)
 		if err != nil {
-			return fmt.Errorf("failed to get agent container IP: %w", err)
+			fmt.Fprintf(os.Stderr, "Warning: could not get agent IP for iptables: %v\n", err)
+		} else if cidr, err := p.networkSubnetCIDR(ctx, netName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not get network CIDR for iptables: %v\n", err)
+		} else if err := p.addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: iptables egress rules not applied: %v\n", err)
+		} else {
+			fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 		}
-		cidr, err := p.networkSubnetCIDR(ctx, netName)
-		if err != nil {
-			return fmt.Errorf("failed to get network subnet: %w", err)
-		}
-		if err := p.addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
-			return fmt.Errorf("failed to add iptables egress rules: %w", err)
-		}
-		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
 	// 10. Update routing.json
@@ -416,14 +414,15 @@ func (p *RemoteProvider) GetStatus(ctx context.Context, agentName string) (*prov
 
 // ensureEgressIptables checks if iptables egress rules are in place for a running
 // container and re-applies them if missing. Handles IP changes after container restart.
-// Only applies when egress policy mode is "enforce".
+// Only applies when egress policy mode is "enforce" or no policy exists (deny-all).
+// Skipped in validate mode where iptables are not used.
 func (p *RemoteProvider) ensureEgressIptables(ctx context.Context, agentName string) {
 	egressPolicy, err := policy.LoadEgressPolicy(p.dataDir, agentName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy for %s: %v\n", agentName, err)
 		return
 	}
-	if egressPolicy == nil || egressPolicy.Mode != policy.EgressModeEnforce || len(egressPolicy.AllowedDomains) == 0 {
+	if egressPolicy != nil && egressPolicy.Mode == policy.EgressModeValidate {
 		return
 	}
 
@@ -670,20 +669,18 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 
-	// Apply iptables egress enforcement — enforce mode only
+	// Apply iptables egress enforcement (defense-in-depth, best-effort on non-Linux hosts)
 	if egressEnforce {
 		agentIP, err := p.containerIPOnNetwork(ctx, cName, netName)
 		if err != nil {
-			return fmt.Errorf("failed to get agent container IP: %w", err)
+			fmt.Fprintf(os.Stderr, "Warning: could not get agent IP for iptables: %v\n", err)
+		} else if cidr, err := p.networkSubnetCIDR(ctx, netName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not get network CIDR for iptables: %v\n", err)
+		} else if err := p.addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: iptables egress rules not applied: %v\n", err)
+		} else {
+			fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 		}
-		cidr, err := p.networkSubnetCIDR(ctx, netName)
-		if err != nil {
-			return fmt.Errorf("failed to get network subnet: %w", err)
-		}
-		if err := p.addEgressIptablesRules(ctx, agentIP, cidr); err != nil {
-			return fmt.Errorf("failed to add iptables egress rules: %w", err)
-		}
-		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
 	if p.containerExists(ctx, routerContainer) {

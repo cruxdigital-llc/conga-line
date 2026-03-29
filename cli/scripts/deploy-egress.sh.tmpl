@@ -157,9 +157,7 @@ fi
 
 # Reconnect router to agent network (lost on container restart) — after iptables to minimize enforcement gap
 if docker inspect conga-router >/dev/null 2>&1; then
-  if ! docker network connect "$AGENT_NET" conga-router 2>&1 | grep -v "already exists" >&2; then
-    echo "WARNING: Could not reconnect conga-router to $AGENT_NET — Slack routing may fail" >&2
-  fi
+  docker network connect "$AGENT_NET" conga-router 2>/dev/null || true
 fi
 
 echo "Egress policy deployed for $AGENT_NAME (mode=$EGRESS_MODE)"

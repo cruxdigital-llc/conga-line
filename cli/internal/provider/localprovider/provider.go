@@ -242,7 +242,6 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	// Apply iptables egress enforcement (DROP non-subnet traffic) — enforce mode only
 	// Apply iptables egress enforcement (defense-in-depth, best-effort on macOS)
 	if egressEnforce {
 		agentIP, err := containerIPOnNetwork(ctx, cName, netName)
@@ -369,13 +368,15 @@ func (p *LocalProvider) GetStatus(ctx context.Context, agentName string) (*provi
 
 // ensureEgressIptables checks if iptables egress rules are in place for a running
 // container and re-applies them if missing. Handles IP changes after container restart.
+// Only applies when egress policy mode is "enforce" or no policy exists (deny-all).
+// Skipped in validate mode where iptables are not used.
 func (p *LocalProvider) ensureEgressIptables(ctx context.Context, agentName string) {
 	egressPolicy, err := policy.LoadEgressPolicy(p.dataDir, agentName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy for %s: %v\n", agentName, err)
 		return
 	}
-	if egressPolicy == nil || egressPolicy.Mode != policy.EgressModeEnforce || len(egressPolicy.AllowedDomains) == 0 {
+	if egressPolicy != nil && egressPolicy.Mode == policy.EgressModeValidate {
 		return
 	}
 
@@ -615,9 +616,8 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	}
 
 	// Ensure all files are owned by the container user before starting.
-	if err := exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run(); err != nil {
-		return fmt.Errorf("failed to chown data directory: %w", err)
-	}
+	// Best-effort: chown fails on macOS where uid 1000 doesn't exist (Docker Desktop remaps).
+	exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run() //nolint:errcheck
 
 	refreshEgressProxyName := policy.EgressProxyName(agentName)
 	if err := runAgentContainer(ctx, agentContainerOpts{

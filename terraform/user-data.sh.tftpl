@@ -757,7 +757,7 @@ setup_agent_common() {
     fi
     if [ "$AGENT_EGRESS_MODE" = "enforce" ]; then
       log "FATAL: Egress config generation failed for $AGENT_NAME in enforce mode — refusing to start agent without egress protection"
-      return
+      return 1
     fi
     log "WARNING: Egress config generation failed for $AGENT_NAME in validate mode — agent will start without egress filtering"
   fi
@@ -780,7 +780,7 @@ PROXYDF
         AGENT_EGRESS_MODE=$(cat "/opt/conga/config/egress-$AGENT_NAME.mode" 2>/dev/null || echo "enforce")
         if [ "$AGENT_EGRESS_MODE" = "enforce" ]; then
           log "FATAL: Failed to build egress proxy image in enforce mode — refusing to start $AGENT_NAME without egress filtering"
-          return
+          return 1
         fi
         log "WARNING: Failed to build egress proxy image — $AGENT_NAME will run without egress filtering (validate mode)"
         EGRESS_CONF=""
@@ -813,7 +813,7 @@ PROXYDF
       AGENT_EGRESS_MODE=$(cat "/opt/conga/config/egress-$AGENT_NAME.mode" 2>/dev/null || echo "enforce")
       if [ "$AGENT_EGRESS_MODE" = "enforce" ]; then
         log "FATAL: Egress proxy $EGRESS_PROXY failed to start in enforce mode — refusing to start $AGENT_NAME without egress filtering"
-        return
+        return 1
       fi
       log "WARNING: Egress proxy $EGRESS_PROXY failed to start — $AGENT_NAME will run without egress filtering (validate mode)"
       EGRESS_DOCKER_ARGS=""

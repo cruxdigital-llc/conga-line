@@ -154,7 +154,10 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 	}
 
 	// Generate egress proxy config (deny-all when no policy, or from existing policy)
-	egressPolicy, _ := policy.LoadEgressPolicy(provider.DefaultDataDir(), cfg.Name)
+	egressPolicy, policyErr := policy.LoadEgressPolicy(provider.DefaultDataDir(), cfg.Name)
+	if policyErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
+	}
 	egressMode := policy.EgressModeEnforce
 	if egressPolicy != nil {
 		egressMode = egressPolicy.Mode
