@@ -566,9 +566,9 @@ egress:
 type mockEgressProvider struct {
 	mockProvider
 	deployedAgents  []string
-	deployedConfigs map[string]string      // agent name -> envoy config
+	deployedConfigs map[string]string            // agent name -> envoy config
 	deployedModes   map[string]policy.EgressMode // agent name -> mode
-	deployErr       map[string]error        // agent name -> error
+	deployErr       map[string]error             // agent name -> error
 }
 
 func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig string, mode policy.EgressMode) error {

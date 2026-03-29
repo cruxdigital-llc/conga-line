@@ -169,8 +169,8 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 	var templateData interface{}
 	type provisionData struct {
 		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
-		GatewayPort                                                     int
-		EnvoyConfig, EgressMode, ProxyBootstrapJS                       string
+		GatewayPort                                                    int
+		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
 	}
 	switch cfg.Type {
 	case provider.AgentTypeUser:

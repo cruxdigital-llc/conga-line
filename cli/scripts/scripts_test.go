@@ -134,16 +134,16 @@ func TestAddUserScriptTemplateRender(t *testing.T) {
 
 	data := struct {
 		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
-		GatewayPort                                                     int
-		EnvoyConfig, EgressMode, ProxyBootstrapJS                       string
+		GatewayPort                                                    int
+		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
 	}{
-		AgentName:     "testuser",
-		SlackMemberID: "U1234",
-		AWSRegion:     "us-east-1",
-		StateBucket:   "my-bucket",
-		GatewayPort:   18789,
-		EnvoyConfig:   "static_resources:\n  listeners:\n    - port: 3128\n",
-		EgressMode:    "enforce",
+		AgentName:        "testuser",
+		SlackMemberID:    "U1234",
+		AWSRegion:        "us-east-1",
+		StateBucket:      "my-bucket",
+		GatewayPort:      18789,
+		EnvoyConfig:      "static_resources:\n  listeners:\n    - port: 3128\n",
+		EgressMode:       "enforce",
 		ProxyBootstrapJS: "const http = require('http');\n",
 	}
 
@@ -154,14 +154,14 @@ func TestAddUserScriptTemplateRender(t *testing.T) {
 
 	output := buf.String()
 	checks := map[string]string{
-		"agent name":       "testuser",
-		"egress mode":      `EGRESS_MODE="enforce"`,
-		"envoy config":     "static_resources",
-		"proxy bootstrap":  "require('http')",
-		"HTTPS_PROXY":      "HTTPS_PROXY=http://",
+		"agent name":            "testuser",
+		"egress mode":           `EGRESS_MODE="enforce"`,
+		"envoy config":          "static_resources",
+		"proxy bootstrap":       "require('http')",
+		"HTTPS_PROXY":           "HTTPS_PROXY=http://",
 		"proxy bootstrap mount": "$BOOTSTRAP_PATH:/opt/proxy-bootstrap.js",
-		"iptables guard":   `if [ "$EGRESS_MODE" = "enforce" ]`,
-		"egress proxy run": "conga-egress-proxy",
+		"iptables guard":        `if [ "$EGRESS_MODE" = "enforce" ]`,
+		"egress proxy run":      "conga-egress-proxy",
 	}
 	for desc, want := range checks {
 		if !strings.Contains(output, want) {
@@ -178,16 +178,16 @@ func TestAddTeamScriptTemplateRender(t *testing.T) {
 
 	data := struct {
 		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
-		GatewayPort                                                     int
-		EnvoyConfig, EgressMode, ProxyBootstrapJS                       string
+		GatewayPort                                                    int
+		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
 	}{
-		AgentName:     "testteam",
-		SlackChannel:  "C5678",
-		AWSRegion:     "us-west-2",
-		StateBucket:   "team-bucket",
-		GatewayPort:   18790,
-		EnvoyConfig:   "static_resources:\n  listeners:\n    - port: 3128\n",
-		EgressMode:    "enforce",
+		AgentName:        "testteam",
+		SlackChannel:     "C5678",
+		AWSRegion:        "us-west-2",
+		StateBucket:      "team-bucket",
+		GatewayPort:      18790,
+		EnvoyConfig:      "static_resources:\n  listeners:\n    - port: 3128\n",
+		EgressMode:       "enforce",
 		ProxyBootstrapJS: "const http = require('http');\n",
 	}
 
