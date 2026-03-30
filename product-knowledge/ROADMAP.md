@@ -99,6 +99,8 @@ The organizing principle: local → remote → enterprise is a promotion pipelin
 ## Backlog (Unscheduled)
 
 ### Operational
+- [ ] `conga apply` extensions: `--dry-run` diff preview, drift detection, declarative teardown (remove agents not in manifest)
+- [ ] `conga_apply` MCP tool (accept inline YAML content for LLM-driven apply)
 - [ ] Per-user SSO permission sets (CongaUser vs CongaAdmin)
 - [ ] Per-user custom SSM documents (each user can only use their own port)
 - [ ] Rewrite Slack router in Go (replace Node.js `router/src/index.js`, land in `channels/slack/`)

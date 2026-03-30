@@ -156,6 +156,9 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] Phase 2: Router containers — `--user 1000:1000` across all providers (3 files)
 - [x] Phase 3: Security documentation update
 
+### 20. Manifest Apply — ✅ Verified and Complete
+*See `specs/2026-03-30_feature_manifest-apply/` for full trace*
+
 ### 11. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
@@ -169,6 +172,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-03-30: Manifest Apply — new `conga apply <manifest.yaml>` command for one-shot environment provisioning. Declarative YAML manifest describes setup, agents, secrets, channels, bindings, and egress policy. 7-step sequential pipeline through existing Provider interface, each step idempotent. Secrets referenced via `$VAR` env var expansion, never stored in YAML. New `cli/internal/manifest/` package (2 files, ~335 lines), CLI command, 19 unit tests, `demo.yaml.example`. DEMO.md updated with fast-path section. All 17 test packages pass. See `specs/2026-03-30_feature_manifest-apply/`.
 - 2026-03-30: Bugfix — BindChannel/UnbindChannel router restart. Router was not restarted after `channels bind`/`unbind`, causing Slack messages to be silently dropped ("No route"). Added `restartRouter()`/`ensureRouter(ctx, true)` calls in both remote and local providers. Also made `connectNetwork` idempotent (ignore "already exists" errors). 4 files, all tests pass. See `specs/2026-03-30_bugfix_bind-channel-router-restart/`.
 - 2026-03-29: Non-Root Container Enforcement — added explicit `--user 1000:1000` to all agent and router `docker run` commands across all 3 providers (local, remote, AWS). Router was running as root (`node:22-alpine` default); agent containers relied on fragile image `USER` directive. Also aligned AWS router with local/remote by adding missing `--tmpfs /tmp:rw,noexec,nosuid`. 7 files modified, 17 test packages pass. See `specs/2026-03-29_feature_non-root-containers/`.
 - 2026-03-29: Secure-by-Default Egress — egress proxy now always deploys at agent provisioning time with deny-all posture (empty Lua allowlist = 403 on all domains). Policy file opens up specific domains. All three providers (local, remote, AWS) aligned. AWS provisioning scripts (add-user/add-team) updated to deploy proxy + iptables inline. Architecture principle 4 updated: "Secure by default, open by policy." Demo script updated for new flow. 11 files, 6 new tests. See `specs/2026-03-28_feature_portable-egress-policy-compliance/`.
