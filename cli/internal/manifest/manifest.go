@@ -1,5 +1,5 @@
 // Package manifest defines the YAML manifest schema for declarative
-// environment provisioning via `conga apply`.
+// environment provisioning via `conga bootstrap`.
 package manifest
 
 import (
@@ -17,7 +17,7 @@ const (
 	supportedKind       = "Environment"
 )
 
-// Manifest is the top-level structure of a conga apply manifest.
+// Manifest is the top-level structure of a conga bootstrap manifest.
 type Manifest struct {
 	APIVersion string            `yaml:"apiVersion"`
 	Kind       string            `yaml:"kind"`
