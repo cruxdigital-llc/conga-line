@@ -198,6 +198,11 @@ func (p *LocalProvider) BindChannel(ctx context.Context, agentName string, bindi
 		}
 	}
 
+	// Restart router to pick up updated routing.json
+	if err := p.ensureRouter(ctx, true); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to restart router: %v\n", err)
+	}
+
 	// Restart agent to pick up new config
 	if !a.Paused {
 		if err := p.RefreshAgent(ctx, agentName); err != nil {
@@ -239,6 +244,11 @@ func (p *LocalProvider) UnbindChannel(ctx context.Context, agentName string, pla
 	// Regenerate routing
 	if err := p.regenerateRouting(ctx); err != nil {
 		return fmt.Errorf("failed to regenerate routing: %w", err)
+	}
+
+	// Restart router to pick up updated routing.json
+	if err := p.ensureRouter(ctx, true); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to restart router: %v\n", err)
 	}
 
 	// Restart agent to pick up new config
