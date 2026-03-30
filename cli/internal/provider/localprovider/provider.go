@@ -167,7 +167,9 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return err
 	}
 	envPath := filepath.Join(p.configDir(), cfg.Name+".env")
-	os.Remove(envPath) // remove read-only file from prior run before overwriting
+	if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old env file %s: %w", envPath, err)
+	}
 	if err := os.WriteFile(envPath, envContent, 0400); err != nil {
 		return err
 	}
@@ -211,7 +213,12 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	// 8. Start container
 	cName := containerName(cfg.Name)
 	if containerExists(ctx, cName) {
-		removeContainer(ctx, cName)
+		if err := stopContainer(ctx, cName); err != nil {
+			return fmt.Errorf("failed to stop existing container %s: %w", cName, err)
+		}
+		if err := removeContainer(ctx, cName); err != nil {
+			return fmt.Errorf("failed to remove existing container %s: %w", cName, err)
+		}
 	}
 
 	// Ensure all files are owned by the container user (node, uid 1000).
@@ -221,7 +228,9 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 
 	// Write proxy bootstrap script for Node.js CONNECT tunneling
 	bootstrapPath := filepath.Join(p.configDir(), "proxy-bootstrap.js")
-	os.Remove(bootstrapPath) // remove read-only file from prior run before overwriting
+	if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old proxy bootstrap %s: %w", bootstrapPath, err)
+	}
 	if err := os.WriteFile(bootstrapPath, []byte(policy.ProxyBootstrapJS()), 0444); err != nil {
 		return fmt.Errorf("failed to write proxy bootstrap: %w", err)
 	}
@@ -310,7 +319,8 @@ func (p *LocalProvider) RemoveAgent(ctx context.Context, name string, deleteSecr
 	os.Remove(filepath.Join(p.agentsDir(), name+".json"))
 	os.Remove(filepath.Join(p.configDir(), name+".env"))
 	os.Remove(filepath.Join(p.configDir(), name+".sha256"))
-	os.Remove(filepath.Join(p.configDir(), fmt.Sprintf("egress-%s.conf", name)))
+	os.Remove(filepath.Join(p.configDir(), fmt.Sprintf("egress-%s.yaml", name)))
+	os.Remove(filepath.Join(p.configDir(), fmt.Sprintf("egress-%s-entrypoint.sh", name)))
 
 	if deleteSecrets {
 		os.RemoveAll(p.agentSecretsDir(name))
@@ -534,7 +544,9 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	// Regenerate env file
 	envContent := common.GenerateEnvFile(*cfg, shared, perAgent)
 	envPath := filepath.Join(p.configDir(), agentName+".env")
-	os.Remove(envPath) // remove old 0400 file before rewriting
+	if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old env file %s: %w", envPath, err)
+	}
 	if err := os.WriteFile(envPath, envContent, 0400); err != nil {
 		return err
 	}
@@ -600,7 +612,9 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 
 	// Write proxy bootstrap script for Node.js CONNECT tunneling
 	bootstrapPath := filepath.Join(p.configDir(), "proxy-bootstrap.js")
-	os.Remove(bootstrapPath) // remove read-only file from prior run before overwriting
+	if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old proxy bootstrap %s: %w", bootstrapPath, err)
+	}
 	if err := os.WriteFile(bootstrapPath, []byte(policy.ProxyBootstrapJS()), 0444); err != nil {
 		return fmt.Errorf("failed to write proxy bootstrap: %w", err)
 	}
@@ -1175,7 +1189,9 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 	if err := os.MkdirAll(filepath.Dir(confPath), 0700); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
-	os.Remove(confPath) // remove read-only file from prior run before overwriting
+	if err := os.Remove(confPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old egress config %s: %w", confPath, err)
+	}
 	if err := os.WriteFile(confPath, []byte(conf), 0444); err != nil {
 		return fmt.Errorf("writing egress config: %w", err)
 	}
@@ -1189,7 +1205,9 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 
 	// Write entrypoint script for Envoy
 	entrypointPath := filepath.Join(p.configDir(), fmt.Sprintf("egress-%s-entrypoint.sh", agentName))
-	os.Remove(entrypointPath) // remove read-only file from prior run before overwriting
+	if err := os.Remove(entrypointPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old entrypoint %s: %w", entrypointPath, err)
+	}
 	if err := os.WriteFile(entrypointPath, []byte(policy.GenerateProxyEntrypoint()), 0555); err != nil {
 		return fmt.Errorf("writing entrypoint: %w", err)
 	}

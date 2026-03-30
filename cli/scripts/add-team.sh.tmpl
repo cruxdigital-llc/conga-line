@@ -187,7 +187,7 @@ Requires=docker.service
 Type=simple
 EnvironmentFile=/opt/conga/config/$AGENT_NAME.env
 ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
-ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536 --require /opt/proxy-bootstrap.js" -e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1 --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw -v $BOOTSTRAP_PATH:/opt/proxy-bootstrap.js:ro $ENV_FLAGS $CONGA_IMAGE
+ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536 --require /opt/proxy-bootstrap.js" -e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1 --pids-limit 256 --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw -v $BOOTSTRAP_PATH:/opt/proxy-bootstrap.js:ro $ENV_FLAGS $CONGA_IMAGE
 ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
 ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
 StandardOutput=append:/var/log/conga-$AGENT_NAME.log

@@ -84,6 +84,7 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		"--memory", "2g",
 		"--cpus", "0.75",
 		"--pids-limit", "256",
+		"--user", "1000:1000",
 		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
 	}
 
@@ -135,6 +136,7 @@ func runRouterContainer(ctx context.Context, opts routerContainerOpts) error {
 		"--memory", "128m",
 		"--read-only",
 		"--tmpfs", "/tmp:rw,noexec,nosuid",
+		"--user", "1000:1000",
 		"-v", fmt.Sprintf("%s:/app:ro", opts.RouterDir),
 		"-v", fmt.Sprintf("%s:/opt/conga/config/routing.json:ro", opts.RoutingJSON),
 	}
