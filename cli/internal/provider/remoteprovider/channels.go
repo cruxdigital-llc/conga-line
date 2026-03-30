@@ -197,6 +197,9 @@ func (p *RemoteProvider) BindChannel(ctx context.Context, agentName string, bind
 		}
 	}
 
+	// Restart router to pick up updated routing.json
+	p.restartRouter(ctx)
+
 	// Restart agent to pick up new config
 	if !a.Paused {
 		if err := p.RefreshAgent(ctx, agentName); err != nil {
@@ -239,6 +242,9 @@ func (p *RemoteProvider) UnbindChannel(ctx context.Context, agentName string, pl
 	if err := p.regenerateRouting(ctx); err != nil {
 		return fmt.Errorf("failed to regenerate routing: %w", err)
 	}
+
+	// Restart router to pick up updated routing.json
+	p.restartRouter(ctx)
 
 	// Restart agent to pick up new config
 	if !a.Paused {

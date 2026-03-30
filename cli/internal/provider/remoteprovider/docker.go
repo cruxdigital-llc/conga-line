@@ -52,6 +52,9 @@ func (p *RemoteProvider) removeNetwork(ctx context.Context, name string) error {
 // connectNetwork connects a container to a network on the remote host.
 func (p *RemoteProvider) connectNetwork(ctx context.Context, network, container string) error {
 	_, err := p.dockerRun(ctx, "network", "connect", network, container)
+	if err != nil && strings.Contains(err.Error(), "already exists") {
+		return nil
+	}
 	return err
 }
 

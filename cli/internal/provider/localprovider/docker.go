@@ -63,6 +63,9 @@ func removeNetwork(ctx context.Context, name string) error {
 // connectNetwork connects a container to a network.
 func connectNetwork(ctx context.Context, network, container string) error {
 	_, err := dockerRun(ctx, "network", "connect", network, container)
+	if err != nil && strings.Contains(err.Error(), "already exists") {
+		return nil
+	}
 	return err
 }
 
