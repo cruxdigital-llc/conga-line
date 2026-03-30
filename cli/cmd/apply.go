@@ -11,43 +11,48 @@ import (
 )
 
 var (
-	applyFile    string
-	applyEnvFile string
+	bootstrapFile    string
+	bootstrapEnvFile string
 )
 
 func init() {
-	applyCmd := &cobra.Command{
-		Use:   "apply [manifest.yaml]",
-		Short: "Apply a manifest to provision an environment",
-		Long: `Read a YAML manifest and execute all provisioning steps:
-setup, agents, secrets, channels, bindings, policy, and refresh.
+	bootstrapCmd := &cobra.Command{
+		Use:   "bootstrap [manifest.yaml]",
+		Short: "Bootstrap an environment from a manifest",
+		Long: `Read a YAML manifest and provision an environment:
+setup, agents, secrets, channels, bindings, and policy.
 
-Each step is idempotent — re-running skips completed work.
-Secrets use $VAR references expanded from environment variables.
+This is an additive, one-time setup command. Each step is
+idempotent — re-running skips completed work. Resources not
+in the manifest are left untouched (no removals).
+
+Secrets use $VAR references expanded from the --env file.
+Policy is seeded from the manifest only if no conga-policy.yaml
+exists — an existing policy file always takes precedence.
 
 Example:
-  conga apply demo.yaml --env demo.env`,
+  conga bootstrap demo.yaml --env demo.env`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: applyRun,
+		RunE: bootstrapRun,
 	}
-	applyCmd.Flags().StringVarP(&applyFile, "file", "f", "", "Path to manifest file")
-	applyCmd.Flags().StringVar(&applyEnvFile, "env", "", "Path to env file (KEY=VALUE format) for secret expansion")
-	rootCmd.AddCommand(applyCmd)
+	bootstrapCmd.Flags().StringVarP(&bootstrapFile, "file", "f", "", "Path to manifest file")
+	bootstrapCmd.Flags().StringVar(&bootstrapEnvFile, "env", "", "Path to env file (KEY=VALUE format) for secret expansion")
+	rootCmd.AddCommand(bootstrapCmd)
 }
 
-func applyRun(cmd *cobra.Command, args []string) error {
+func bootstrapRun(cmd *cobra.Command, args []string) error {
 	// Resolve file path: positional arg > -f flag
-	path := applyFile
+	path := bootstrapFile
 	if len(args) > 0 {
 		path = args[0]
 	}
 	if path == "" {
-		return fmt.Errorf("manifest file required: conga apply <manifest.yaml> or conga apply -f <file>")
+		return fmt.Errorf("manifest file required: conga bootstrap <manifest.yaml> or conga bootstrap -f <file>")
 	}
 
 	// Load env file before anything else so $VAR expansion works
-	if applyEnvFile != "" {
-		if err := manifest.LoadEnvFile(applyEnvFile); err != nil {
+	if bootstrapEnvFile != "" {
+		if err := manifest.LoadEnvFile(bootstrapEnvFile); err != nil {
 			return err
 		}
 	}
@@ -89,7 +94,7 @@ func applyRun(cmd *cobra.Command, args []string) error {
 	ctx, cancel := commandContext()
 	defer cancel()
 
-	result, err := manifest.Apply(ctx, prov, m, policyPath)
+	result, err := manifest.Bootstrap(ctx, prov, m, policyPath)
 	if err != nil {
 		if ui.OutputJSON && result != nil {
 			ui.EmitJSON(result)
@@ -102,6 +107,6 @@ func applyRun(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("\nEnvironment applied from %s\n", filepath.Base(path))
+	fmt.Printf("\nEnvironment bootstrapped from %s\n", filepath.Base(path))
 	return nil
 }

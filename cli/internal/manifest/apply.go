@@ -3,6 +3,7 @@ package manifest
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/cruxdigital-llc/conga-line/cli/internal/channels"
 	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
@@ -11,8 +12,8 @@ import (
 	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
 )
 
-// ApplyResult holds the outcome of each step for JSON output.
-type ApplyResult struct {
+// BootstrapResult holds the outcome of each step for JSON output.
+type BootstrapResult struct {
 	Steps []StepResult `json:"steps"`
 }
 
@@ -28,48 +29,63 @@ type step struct {
 	fn   func() (StepResult, error)
 }
 
-// Apply executes the manifest against the given provider.
+// Bootstrap executes the manifest against the given provider.
 //
 // Execution order is optimized to minimize redundant restarts:
 //
 //	setup → agents → secrets → channels → policy → bindings → (refresh if needed)
 //
+// Policy handling: if conga-policy.yaml already exists on disk, the manifest's
+// policy section is ignored (existing policy wins). The policy is only seeded
+// from the manifest on first bootstrap when no policy file exists.
+//
 // Policy is written before bindings so that BindChannel's internal refresh
 // picks up secrets, policy, and channel config in one shot. RefreshAll only
 // runs when there are changes but no bindings triggered a refresh.
-func Apply(ctx context.Context, prov provider.Provider, m *Manifest, policyPath string) (*ApplyResult, error) {
-	result := &ApplyResult{}
+func Bootstrap(ctx context.Context, prov provider.Provider, m *Manifest, policyPath string) (*BootstrapResult, error) {
+	result := &BootstrapResult{}
 
 	var steps []step
 	hasBindings := channelBindingCount(m) > 0
 
+	// Resolve policy: existing file wins over manifest section.
+	writePolicy := false
+	if m.Policy != nil {
+		if _, err := os.Stat(policyPath); err != nil {
+			// No existing policy file — seed from manifest.
+			writePolicy = true
+		} else {
+			ui.Infoln("Using existing conga-policy.yaml (bootstrap policy section ignored)")
+		}
+	}
+
 	if m.Setup != nil {
 		steps = append(steps, step{"Setting up environment", func() (StepResult, error) {
-			return applySetup(ctx, prov, m.Setup)
+			return bootstrapSetup(ctx, prov, m.Setup)
 		}})
 	}
 	if len(m.Agents) > 0 {
 		steps = append(steps, step{"Provisioning agents", func() (StepResult, error) {
-			return applyAgents(ctx, prov, m.Agents)
+			return bootstrapAgents(ctx, prov, m.Agents)
 		}})
 		steps = append(steps, step{"Setting agent secrets", func() (StepResult, error) {
-			return applySecrets(ctx, prov, m.Agents)
+			return bootstrapSecrets(ctx, prov, m.Agents)
 		}})
 	}
 	if len(m.Channels) > 0 {
 		steps = append(steps, step{"Adding channels", func() (StepResult, error) {
-			return applyChannels(ctx, prov, m.Channels)
+			return bootstrapChannels(ctx, prov, m.Channels)
 		}})
 	}
 	// Policy before bindings — BindChannel's refresh picks up the policy.
-	if m.Policy != nil {
-		steps = append(steps, step{"Deploying policy", func() (StepResult, error) {
-			return applyPolicy(m.Policy, policyPath)
+	if writePolicy {
+		steps = append(steps, step{"Seeding policy", func() (StepResult, error) {
+			return bootstrapPolicy(m.Policy, policyPath)
 		}})
 	}
 	if hasBindings {
 		steps = append(steps, step{"Binding channels", func() (StepResult, error) {
-			return applyBindings(ctx, prov, m.Channels)
+			return bootstrapBindings(ctx, prov, m.Channels)
 		}})
 	}
 	// Only RefreshAll when no bindings will trigger per-agent refreshes.
@@ -77,7 +93,7 @@ func Apply(ctx context.Context, prov provider.Provider, m *Manifest, policyPath 
 	// would just restart everything a second time.
 	if len(steps) > 0 && !hasBindings {
 		steps = append(steps, step{"Refreshing agents", func() (StepResult, error) {
-			return applyRefresh(ctx, prov)
+			return bootstrapRefresh(ctx, prov)
 		}})
 	}
 
@@ -108,7 +124,7 @@ func channelBindingCount(m *Manifest) int {
 	return n
 }
 
-func applySetup(ctx context.Context, prov provider.Provider, setup *ManifestSetup) (StepResult, error) {
+func bootstrapSetup(ctx context.Context, prov provider.Provider, setup *ManifestSetup) (StepResult, error) {
 	cfg := &provider.SetupConfig{
 		Image:         setup.Image,
 		RepoPath:      setup.RepoPath,
@@ -124,7 +140,7 @@ func applySetup(ctx context.Context, prov provider.Provider, setup *ManifestSetu
 	return StepResult{Status: "done"}, nil
 }
 
-func applyAgents(ctx context.Context, prov provider.Provider, agents []ManifestAgent) (StepResult, error) {
+func bootstrapAgents(ctx context.Context, prov provider.Provider, agents []ManifestAgent) (StepResult, error) {
 	sr := StepResult{Status: "done"}
 	for _, a := range agents {
 		if _, err := prov.GetAgent(ctx, a.Name); err == nil {
@@ -157,7 +173,7 @@ func applyAgents(ctx context.Context, prov provider.Provider, agents []ManifestA
 	return sr, nil
 }
 
-func applySecrets(ctx context.Context, prov provider.Provider, agents []ManifestAgent) (StepResult, error) {
+func bootstrapSecrets(ctx context.Context, prov provider.Provider, agents []ManifestAgent) (StepResult, error) {
 	sr := StepResult{Status: "done"}
 	count := 0
 	for _, a := range agents {
@@ -178,7 +194,7 @@ func applySecrets(ctx context.Context, prov provider.Provider, agents []Manifest
 	return sr, nil
 }
 
-func applyChannels(ctx context.Context, prov provider.Provider, chans []ManifestChannel) (StepResult, error) {
+func bootstrapChannels(ctx context.Context, prov provider.Provider, chans []ManifestChannel) (StepResult, error) {
 	sr := StepResult{Status: "done"}
 
 	existing, err := prov.ListChannels(ctx)
@@ -205,7 +221,7 @@ func applyChannels(ctx context.Context, prov provider.Provider, chans []Manifest
 	return sr, nil
 }
 
-func applyBindings(ctx context.Context, prov provider.Provider, chans []ManifestChannel) (StepResult, error) {
+func bootstrapBindings(ctx context.Context, prov provider.Provider, chans []ManifestChannel) (StepResult, error) {
 	sr := StepResult{Status: "done"}
 
 	for _, ch := range chans {
@@ -241,7 +257,7 @@ func applyBindings(ctx context.Context, prov provider.Provider, chans []Manifest
 	return sr, nil
 }
 
-func applyPolicy(mp *ManifestPolicy, policyPath string) (StepResult, error) {
+func bootstrapPolicy(mp *ManifestPolicy, policyPath string) (StepResult, error) {
 	pf := &policy.PolicyFile{
 		APIVersion: policy.CurrentAPIVersion,
 		Egress:     mp.Egress,
@@ -252,10 +268,10 @@ func applyPolicy(mp *ManifestPolicy, policyPath string) (StepResult, error) {
 	if err := policy.Save(pf, policyPath); err != nil {
 		return StepResult{Status: "error"}, fmt.Errorf("saving policy: %w", err)
 	}
-	return StepResult{Status: "done", Details: []string{"saved to " + policyPath}}, nil
+	return StepResult{Status: "done", Details: []string{"seeded to " + policyPath}}, nil
 }
 
-func applyRefresh(ctx context.Context, prov provider.Provider) (StepResult, error) {
+func bootstrapRefresh(ctx context.Context, prov provider.Provider) (StepResult, error) {
 	if err := prov.RefreshAll(ctx); err != nil {
 		return StepResult{Status: "error"}, fmt.Errorf("refreshing agents: %w", err)
 	}
