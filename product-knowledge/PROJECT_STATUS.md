@@ -144,6 +144,18 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] Phase 4: Enforcement report — unify egressReport() to be mode-driven for all providers
 - [x] Phase 5: Tests & documentation updates — all 17 packages pass
 
+### 19. Non-Root Container Enforcement — Verified Complete
+*Lead: Architect + QA*
+*See `specs/2026-03-29_feature_non-root-containers/` for full trace*
+- [x] Requirements defined: `specs/2026-03-29_feature_non-root-containers/requirements.md`
+- [x] Plan defined: `specs/2026-03-29_feature_non-root-containers/plan.md`
+- [x] Spec defined: `specs/2026-03-29_feature_non-root-containers/spec.md`
+- [x] Persona review passed (Architect + QA)
+- [x] Standards gate passed (8/8 checks clear, pre and post implementation)
+- [x] Phase 1: Agent containers — `--user 1000:1000` across all providers (6 files)
+- [x] Phase 2: Router containers — `--user 1000:1000` across all providers (3 files)
+- [x] Phase 3: Security documentation update
+
 ### 11. Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
@@ -157,6 +169,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-03-29: Non-Root Container Enforcement — added explicit `--user 1000:1000` to all agent and router `docker run` commands across all 3 providers (local, remote, AWS). Router was running as root (`node:22-alpine` default); agent containers relied on fragile image `USER` directive. Also aligned AWS router with local/remote by adding missing `--tmpfs /tmp:rw,noexec,nosuid`. 7 files modified, 17 test packages pass. See `specs/2026-03-29_feature_non-root-containers/`.
 - 2026-03-29: Secure-by-Default Egress — egress proxy now always deploys at agent provisioning time with deny-all posture (empty Lua allowlist = 403 on all domains). Policy file opens up specific domains. All three providers (local, remote, AWS) aligned. AWS provisioning scripts (add-user/add-team) updated to deploy proxy + iptables inline. Architecture principle 4 updated: "Secure by default, open by policy." Demo script updated for new flow. 11 files, 6 new tests. See `specs/2026-03-28_feature_portable-egress-policy-compliance/`.
 - 2026-03-28: Portable Egress Policy Compliance — all three providers now respect the `mode` field in `conga-policy.yaml` egress section. Default changed from `validate` to `enforce` (security-first). Remote provider no longer hardcodes enforcement — checks mode like local. AWS bootstrap now parses mode, deploys proxy with Lua log-and-allow filter in validate mode (no iptables), and applies iptables DROP rules in DOCKER-USER chain in enforce mode (closing the cooperative-proxy-only gap). Systemd hooks (`ExecStartPost`/`ExecStopPost`) provide iptables resilience across container restarts. Enforcement report unified — all providers report based on mode, not provider name. 4 new tests, 9 files modified. New architecture standards added: Agent Data Safety (must), Interface Parity (must). See `specs/2026-03-28_feature_portable-egress-policy-compliance/`.
 - 2026-03-26: Channel Abstraction — extracted all Slack-specific logic from core CLI into `cli/internal/channels/` behind a `Channel` interface. `AgentConfig.Channels []ChannelBinding` replaces `SlackMemberID`/`SlackChannel`. `SharedSecrets.Values map[string]string` replaces Slack-named fields. `--channel slack:ID` CLI flag replaces positional Slack ID args. Slack is the sole implementation in `channels/slack/`. All providers, CLI commands, MCP tools, routing, config generation, and behavior templates delegate to the channel interface. 5 new files, ~25 modified, 17 new test cases. Breaking change to agent JSON, SetupConfig JSON, and CLI args. AWS bootstrap scripts deferred. See `specs/2026-03-26_feature_channel-abstraction/`.

@@ -59,7 +59,7 @@ if [ -f "$EGRESS_MODE_FILE" ] && [ -f "/opt/conga/config/egress-$AGENT_NAME.yaml
 fi
 
 UNIT_FILE="/etc/systemd/system/conga-$AGENT_NAME.service"
-sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS=\"$NODE_OPTS\" --pids-limit 256 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $EGRESS_DOCKER_ARGS $ENV_FLAGS $CONGA_IMAGE|" "$UNIT_FILE"
+sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS=\"$NODE_OPTS\" --pids-limit 256 --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $EGRESS_DOCKER_ARGS $ENV_FLAGS $CONGA_IMAGE|" "$UNIT_FILE"
 if ! grep -q "$CONGA_IMAGE" "$UNIT_FILE"; then
   echo "ERROR: Failed to update ExecStart in $UNIT_FILE — sed pattern 'ExecStart=' not found"
   exit 1

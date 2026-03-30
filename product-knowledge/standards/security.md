@@ -30,7 +30,7 @@ These controls apply identically regardless of provider. They happen automatical
 | Drop all capabilities | `--cap-drop=ALL` | Removes kernel capabilities that enable most escape techniques |
 | No new privileges | `--security-opt=no-new-privileges` | Prevents privilege escalation via setuid binaries |
 | Resource limits | `--memory 2g`, `--cpus 0.75`, `--pids-limit 256` | Prevents resource starvation across agents |
-| Non-root container | Runs as uid 1000 (`node`) | Limits blast radius of container compromise |
+| Non-root container | Explicit `--user 1000:1000` on all containers | Limits blast radius of container compromise; independent of image USER directive |
 | Seccomp profile | Docker default seccomp (~44 dangerous syscalls blocked) | Restricts syscalls available to the container |
 | Isolated Docker networks | Each agent on its own bridge network | Prevents lateral movement between agents |
 | Localhost-only port binding | `-p 127.0.0.1:<port>:<port>` | Gateway not exposed to network |
