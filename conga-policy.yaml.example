@@ -23,7 +23,7 @@ egress:
 
   # Enforcement mode (all providers). Proxy is always deployed when domains are defined.
   #   enforce  — proxy with domain filtering + iptables DROP rules (default)
-  #   validate — proxy with domain monitoring (logs what would be blocked, allows all traffic, no iptables)
+  #   validate — proxy with domain monitoring (logs what would be blocked, allows through proxy, iptables still applied)
   mode: enforce
 
 # --- Routing Policy ---
