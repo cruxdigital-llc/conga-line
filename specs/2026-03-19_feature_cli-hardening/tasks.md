@@ -23,10 +23,10 @@
 - [x] 3.4 Update `Clients` struct to use interface types
 - [x] 3.5 Update all function signatures in `internal/aws/` to accept interfaces
 - [x] 3.6 Update all function signatures in `internal/discovery/` to accept interfaces
-- [x] 3.7 Create `CLIContext` struct in `cmd/context.go` — deferred (interfaces enable testing without full migration)
-- [x] 3.8 Migrate global variables to `CLIContext` fields — deferred
-- [x] 3.9 Migrate command handlers to `cliCtx.Executor.RunScript` — deferred
-- [x] 3.10 Move `findInstance` into executor initialization — deferred
+- [ ] 3.7 Create `CLIContext` struct in `cmd/context.go` — deferred (interfaces enable testing without full migration)
+- [ ] 3.8 Migrate global variables to `CLIContext` fields — deferred
+- [ ] 3.9 Migrate command handlers to `cliCtx.Executor.RunScript` — deferred
+- [ ] 3.10 Move `findInstance` into executor initialization — deferred
 - [x] 3.11 Add `ConfirmWith`, `TextPromptWith`, etc. to `internal/ui/prompt.go`
 - [x] 3.12 Verify: `go build` compiles, `go vet` passes
 
@@ -37,8 +37,8 @@
 - [x] 4.4 `internal/discovery/identity_test.go` — ARN parsing
 - [x] 4.5 `internal/aws/ssm_test.go` — RunCommand (happy, failure, timeout, consecutive errors, send failure)
 - [x] 4.6 `internal/aws/secrets_test.go` — SetSecret (update/create/both-fail), ListSecrets (single/multi/empty), DeleteSecret (error wrapping)
-- [x] 4.7 `internal/aws/params_test.go` — deferred (lower priority, same pattern as secrets)
-- [x] 4.8 `internal/discovery/agent_test.go` — deferred (needs mock SSM for GetParametersByPath)
+- [ ] 4.7 `internal/aws/params_test.go` — deferred (lower priority, same pattern as secrets)
+- [ ] 4.8 `internal/discovery/agent_test.go` — deferred (needs mock SSM for GetParametersByPath)
 - [x] 4.9 `internal/ui/prompt_test.go` — Confirm, TextPromptWith, TextPromptWithDefaultFrom
 - [x] 4.10 All tests pass. Coverage: aws=26.9%, ui=28.2%, cmd=10.1%
 

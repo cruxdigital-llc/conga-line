@@ -151,8 +151,8 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
 
 ## Known Issues / Technical Debt
-- CLI has zero test coverage — addressed by CLI Hardening spec (Phase 4)
-- CLI `admin.go` is 549 lines with 6 commands — addressed by CLI Hardening spec (Phase 5)
+- CLI test coverage at ~27% (aws), ~28% (ui), ~10% (cmd) — see CLI Hardening spec (Phase 4). Deferred items: `params_test.go`, `agent_test.go`
+- CLI `admin.go` split into 4 files — see CLI Hardening spec (Phase 5)
 - Per-user API keys: each employee brings their own credentials and plugins
 - Egress proxy enforcement uses HTTPS_PROXY env vars + iptables DROP rules to prevent bypass. See Network-Level Egress Enforcement spec (Feature 16)
 - Open question: which OpenClaw skills/plugins to enable and sandbox requirements

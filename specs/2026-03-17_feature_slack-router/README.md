@@ -11,11 +11,6 @@
 - Terraform CLI
 - Node.js / Go (router implementation)
 
-## Status
-**Blocked** — Conga Line HTTP webhook mode has a module identity split bug (route registers in monitor's module instance but gateway reads from a separate empty instance). Router works correctly; the bug is in Conga Line. Reverting to separate Slack apps per user with Socket Mode.
-
-See [LEARNINGS.md](LEARNINGS.md) for full analysis.
-
 ## Research Findings
 - No off-the-shelf Socket Mode multiplexer exists
 - Conga Line natively supports `mode: "http"` (webhook) — containers don't need Socket Mode
