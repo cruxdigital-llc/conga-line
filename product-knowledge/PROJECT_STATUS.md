@@ -93,11 +93,9 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 ### 15. MCP Policy Tools — ✅ Verified and Complete
 *See `specs/2026-03-26_feature_mcp-policy-tools/` for full trace*
 
-### 16. Network-Level Egress Enforcement — Partially Implemented, AWS Deferred
+### 16. Network-Level Egress Enforcement — ✅ Verified and Complete
 *See `specs/2026-03-26_feature_network-level-egress-enforcement/` for full trace*
-- [x] Phase 1: Remote provider — Envoy proxy + iptables DROP rules
-- [x] Phase 2: Local provider — Envoy proxy + iptables DROP rules (nsenter on macOS)
-- [ ] Phase 3: AWS provider — bootstrap script + systemd integration (deferred)
+- Phase 3 (AWS) completed as part of Feature #18 (Portable Egress Policy Compliance)
 
 ### 17. Channel Management CLI — ✅ Verified and Complete
 *See `specs/2026-03-27_feature_channel-management-cli/` for full trace*

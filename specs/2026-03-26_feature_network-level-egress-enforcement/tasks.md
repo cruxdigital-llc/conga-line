@@ -26,6 +26,6 @@
 
 ## Phase 3: AWS Provider (deferred — not needed for demo)
 
-- [ ] 3.1 Bootstrap script updates (`terraform/user-data.sh.tftpl`)
-- [ ] 3.2 Refresh script updates
-- [ ] 3.3 Systemd integration
+- [x] 3.1 Bootstrap script updates (`terraform/user-data.sh.tftpl`) — completed in Feature #18
+- [x] 3.2 Refresh script updates (`cli/scripts/deploy-egress.sh.tmpl`) — completed in Feature #18
+- [x] 3.3 Systemd integration (ExecStartPost/ExecStopPost hooks) — completed in Feature #18
