@@ -17,4 +17,4 @@
 3. **Config integrity violation on first 5-min check**: OpenClaw hot-reload modifies config immediately after boot. This is expected behavior — the monitoring correctly detects it. The known-good hash is from the template; OpenClaw adds runtime state (like `meta.lastTouchedAt`).
 
 ## TODO
-- [ ] Move hash baseline computation to AFTER OpenClaw's first boot settles (~60s delay). Currently the baseline is taken from the template before OpenClaw starts, which causes a false positive on first 5-min check. See plan: start container → sleep 60 → compute hash. Supply chain attack (compromised image mutating config) is a separate threat model.
+- [x] Move hash baseline computation to AFTER OpenClaw's first boot settles (~60s delay). Currently the baseline is taken from the template before OpenClaw starts, which causes a false positive on first 5-min check. See plan: start container → sleep 60 → compute hash. Supply chain attack (compromised image mutating config) is a separate threat model.

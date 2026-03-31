@@ -12,7 +12,7 @@
 - [x] Task 10: Migrate secrets from `conga/myagent/*` to `conga/UEXAMPLE01/*`
 - [x] Task 11: `terraform plan` + `terraform apply` — no secret destruction
 - [x] Task 12: Instance replaced, container healthy, Slack connected
-- [ ] Task 13: Test onboarding flow with second user
+- [x] Task 13: Test onboarding flow with second user
 
 ## Issues Resolved
 1. **Systemd `$$` escaping**: Terraform templatefile + bash heredoc double-interpolation mangled `$$` into `1711`. Fixed by building `-e` flags at bootstrap time and baking into the unit file directly.
