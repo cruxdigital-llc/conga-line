@@ -49,6 +49,52 @@ Self-host a fleet of isolated [OpenClaw](https://github.com/openclaw/openclaw) A
 | **Policies** | CLI (`conga policy`) | Egress rules, security posture, routing enforcement |
 | **Channels** | CLI (`conga channels`) | Messaging platform integrations, agent-channel bindings |
 
+## Bootstrap from Manifest
+
+The fastest way to stand up a complete environment — one file, one command.
+
+### 1. Create a manifest
+
+Copy the example and customize:
+
+```bash
+cp demo.yaml.example demo.yaml
+# Edit demo.yaml: set SSH host, Slack IDs, etc.
+```
+
+### 2. Create an env file with secrets
+
+```bash
+cat > demo.env << 'EOF'
+ANTHROPIC_API_KEY=sk-ant-...
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=...
+SLACK_APP_TOKEN=xapp-...
+EOF
+```
+
+### 3. Bootstrap
+
+```bash
+conga bootstrap demo.yaml --env demo.env
+```
+
+This provisions the entire environment in one shot: server setup, agents, secrets, Slack channels, channel bindings, and egress policy. Each step is idempotent — re-running skips completed work.
+
+The `provider` field in the manifest selects the deployment target (`local`, `remote`, or `aws`). Secrets use `$VAR` references expanded from the env file — they're never stored in the manifest.
+
+> **Note:** `bootstrap` is additive — it creates and configures resources but never removes them. For full declarative lifecycle management (plan, apply, destroy), a Terraform provider is planned.
+
+After bootstrap, use the CLI and MCP tools for ongoing changes:
+```bash
+conga policy set-egress --allowed-domains "api.example.com"   # modify policy
+conga policy deploy                                            # push to agents
+conga admin add-user newagent                                  # add more agents
+conga channels bind newagent slack:U0123456789                 # bind to Slack
+```
+
+---
+
 ## Quick Start (Local Docker)
 
 The fastest way to get running — no AWS account needed.
@@ -322,6 +368,14 @@ conga connect --agent myagent
 | `conga policy validate` | Validate policy file and show per-provider enforcement report |
 | `conga version` | Show CLI version |
 
+### Bootstrap
+
+| Command | Description |
+|---------|-------------|
+| `conga bootstrap <manifest.yaml>` | Provision an environment from a YAML manifest (additive, idempotent) |
+
+Flags: `--env <file>` (env file for secret expansion), `-f <file>` (manifest path)
+
 ### Admin Commands
 
 | Command | Description |
@@ -528,6 +582,7 @@ cli/
 │   ├── aws/                    # AWS SDK wrappers
 │   ├── common/                 # Shared logic (config gen, routing, validation)
 │   ├── discovery/              # Agent & identity resolution (AWS)
+│   ├── manifest/               # YAML manifest parsing for conga bootstrap
 │   ├── mcpserver/              # MCP server (AI agent integration)
 │   ├── policy/                 # Portable policy schema, validation, enforcement reporting
 │   ├── provider/               # Provider interface & registry

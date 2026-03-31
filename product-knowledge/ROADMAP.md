@@ -118,6 +118,13 @@ The organizing principle: local → remote → enterprise is a promotion pipelin
 - [ ] User-facing setup guide documentation
 - [ ] SECURITY-GUIDE.md for remote provider (VPS hardening best practices)
 
+### Terraform Provider
+- [ ] `terraform-provider-conga` — wraps transactional CLI logic for declarative lifecycle management
+- [ ] Resources: `conga_agent`, `conga_secret`, `conga_channel`, `conga_channel_binding`, `conga_policy`
+- [ ] Provider config selects deployment target (local, remote, AWS) — same Go provider packages underneath
+- [ ] Enables plan/apply/destroy, drift detection, state management — all handled by Terraform, not reimplemented
+- [ ] See `product-knowledge/TERRAFORM_PROVIDER.md` for architecture details
+
 ### Future Providers
 - [ ] Kubernetes provider (Helm chart + kubectl)
 - [ ] ECS/Fargate provider
