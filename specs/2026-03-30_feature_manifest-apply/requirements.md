@@ -1,4 +1,4 @@
-# Requirements: Manifest Apply
+# Requirements: Manifest Bootstrap
 
 ## Problem Statement
 
@@ -6,7 +6,7 @@ The demo flow (DEMO.md) requires 8+ sequential CLI commands to provision a compl
 
 ## Goal
 
-Add a `conga apply <manifest.yaml>` command that reads a declarative YAML manifest describing the desired environment state and executes all provisioning steps in one shot.
+Add a `conga bootstrap <manifest.yaml>` command that reads a declarative YAML manifest describing the desired environment state and executes all provisioning steps in one shot.
 
 **Scope**: Demo-focused MVP designed to support future declarative management. The YAML format should be extensible for production use (drift detection, diff preview, teardown) but the initial implementation focuses on create-and-configure.
 
@@ -14,14 +14,14 @@ Add a `conga apply <manifest.yaml>` command that reads a declarative YAML manife
 
 1. **As a demo presenter**, I want to run a single command that provisions a complete environment from a YAML file, so I can set up a demo in under 60 seconds (excluding Docker image pull).
 
-2. **As a DevOps engineer**, I want to re-run `conga apply` after fixing a configuration error without duplicating already-provisioned resources.
+2. **As a DevOps engineer**, I want to re-run `conga bootstrap` after fixing a configuration error without duplicating already-provisioned resources.
 
 3. **As a team lead**, I want to define our agent topology in a version-controlled YAML file that anyone on the team can apply.
 
 ## Success Criteria
 
-1. **Speed**: `conga apply demo.yaml` provisions 2 agents with secrets, channels, bindings, and egress policy in under 60 seconds (on a warm host with Docker image cached).
-2. **Idempotency**: Running `conga apply` twice produces the same result — completed steps are skipped, no errors on re-apply.
+1. **Speed**: `conga bootstrap demo.yaml` provisions 2 agents with secrets, channels, bindings, and egress policy in under 60 seconds (on a warm host with Docker image cached).
+2. **Idempotency**: Running `conga bootstrap` twice produces the same result — completed steps are skipped, no errors on re-apply.
 3. **Secret safety**: Secrets are referenced via environment variables (`$VAR`), never stored in the YAML manifest.
 4. **Provider parity**: Works identically on all three providers (local, remote, AWS).
 5. **Composability**: The manifest reuses existing schemas (policy, agent config) so users can learn one format.

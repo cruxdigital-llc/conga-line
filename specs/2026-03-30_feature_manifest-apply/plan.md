@@ -1,8 +1,8 @@
-# Plan: Manifest Apply
+# Plan: Manifest Bootstrap
 
 ## Approach
 
-Add a `conga apply <manifest.yaml>` command backed by a new `cli/internal/manifest/` package. The command parses a YAML manifest, expands environment variable references in secret values, validates the structure, then executes provisioning steps sequentially through the existing `Provider` interface. Each step is idempotent — re-running skips completed work.
+Add a `conga bootstrap <manifest.yaml>` command backed by a new `cli/internal/manifest/` package. The command parses a YAML manifest, expands environment variable references in secret values, validates the structure, then executes provisioning steps sequentially through the existing `Provider` interface. Each step is idempotent — re-running skips completed work.
 
 ## YAML Manifest Format
 
@@ -187,8 +187,8 @@ Each returns a `StepResult`. On error, `Apply` returns immediately with the part
 **New file.** Cobra command registration.
 
 ```go
-conga apply [manifest.yaml]
-conga apply -f manifest.yaml
+conga bootstrap [manifest.yaml]
+conga bootstrap -f manifest.yaml
 ```
 
 - Resolves file path (positional arg > `-f` flag)
@@ -209,7 +209,7 @@ No changes to `root.go` needed — the command self-registers via `init()` like 
 ### Phase 5: Demo Manifest + Documentation
 
 - Create `demo.yaml.example` in project root — the example manifest matching the DEMO.md flow
-- Update DEMO.md with a `conga apply` fast-path section
+- Update DEMO.md with a `conga bootstrap` fast-path section
 
 ## Files Inventory
 
@@ -227,7 +227,7 @@ No changes to `root.go` needed — the command self-registers via `init()` like 
 
 | File | Change |
 |---|---|
-| `DEMO.md` | Add fast-path section referencing `conga apply` |
+| `DEMO.md` | Add fast-path section referencing `conga bootstrap` |
 
 ### Reused Existing Code
 
@@ -271,8 +271,8 @@ No changes to `root.go` needed — the command self-registers via `init()` like 
 1. `go build ./cli/...` — compiles
 2. `go test ./cli/internal/manifest/...` — unit tests pass
 3. `go test ./cli/...` — all existing tests still pass
-4. Create `demo.yaml` with real env vars, run `conga apply demo.yaml --provider local`
-5. Run `conga apply demo.yaml` again — verify idempotent (steps show "skipped")
+4. Create `demo.yaml` with real env vars, run `conga bootstrap demo.yaml --provider local`
+5. Run `conga bootstrap demo.yaml` again — verify idempotent (steps show "skipped")
 6. `conga status --agent aaron` + `conga status --agent team` — both running
 7. `conga policy get` — matches manifest policy
-8. `conga apply demo.yaml --output json` — valid JSON output
+8. `conga bootstrap demo.yaml --output json` — valid JSON output

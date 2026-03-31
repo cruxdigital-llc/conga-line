@@ -1,12 +1,12 @@
-# Feature Trace: Manifest Apply
+# Feature Trace: Manifest Bootstrap
 
 ## Session Log
 
 ### 2026-03-30 — Plan Feature
 
-**Goal**: Add `conga apply <manifest.yaml>` command for one-shot environment provisioning from a declarative YAML manifest.
+**Goal**: Add `conga bootstrap <manifest.yaml>` command for one-shot environment provisioning from a declarative YAML manifest.
 
-**Motivation**: The demo flow (DEMO.md) requires 8+ sequential CLI commands to provision agents, set secrets, configure channels, and deploy policy. This is too slow for a live demo. A single YAML manifest should describe the desired state and `conga apply` should execute all steps in order.
+**Motivation**: The demo flow (DEMO.md) requires 8+ sequential CLI commands to provision agents, set secrets, configure channels, and deploy policy. This is too slow for a live demo. A single YAML manifest should describe the desired state and `conga bootstrap` should execute all steps in order.
 
 **Active Personas**: Architect, Product Manager, QA
 **Active Capabilities**: Conga MCP server (verification), Go build/test
@@ -51,7 +51,7 @@
 - `demo.yaml.example` — example manifest for demos (~45 lines)
 
 **Modified files:**
-- `DEMO.md` — added "Fast Path: `conga apply`" section
+- `DEMO.md` — added "Fast Path: `conga bootstrap`" section
 - `cli/go.mod` — `gopkg.in/yaml.v3` promoted from indirect to direct dependency
 
 **Test results:**

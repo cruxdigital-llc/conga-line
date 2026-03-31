@@ -1,4 +1,4 @@
-# Implementation Tasks: Manifest Apply
+# Implementation Tasks: Manifest Bootstrap
 
 ## Phase 1: Manifest Package — Parse & Validate
 - [x] 1.1 Create `cli/internal/manifest/manifest.go` — structs, Load, Validate, ExpandSecrets

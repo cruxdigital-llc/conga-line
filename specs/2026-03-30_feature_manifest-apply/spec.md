@@ -1,8 +1,8 @@
-# Specification: Manifest Apply
+# Specification: Manifest Bootstrap
 
 ## Overview
 
-New `conga apply <manifest.yaml>` command and backing `cli/internal/manifest/` package. Parses a YAML manifest describing an environment's desired state (setup, agents, secrets, channels, bindings, policy), validates it, expands environment variable references in secrets, and executes provisioning steps sequentially through the existing `Provider` interface.
+New `conga bootstrap <manifest.yaml>` command and backing `cli/internal/manifest/` package. Parses a YAML manifest describing an environment's desired state (setup, agents, secrets, channels, bindings, policy), validates it, expands environment variable references in secrets, and executes provisioning steps sequentially through the existing `Provider` interface.
 
 ---
 
@@ -56,7 +56,7 @@ agents:
 - `name` must be unique across all agents in the manifest
 - `secrets` keys: must be valid secret names (lowercase alphanumeric + hyphens)
 
-**Gateway ports** are auto-assigned via `common.NextAvailablePort()` during apply — not declared in the manifest.
+**Gateway ports** are auto-assigned via `common.NextAvailablePort()` during bootstrap — not declared in the manifest.
 
 ### 1.4 `channels` Section
 
@@ -78,7 +78,7 @@ channels:
 **Validation rules**:
 - `platform`: must be registered in `channels.Get()` (currently only `"slack"`)
 - `bindings[].agent`: must reference a name from the `agents` list in the same manifest
-- `bindings[].id`: validated by the channel's `ValidateBinding()` method at apply time
+- `bindings[].id`: validated by the channel's `ValidateBinding()` method at bootstrap time
 - Duplicate platforms are not allowed
 
 ### 1.5 `policy` Section
@@ -184,7 +184,7 @@ type ManifestPolicy struct {
 }
 ```
 
-### 2.2 Apply Result Structs (`cli/internal/manifest/apply.go`)
+### 2.2 Bootstrap Result Structs (`cli/internal/manifest/bootstrap.go`)
 
 ```go
 type ApplyResult struct {
@@ -531,7 +531,7 @@ Single `RefreshAll` at the end. Each provider's refresh logic handles:
 
 ---
 
-## 5. CLI Command (`cli/cmd/apply.go`)
+## 5. CLI Command (`cli/cmd/bootstrap.go`)
 
 ```go
 package cmd
@@ -549,7 +549,7 @@ var applyFile string
 
 func init() {
     applyCmd := &cobra.Command{
-        Use:   "apply [manifest.yaml]",
+        Use:   "bootstrap [manifest.yaml]",
         Short: "Apply a manifest to provision an environment",
         Long:  "Read a YAML manifest and execute all provisioning steps: setup, agents, secrets, channels, bindings, policy, and refresh.",
         Args:  cobra.MaximumNArgs(1),
@@ -566,7 +566,7 @@ func applyRun(cmd *cobra.Command, args []string) error {
         path = args[0]
     }
     if path == "" {
-        return fmt.Errorf("manifest file required: conga apply <manifest.yaml> or conga apply -f <file>")
+        return fmt.Errorf("manifest file required: conga bootstrap <manifest.yaml> or conga bootstrap -f <file>")
     }
 
     // Load and validate
@@ -628,7 +628,7 @@ When `--output json` or `--json` is active:
 
 ### 5.2 MCP Tool
 
-**Deferred to a follow-up.** The `apply` command takes a file path, which doesn't map cleanly to MCP tool semantics (no filesystem access from LLM). The MCP server already has individual tools for each operation. A future `conga_apply` MCP tool could accept inline YAML content.
+**Deferred to a follow-up.** The `bootstrap` command takes a file path, which doesn't map cleanly to MCP tool semantics (no filesystem access from LLM). The MCP server already has individual tools for each operation. A future `conga_bootstrap` MCP tool could accept inline YAML content.
 
 ---
 
@@ -645,7 +645,7 @@ When `--output json` or `--json` is active:
 | Duplicate agent names | `validating manifest: duplicate agent name "aaron"` |
 | Binding references missing agent | `validating manifest: channel "slack" binding: agent "bob" not in agents list` |
 | Provider not configured | Setup step runs; if setup section missing, `prov.ListAgents()` errors propagate |
-| Step fails mid-apply | Error returned with partial `ApplyResult`. Already-applied steps are idempotent on re-run. |
+| Step fails mid-bootstrap | Error returned with partial `BootstrapResult`. Already-completed steps are idempotent on re-run. |
 | Empty manifest (apiVersion + kind only) | Valid, no steps executed, prints "Environment applied" |
 | Manifest with only `policy:` | Only policy save + refresh steps run |
 | `$VAR` where VAR contains `$` | `os.Expand` does not recurse — single expansion only |
@@ -673,8 +673,8 @@ No new filesystem operations introduced outside of the existing provider contrac
 | File | Lines (est.) | Purpose |
 |---|---|---|
 | `cli/internal/manifest/manifest.go` | ~120 | Structs, Load, Validate, ExpandSecrets |
-| `cli/internal/manifest/apply.go` | ~200 | Apply orchestrator + 7 step functions |
-| `cli/cmd/apply.go` | ~70 | Cobra command |
+| `cli/internal/manifest/bootstrap.go` | ~200 | Bootstrap orchestrator + 7 step functions |
+| `cli/cmd/bootstrap.go` | ~70 | Cobra command |
 | `cli/internal/manifest/manifest_test.go` | ~200 | Unit tests |
 | `demo.yaml.example` | ~35 | Example manifest |
 
@@ -682,7 +682,7 @@ No new filesystem operations introduced outside of the existing provider contrac
 
 | File | Change |
 |---|---|
-| `DEMO.md` | Add "Fast Path" section describing `conga apply` alternative |
+| `DEMO.md` | Add "Fast Path" section describing `conga bootstrap` alternative |
 
 ---
 
@@ -718,8 +718,8 @@ No new filesystem operations introduced outside of the existing provider contrac
 
 1. `go build ./cli/...` — compiles
 2. `go test ./cli/...` — all tests pass (existing + new)
-3. `conga apply demo.yaml --provider local` — full provisioning
-4. `conga apply demo.yaml --provider local` — idempotent re-apply
+3. `conga bootstrap demo.yaml --provider local` — full provisioning
+4. `conga bootstrap demo.yaml --provider local` — idempotent re-run
 5. `conga status --agent aaron` + `conga status --agent team` — running
 6. `conga policy get` — matches manifest policy
-7. `conga apply demo.yaml --output json` — valid JSON output
+7. `conga bootstrap demo.yaml --output json` — valid JSON output
