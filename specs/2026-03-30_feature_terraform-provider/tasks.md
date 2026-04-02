@@ -47,6 +47,6 @@
 ## Phase 8: Registry Publishing
 - [x] Add GH Actions goreleaser workflow (`.goreleaser.yml`)
 - [x] Add Terraform Registry manifest (`terraform-registry-manifest.json`)
-- [ ] Add provider docs in `docs/` (terraform-plugin-docs format)
-- [ ] Add minimal per-provider examples in `terraform/examples/` (local, remote, aws) for registry documentation
+- [x] Add provider docs in `docs/` (terraform-plugin-docs format)
+- [x] Add minimal per-provider examples in `examples/` for registry documentation
 - [ ] Publish to Terraform Registry under `cruxdigital-llc/conga`
