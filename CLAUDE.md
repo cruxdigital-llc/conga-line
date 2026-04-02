@@ -6,7 +6,7 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 
 ## Key Context
 
-- **Provider model**: CLI uses a `Provider` interface (`cli/pkg/provider/provider.go`) with three implementations: `localprovider` (Docker CLI/file-based secrets), `remoteprovider` (SSH + Docker on any host), and `awsprovider` (EC2/SSM/Secrets Manager). Commands call `prov.Method()` and work identically on any provider.
+- **Provider model**: CLI uses a `Provider` interface (`pkg/provider/provider.go`) with three implementations: `localprovider` (Docker CLI/file-based secrets), `remoteprovider` (SSH + Docker on any host), and `awsprovider` (EC2/SSM/Secrets Manager). Commands call `prov.Method()` and work identically on any provider.
 - **Local architecture**: Per-agent Docker containers on the local machine. State in `~/.conga/`. No cloud services needed. Slack optional — can run gateway-only (web UI).
 - **Remote architecture**: Per-agent Docker containers on any SSH-accessible host (VPS, bare metal, etc.). State on remote at `/opt/conga/`. Local config in `~/.conga/remote-config.json`. SSH tunneling for gateway access.
 - **AWS architecture**: Single EC2 host (AL2023, ARM64) with per-agent Docker containers in a zero-ingress VPC. Instance sized at ~2GB per agent (e.g. r6g.medium for 3 agents)
@@ -17,12 +17,12 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 
 ## Provider System
 
-- **Provider interface**: `cli/pkg/provider/provider.go` — 17 methods covering identity, agent lifecycle, container ops, secrets, connectivity, environment management, and teardown
-- **Provider registry**: `cli/pkg/provider/registry.go` — `Register(name, factory)` / `Get(name, cfg)`
-- **AWS provider**: `cli/pkg/provider/awsprovider/provider.go` — wraps existing `aws`, `discovery`, `tunnel` packages
-- **Local provider**: `cli/pkg/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
-- **Remote provider**: `cli/pkg/provider/remoteprovider/` — SSH-based Docker operations on any remote host, file-based secrets (mode 0400), SSH tunneling for gateway access, config integrity monitoring
-- **Common package**: `cli/pkg/common/` — shared logic used by all providers: config generation (`GenerateOpenClawConfig`), routing (`GenerateRoutingJSON`), behavior file composition, port allocation, validation
+- **Provider interface**: `pkg/provider/provider.go` — 17 methods covering identity, agent lifecycle, container ops, secrets, connectivity, environment management, and teardown
+- **Provider registry**: `pkg/provider/registry.go` — `Register(name, factory)` / `Get(name, cfg)`
+- **AWS provider**: `pkg/provider/awsprovider/provider.go` — wraps existing `aws`, `discovery`, `tunnel` packages
+- **Local provider**: `pkg/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
+- **Remote provider**: `pkg/provider/remoteprovider/` — SSH-based Docker operations on any remote host, file-based secrets (mode 0400), SSH tunneling for gateway access, config integrity monitoring
+- **Common package**: `pkg/common/` — shared logic used by all providers: config generation (`GenerateOpenClawConfig`), routing (`GenerateRoutingJSON`), behavior file composition, port allocation, validation
 - **Provider selection**: `--provider aws|local|remote` flag, persisted in `~/.conga/config.json` (default: `local`)
 - **Slack is optional**: When no Slack tokens are provided, openclaw.json omits the `channels` section and the agent runs in gateway-only mode. The router is only started when Slack is configured.
 
