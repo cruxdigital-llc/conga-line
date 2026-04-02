@@ -51,12 +51,18 @@ func networkName(agentName string) string {
 // and iptables DROP rules in the DOCKER-USER chain.
 func createNetwork(ctx context.Context, name string) error {
 	_, err := dockerRun(ctx, "network", "create", name, "--driver", "bridge")
+	if err != nil && strings.Contains(err.Error(), "already exists") {
+		return nil
+	}
 	return err
 }
 
 // removeNetwork removes a Docker network.
 func removeNetwork(ctx context.Context, name string) error {
 	_, err := dockerRun(ctx, "network", "rm", name)
+	if err != nil && strings.Contains(err.Error(), "not found") {
+		return nil
+	}
 	return err
 }
 
@@ -158,6 +164,9 @@ type routerContainerOpts struct {
 // stopContainer stops a container.
 func stopContainer(ctx context.Context, name string) error {
 	_, err := dockerRun(ctx, "stop", name)
+	if err != nil && strings.Contains(err.Error(), "No such container") {
+		return nil
+	}
 	return err
 }
 

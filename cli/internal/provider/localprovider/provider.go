@@ -235,6 +235,9 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return fmt.Errorf("failed to write proxy bootstrap: %w", err)
 	}
 
+	// Ensure no stale container exists before starting.
+	removeContainer(ctx, cName) //nolint:errcheck
+
 	egressProxyName := policy.EgressProxyName(cfg.Name)
 	fmt.Printf("Starting container %s...\n", cName)
 	if err := runAgentContainer(ctx, agentContainerOpts{
@@ -622,6 +625,9 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	// Ensure all files are owned by the container user before starting.
 	// Best-effort: chown fails on macOS where uid 1000 doesn't exist (Docker Desktop remaps).
 	exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run() //nolint:errcheck
+
+	// Ensure no stale container exists before starting.
+	removeContainer(ctx, cName) //nolint:errcheck
 
 	refreshEgressProxyName := policy.EgressProxyName(agentName)
 	if err := runAgentContainer(ctx, agentContainerOpts{
@@ -1167,9 +1173,12 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 	proxyName := policy.EgressProxyName(agentName)
 	netName := networkName(agentName)
 
-	// Stop existing proxy if any
+	// Stop and remove existing proxy if any
 	if containerExists(ctx, proxyName) {
-		removeContainer(ctx, proxyName)
+		stopContainer(ctx, proxyName)  //nolint:errcheck // best-effort, may already be stopped
+		if err := removeContainer(ctx, proxyName); err != nil {
+			return fmt.Errorf("removing existing egress proxy %s: %w", proxyName, err)
+		}
 	}
 
 	// Build proxy image if not present or missing Envoy.
@@ -1211,6 +1220,9 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 	if err := os.WriteFile(entrypointPath, []byte(policy.GenerateProxyEntrypoint()), 0555); err != nil {
 		return fmt.Errorf("writing entrypoint: %w", err)
 	}
+
+	// Ensure no stale container exists (belt-and-suspenders — docker rm -f is idempotent).
+	removeContainer(ctx, proxyName) //nolint:errcheck
 
 	// Start Envoy proxy on agent's network.
 	// --entrypoint overrides the default Envoy entrypoint which tries to chown /dev/stdout.
@@ -1255,6 +1267,7 @@ func buildEgressProxyImage(ctx context.Context) error {
 func (p *LocalProvider) stopAgentEgressProxy(ctx context.Context, agentName string) {
 	proxyName := policy.EgressProxyName(agentName)
 	if containerExists(ctx, proxyName) {
+		stopContainer(ctx, proxyName) //nolint:errcheck // best-effort, may already be stopped
 		if err := removeContainer(ctx, proxyName); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: failed to remove egress proxy %s: %v\n", proxyName, err)
 		}
