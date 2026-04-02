@@ -205,7 +205,7 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 	}
 
 	spin := ui.NewSpinner(fmt.Sprintf("Provisioning agent %s...", cfg.Name))
-	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, buf.String(), 180*time.Second)
+	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, buf.String(), 300*time.Second)
 	spin.Stop()
 	if err != nil {
 		return err
@@ -693,6 +693,11 @@ func (p *AWSProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) erro
 		return fmt.Errorf("failed to parse setup manifest: %w", err)
 	}
 
+	// Non-interactive mode: when SetupConfig is provided, use its values for
+	// unset config and skip prompts entirely. This enables Terraform and
+	// programmatic callers to run Setup without a terminal.
+	nonInteractive := cfg != nil
+
 	fmt.Println("Reading setup manifest...")
 	changed := 0
 
@@ -712,6 +717,30 @@ func (p *AWSProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) erro
 			status = "not set"
 		}
 		fmt.Printf("\n[config] %s — %s (%s)\n", key, description, status)
+
+		if nonInteractive {
+			// In non-interactive mode: skip if already set, otherwise use SetupConfig or default
+			if current != "" {
+				continue
+			}
+			value := ""
+			if cfg.Secrets != nil {
+				value = cfg.Secrets[key]
+			}
+			if value == "" {
+				value = manifest.Defaults[key]
+			}
+			if value == "" {
+				fmt.Printf("  Skipped (no value provided)\n")
+				continue
+			}
+			if err := awsutil.PutParameter(ctx, p.clients.SSM, paramName, value); err != nil {
+				return fmt.Errorf("failed to set config %s: %w", key, err)
+			}
+			fmt.Printf("  Saved to SSM: %s\n", paramName)
+			changed++
+			continue
+		}
 
 		if current != "" {
 			if !ui.Confirm("  Update this value?") {
@@ -751,6 +780,27 @@ func (p *AWSProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) erro
 			status = "not set"
 		}
 		fmt.Printf("\n[secret] %s — %s (%s)\n", path, description, status)
+
+		if nonInteractive {
+			// In non-interactive mode: skip if already set
+			if current != "" && current != "REPLACE_ME" {
+				continue
+			}
+			value := ""
+			if cfg.Secrets != nil {
+				value = cfg.Secrets[path]
+			}
+			if value == "" {
+				fmt.Printf("  Skipped (no value provided)\n")
+				continue
+			}
+			if err := awsutil.SetSecret(ctx, p.clients.SecretsManager, path, value); err != nil {
+				return fmt.Errorf("failed to set secret %s: %w", path, err)
+			}
+			fmt.Printf("  Saved to Secrets Manager\n")
+			changed++
+			continue
+		}
 
 		if current != "" && current != "REPLACE_ME" {
 			if !ui.Confirm("  Update this value?") {
