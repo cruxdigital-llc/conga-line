@@ -12,26 +12,23 @@ alert_email   = ""
 
 # --- Agents ---
 # Define your fleet. Key is the agent name.
+# Ports auto-assigned alphabetically from 18789 if omitted.
 agents = {
   aaron = {
-    type         = "user"
-    gateway_port = 18789
-    binding_id   = "UA13HEGTS"   # Slack member ID
+    type       = "user"
+    binding_id = "UA13HEGTS"     # Slack member ID
   }
   zach = {
-    type         = "user"
-    gateway_port = 18791
-    binding_id   = "U01UNLBCWNR"
+    type       = "user"
+    binding_id = "U01UNLBCWNR"
   }
   nathan = {
-    type         = "user"
-    gateway_port = 18793
-    binding_id   = "U05926LNP37"
+    type       = "user"
+    binding_id = "U05926LNP37"
   }
   nextgen-delivery = {
-    type         = "team"
-    gateway_port = 18792
-    binding_id   = "C0AFBSMHQ15" # Slack channel ID
+    type       = "team"
+    binding_id = "C0AFBSMHQ15"  # Slack channel ID
   }
 }
 

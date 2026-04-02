@@ -5,11 +5,11 @@ variable "image" {
 }
 
 variable "agents" {
-  description = "Map of agents to provision. Key is agent name."
+  description = "Map of agents to provision. Key is agent name. Ports auto-assigned alphabetically from 18789 if omitted."
   type = map(object({
-    type         = string # "user" or "team"
-    gateway_port = number
-    binding_id   = string # Slack member ID (user) or channel ID (team)
+    type         = string         # "user" or "team"
+    gateway_port = optional(number) # auto-assigned if null
+    binding_id   = string         # Slack member ID (user) or channel ID (team)
   }))
 }
 

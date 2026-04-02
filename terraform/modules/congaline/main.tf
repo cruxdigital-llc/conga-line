@@ -6,6 +6,17 @@ terraform {
   }
 }
 
+# Compute deterministic port assignments from sorted agent names.
+# Base port is 18789 (common.BaseGatewayPort). Each agent gets the next port
+# in alphabetical order. Explicit gateway_port in the agent map overrides this.
+locals {
+  sorted_agents = sort(keys(var.agents))
+  agent_ports = {
+    for i, name in local.sorted_agents :
+    name => var.agents[name].gateway_port != null ? var.agents[name].gateway_port : 18789 + i
+  }
+}
+
 # Environment setup
 resource "conga_environment" "this" {
   image = var.image
@@ -16,7 +27,7 @@ resource "conga_agent" "this" {
   for_each     = var.agents
   name         = each.key
   type         = each.value.type
-  gateway_port = each.value.gateway_port
+  gateway_port = local.agent_ports[each.key]
   depends_on   = [conga_environment.this]
 }
 

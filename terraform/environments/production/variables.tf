@@ -69,10 +69,10 @@ variable "image" {
 }
 
 variable "agents" {
-  description = "Map of agents to provision"
+  description = "Map of agents to provision. Ports auto-assigned alphabetically from 18789 if omitted."
   type = map(object({
     type         = string
-    gateway_port = number
+    gateway_port = optional(number)
     binding_id   = string
   }))
 }
