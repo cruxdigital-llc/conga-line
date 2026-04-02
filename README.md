@@ -1,6 +1,6 @@
 # CongaLine 🦞🦞🦞
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-%3E%3D1.25.0-00ADD8.svg)](cli/)
+[![Go](https://img.shields.io/badge/Go-%3E%3D1.25.0-00ADD8.svg)](go.mod)
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
 
 <p align="center">
@@ -108,8 +108,7 @@ The fastest way to get running — no AWS account needed.
 ### 1. Build the CLI
 
 ```bash
-cd cli
-go build -o /usr/local/bin/conga .
+go build -o /usr/local/bin/conga ./cmd/conga
 ```
 
 ### 2. Setup local environment
@@ -172,8 +171,7 @@ Docker is installed automatically during setup if not already present.
 ### 1. Build the CLI
 
 ```bash
-cd cli
-go build -o /usr/local/bin/conga .
+go build -o /usr/local/bin/conga ./cmd/conga
 ```
 
 ### 2. Setup remote environment
@@ -568,41 +566,41 @@ For developers building and testing the `conga` CLI locally.
 ### Build and run
 
 ```bash
-cd cli
-go build -o conga .
+go build -o conga ./cmd/conga
 ./conga auth status --provider local
 ```
 
 ### Project structure
 
 ```
-cli/
-├── cmd/                        # Cobra command definitions
+├── cmd/conga/                  # Binary entry point
 ├── internal/
-│   ├── aws/                    # AWS SDK wrappers
+│   ├── cmd/                    # Cobra command definitions (CLI interface)
+│   └── mcpserver/              # MCP server (AI agent interface)
+├── pkg/                        # Public library (importable by external modules)
+│   ├── provider/               # Provider interface & registry
+│   │   ├── awsprovider/        # AWS implementation (EC2, SSM, Secrets Manager)
+│   │   ├── remoteprovider/     # Remote SSH implementation
+│   │   ├── localprovider/      # Local Docker implementation
+│   │   └── iptables/           # iptables rule generation for egress enforcement
+│   ├── policy/                 # Portable policy schema, validation, enforcement
+│   ├── channels/               # Channel abstraction & platform integrations
+│   │   └── slack/              # Slack channel implementation
 │   ├── common/                 # Shared logic (config gen, routing, validation)
+│   ├── aws/                    # AWS SDK wrappers
 │   ├── discovery/              # Agent & identity resolution (AWS)
 │   ├── manifest/               # YAML manifest parsing for conga bootstrap
-│   ├── mcpserver/              # MCP server (AI agent integration)
-│   ├── policy/                 # Portable policy schema, validation, enforcement reporting
-│   ├── provider/               # Provider interface & registry
-│   │   ├── awsprovider/        # AWS provider implementation
-│   │   ├── remoteprovider/    # Remote (SSH) provider implementation
-│   │   └── localprovider/      # Local Docker provider implementation
 │   ├── tunnel/                 # SSM port forwarding
 │   └── ui/                     # Spinners, prompts, tables
 ├── scripts/                    # Embedded shell templates (AWS remote execution)
-├── main.go
-├── go.mod
-└── go.sum
-
-deploy/
-└── egress-proxy/               # Envoy proxy for HTTPS/HTTP domain-filtered egress
-
-terraform/                      # AWS infrastructure (VPC, EC2, IAM, etc.)
-router/                         # Slack event router (Node.js)
-behavior/                       # Agent personality files (SOUL.md, etc.)
+├── go.mod                      # module github.com/cruxdigital-llc/conga-line
+├── terraform/                  # AWS infrastructure (VPC, EC2, IAM, etc.)
+├── deploy/egress-proxy/        # Envoy proxy for domain-filtered egress
+├── router/                     # Slack event router (Node.js)
+└── behavior/                   # Agent personality files (SOUL.md, etc.)
 ```
+
+**Module boundary:** `pkg/` is the public API — external modules (like `terraform-provider-conga`) import these packages. `internal/` holds interface layers (CLI, MCP server) that only the `conga` binary uses.
 
 ## License
 

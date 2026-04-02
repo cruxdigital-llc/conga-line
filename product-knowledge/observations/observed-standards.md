@@ -81,11 +81,11 @@
 
 ### 2026-04-01 - Internal package stays internal — new binaries must be in-module
 - **Source**: Implementation constraint — Go `internal/` visibility rule forced restructuring
-- **Context**: Terraform provider spec called for a separate Go module (`terraform-provider-conga/`), but Go prohibits importing `internal/` packages from external modules. Restructured to `cli/pkg/tfprovider/` with `cli/cmd/terraform-provider-conga/` entry point.
-- **Proposed Standard**: "New binaries that need access to `cli/pkg/` must live within the CLI module as `cli/cmd/<binary-name>/`, not as separate Go modules."
+- **Context**: Terraform provider spec called for a separate Go module (`terraform-provider-conga/`), but Go prohibits importing `internal/` packages from external modules. Resolved by moving `go.mod` to repo root and splitting into `pkg/` (public, importable) and `internal/` (private to conga binary). External modules import `pkg/` directly.
+- **Proposed Standard**: "Public library code lives in `pkg/`. Interface-specific code (CLI, MCP) lives in `internal/`. External modules import `pkg/` packages via the root module `github.com/cruxdigital-llc/conga-line`."
 - **Suggested Severity**: must
 - **Confidence**: High
-- **Status**: pending
+- **Status**: promoted — formalized as "Module Structure" standard in `architecture.md`
 
 ### 2026-03-28 - CLI changes must be represented across all interfaces
 - **Source**: User explicit statement — "Any changes to the CLI should support both human (arg) and agent (json) i/o as well as be represented in the MCP layer"

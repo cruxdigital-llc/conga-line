@@ -20,14 +20,11 @@ User Interfaces:  CLI  |  MCP Server  |  Terraform Provider
 
 ## Module Structure
 
-Located within the CLI module at `cli/pkg/terraform/` (not a separate Go module — Go's `internal/` visibility rules prevent external modules from importing the Provider interface). Binary entry point at `cli/cmd/terraform-provider-conga/`.
-
-Terraform modules for composable deployments at `terraform/modules/congaline/`.
+The Terraform provider lives in a separate repo (`terraform-provider-conga/`) and imports the shared library from the root module (`github.com/cruxdigital-llc/conga-line`). The shared `pkg/` packages (provider, policy, channels, common) are public API.
 
 ```
-cli/
-  cmd/terraform-provider-conga/
-    main.go                  # plugin server entry point
+terraform-provider-conga/   # separate repo
+  main.go                   # plugin server entry point
   internal/terraform/
     provider.go              # terraform-plugin-framework provider
     environment_resource.go  # conga_environment
@@ -36,7 +33,7 @@ cli/
     channel_resource.go      # conga_channel
     binding_resource.go      # conga_channel_binding
     policy_resource.go       # conga_policy
-  go.mod
+  go.mod                     # requires github.com/cruxdigital-llc/conga-line
   go.sum
 ```
 
@@ -87,10 +84,10 @@ Maps to `provider.Get(providerType, cfg)`.
 ## Key Import Paths
 
 ```go
-import "github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
-import "github.com/cruxdigital-llc/conga-line/cli/pkg/policy"
-import "github.com/cruxdigital-llc/conga-line/cli/pkg/channels"
-import "github.com/cruxdigital-llc/conga-line/cli/pkg/common"
+import "github.com/cruxdigital-llc/conga-line/pkg/provider"
+import "github.com/cruxdigital-llc/conga-line/pkg/policy"
+import "github.com/cruxdigital-llc/conga-line/pkg/channels"
+import "github.com/cruxdigital-llc/conga-line/pkg/common"
 ```
 
 ## Reference: Provider Interface Methods Used
