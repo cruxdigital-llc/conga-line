@@ -12,12 +12,15 @@ func TestValidateBinding_User(t *testing.T) {
 		id      string
 		wantErr bool
 	}{
-		{"U0123456789", false},
-		{"UABCDEFGHIJ", false},
-		{"C0123456789", true},  // channel ID, not member
-		{"U012345678", true},   // too short
-		{"U01234567890", true}, // too long
-		{"u0123456789", true},  // lowercase
+		{"U0123456789", false},  // 10 chars
+		{"UABCDEFGHIJ", false},  // 10 chars
+		{"UA13HEGTS", false},    // 8 chars (older workspace)
+		{"U012345678", false},   // 9 chars
+		{"U01234567890", false}, // 11 chars
+		{"C0123456789", true},   // channel ID, not member
+		{"U01234", true},        // too short (< 8)
+		{"U0123456789ABC", true}, // too long (> 12)
+		{"u0123456789", true},   // lowercase
 		{"", true},
 	}
 	for _, tt := range tests {
@@ -36,12 +39,15 @@ func TestValidateBinding_Team(t *testing.T) {
 		id      string
 		wantErr bool
 	}{
-		{"C0123456789", false},
-		{"CABCDEFGHIJ", false},
-		{"U0123456789", true},  // member ID, not channel
-		{"C012345678", true},   // too short
-		{"C01234567890", true}, // too long
-		{"c0123456789", true},  // lowercase
+		{"C0123456789", false},  // 10 chars
+		{"CABCDEFGHIJ", false},  // 10 chars
+		{"C0AQG67NPG9", false},  // 10 chars (real workspace ID)
+		{"C012345678", false},   // 9 chars
+		{"C01234567890", false}, // 11 chars
+		{"U0123456789", true},   // member ID, not channel
+		{"C01234", true},        // too short (< 8)
+		{"C0123456789ABC", true}, // too long (> 12)
+		{"c0123456789", true},   // lowercase
 		{"", true},
 	}
 	for _, tt := range tests {

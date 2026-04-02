@@ -13,8 +13,8 @@ func init() {
 }
 
 var (
-	memberIDPattern  = regexp.MustCompile(`^U[A-Z0-9]{10}$`)
-	channelIDPattern = regexp.MustCompile(`^C[A-Z0-9]{10}$`)
+	memberIDPattern  = regexp.MustCompile(`^U[A-Z0-9]{8,12}$`)
+	channelIDPattern = regexp.MustCompile(`^C[A-Z0-9]{8,12}$`)
 )
 
 // Slack implements the channels.Channel interface.
@@ -26,11 +26,11 @@ func (s *Slack) ValidateBinding(agentType, id string) error {
 	switch agentType {
 	case "user":
 		if !memberIDPattern.MatchString(id) {
-			return fmt.Errorf("invalid Slack member ID %q: must match U + 10 alphanumeric chars (e.g., U0123456789)", id)
+			return fmt.Errorf("invalid Slack member ID %q: must match U + 8-12 alphanumeric chars (e.g., U0123456789)", id)
 		}
 	case "team":
 		if !channelIDPattern.MatchString(id) {
-			return fmt.Errorf("invalid Slack channel ID %q: must match C + 10 alphanumeric chars (e.g., C0123456789)", id)
+			return fmt.Errorf("invalid Slack channel ID %q: must match C + 8-12 alphanumeric chars (e.g., C0123456789)", id)
 		}
 	}
 	return nil

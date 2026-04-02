@@ -407,7 +407,10 @@ if [ ! -f /opt/conga/config/router.env ]; then
   exit 0
 fi
 
-# Remove old router
+# Stop and remove old router — retry to handle Docker name release race
+docker stop conga-router 2>/dev/null || true
+docker rm -f conga-router 2>/dev/null || true
+sleep 1
 docker rm -f conga-router 2>/dev/null || true
 
 # Install npm deps if needed
@@ -423,7 +426,7 @@ docker run -d \
   --security-opt no-new-privileges \
   --memory 256m \
   -v /opt/conga/router:/app:ro \
-  -v /opt/conga/config/routing.json:/app/routing.json:ro \
+  -v /opt/conga/config/routing.json:/opt/conga/config/routing.json:ro \
   node:20-alpine node /app/src/index.js
 
 # Connect router to each agent's Docker network
