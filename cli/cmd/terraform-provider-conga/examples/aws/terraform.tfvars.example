@@ -1,9 +1,0 @@
-# AWS Configuration
-aws_region  = "us-east-2"
-aws_profile = "openclaw"
-
-# Secrets — set these to real values in terraform.tfvars (gitignored)
-anthropic_api_key    = ""
-slack_bot_token      = ""
-slack_signing_secret = ""
-slack_app_token      = ""
