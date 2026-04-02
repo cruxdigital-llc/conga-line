@@ -18,7 +18,7 @@ terraform/environments/*/backend.tf
 # Build artifacts
 dist/
 bin/
-conga
+/conga
 
 # MCP config (user-specific)
 .mcp.json
