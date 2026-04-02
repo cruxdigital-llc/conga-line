@@ -1,6 +1,6 @@
 <!--
 GLaDOS-MANAGED DOCUMENT
-Last Updated: 2026-03-25
+Last Updated: 2026-04-02
 To modify: Edit directly.
 -->
 
@@ -43,19 +43,30 @@ To modify: Edit directly.
 | CLI | Go 1.25+ with Cobra, provider-based architecture |
 | Policy | YAML (`conga-policy.yaml`) via `gopkg.in/yaml.v3` |
 
-## CLI Architecture
+## Go Module Architecture
+
+Module: `github.com/cruxdigital-llc/conga-line` (go.mod at repo root)
+
+### Public library (`pkg/`) — importable by external modules
 | Package | Purpose |
 |---|---|
-| `cli/pkg/provider/` | Provider interface (17+ methods), registry, config |
-| `cli/pkg/provider/awsprovider/` | AWS implementation (wraps SSM, Secrets Manager, EC2, STS) |
-| `cli/pkg/provider/localprovider/` | Local Docker implementation (Docker CLI, file secrets) |
-| `cli/pkg/provider/remoteprovider/` | Remote SSH implementation (SSH + Docker CLI, file secrets, tunneling) |
-| `cli/pkg/policy/` | Portable policy schema: YAML parsing, validation, enforcement reporting |
-| `cli/pkg/common/` | Shared logic: config gen, routing, behavior composition, validation |
-| `cli/pkg/aws/` | AWS SDK wrappers and interfaces |
-| `cli/pkg/discovery/` | Agent and identity resolution (AWS) |
-| `cli/pkg/tunnel/` | SSM port forwarding (AWS) |
-| `cli/pkg/ui/` | Spinners, prompts, tables, JSON output |
+| `pkg/provider/` | Provider interface (17+ methods), registry, config |
+| `pkg/provider/awsprovider/` | AWS implementation (wraps SSM, Secrets Manager, EC2, STS) |
+| `pkg/provider/localprovider/` | Local Docker implementation (Docker CLI, file secrets) |
+| `pkg/provider/remoteprovider/` | Remote SSH implementation (SSH + Docker CLI, file secrets, tunneling) |
+| `pkg/policy/` | Portable policy schema: YAML parsing, validation, enforcement reporting |
+| `pkg/channels/` | Channel abstraction, registry, platform integrations |
+| `pkg/common/` | Shared logic: config gen, routing, behavior composition, validation |
+| `pkg/aws/` | AWS SDK wrappers and interfaces |
+| `pkg/discovery/` | Agent and identity resolution (AWS) |
+| `pkg/tunnel/` | SSM port forwarding (AWS) |
+| `pkg/ui/` | Spinners, prompts, tables, JSON output |
+
+### Internal interfaces (`internal/`) — private to the conga binary
+| Package | Purpose |
+|---|---|
+| `internal/cmd/` | CLI commands (Cobra), flag parsing, user interaction |
+| `internal/mcpserver/` | MCP server for AI agent integration |
 
 ## No Frontend / No Backend / No Database
 This is a pure infrastructure project. There is no application code to write — OpenClaw is consumed as a Docker image. The deliverable is Terraform configuration + bootstrap scripts + a Go CLI with pluggable deployment providers and a portable policy artifact.
