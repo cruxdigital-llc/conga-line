@@ -43,6 +43,17 @@ type policyResourceModel struct {
 
 	// Routing
 	RoutingDefaultModel types.String `tfsdk:"routing_default_model"`
+
+	// Per-agent overrides
+	AgentOverrides []agentOverrideModel `tfsdk:"agent_override"`
+}
+
+type agentOverrideModel struct {
+	Name                 types.String `tfsdk:"name"`
+	EgressMode           types.String `tfsdk:"egress_mode"`
+	EgressAllowedDomains types.List   `tfsdk:"egress_allowed_domains"`
+	EgressBlockedDomains types.List   `tfsdk:"egress_blocked_domains"`
+	RoutingDefaultModel  types.String `tfsdk:"routing_default_model"`
 }
 
 func NewPolicyResource() resource.Resource {
@@ -105,6 +116,37 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"routing_default_model": schema.StringAttribute{
 				Optional:    true,
 				Description: "Default model for agent routing.",
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"agent_override": schema.ListNestedBlock{
+				Description: "Per-agent policy overrides. Each block replaces (not merges) the corresponding global section for that agent.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"name": schema.StringAttribute{
+							Required:    true,
+							Description: "Agent name to override policy for.",
+						},
+						"egress_mode": schema.StringAttribute{
+							Optional:    true,
+							Description: `Egress mode override: "enforce" or "validate".`,
+						},
+						"egress_allowed_domains": schema.ListAttribute{
+							Optional:    true,
+							ElementType: types.StringType,
+							Description: "Allowed domains override for this agent.",
+						},
+						"egress_blocked_domains": schema.ListAttribute{
+							Optional:    true,
+							ElementType: types.StringType,
+							Description: "Blocked domains override for this agent.",
+						},
+						"routing_default_model": schema.StringAttribute{
+							Optional:    true,
+							Description: "Default model override for this agent.",
+						},
+					},
+				},
 			},
 		},
 	}
@@ -279,6 +321,41 @@ func (r *policyResource) buildPolicyFile(ctx context.Context, model policyResour
 		}
 	}
 
+	// Per-agent overrides
+	if len(model.AgentOverrides) > 0 {
+		pf.Agents = make(map[string]*policy.AgentOverride, len(model.AgentOverrides))
+		for _, ao := range model.AgentOverrides {
+			name := ao.Name.ValueString()
+			override := &policy.AgentOverride{}
+
+			hasEgressOverride := !ao.EgressMode.IsNull() || !ao.EgressAllowedDomains.IsNull() || !ao.EgressBlockedDomains.IsNull()
+			if hasEgressOverride {
+				override.Egress = &policy.EgressPolicy{}
+				if !ao.EgressMode.IsNull() {
+					override.Egress.Mode = policy.EgressMode(ao.EgressMode.ValueString())
+				}
+				if !ao.EgressAllowedDomains.IsNull() {
+					var domains []string
+					diags.Append(ao.EgressAllowedDomains.ElementsAs(ctx, &domains, false)...)
+					override.Egress.AllowedDomains = domains
+				}
+				if !ao.EgressBlockedDomains.IsNull() {
+					var domains []string
+					diags.Append(ao.EgressBlockedDomains.ElementsAs(ctx, &domains, false)...)
+					override.Egress.BlockedDomains = domains
+				}
+			}
+
+			if !ao.RoutingDefaultModel.IsNull() {
+				override.Routing = &policy.RoutingPolicy{
+					DefaultModel: ao.RoutingDefaultModel.ValueString(),
+				}
+			}
+
+			pf.Agents[name] = override
+		}
+	}
+
 	return pf
 }
 
@@ -329,6 +406,48 @@ func (r *policyResource) readPolicyToState(ctx context.Context, pf *policy.Polic
 		state.RoutingDefaultModel = stringOrNull(pf.Routing.DefaultModel)
 	} else {
 		state.RoutingDefaultModel = types.StringNull()
+	}
+
+	// Per-agent overrides
+	if len(pf.Agents) > 0 {
+		state.AgentOverrides = make([]agentOverrideModel, 0, len(pf.Agents))
+		for name, override := range pf.Agents {
+			if override == nil {
+				continue
+			}
+			ao := agentOverrideModel{
+				Name: types.StringValue(name),
+			}
+			if override.Egress != nil {
+				ao.EgressMode = stringOrNull(string(override.Egress.Mode))
+				if len(override.Egress.AllowedDomains) > 0 {
+					list, d := types.ListValueFrom(ctx, types.StringType, override.Egress.AllowedDomains)
+					diags.Append(d...)
+					ao.EgressAllowedDomains = list
+				} else {
+					ao.EgressAllowedDomains = types.ListNull(types.StringType)
+				}
+				if len(override.Egress.BlockedDomains) > 0 {
+					list, d := types.ListValueFrom(ctx, types.StringType, override.Egress.BlockedDomains)
+					diags.Append(d...)
+					ao.EgressBlockedDomains = list
+				} else {
+					ao.EgressBlockedDomains = types.ListNull(types.StringType)
+				}
+			} else {
+				ao.EgressMode = types.StringNull()
+				ao.EgressAllowedDomains = types.ListNull(types.StringType)
+				ao.EgressBlockedDomains = types.ListNull(types.StringType)
+			}
+			if override.Routing != nil {
+				ao.RoutingDefaultModel = stringOrNull(override.Routing.DefaultModel)
+			} else {
+				ao.RoutingDefaultModel = types.StringNull()
+			}
+			state.AgentOverrides = append(state.AgentOverrides, ao)
+		}
+	} else {
+		state.AgentOverrides = nil
 	}
 }
 
