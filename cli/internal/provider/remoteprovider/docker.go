@@ -40,12 +40,18 @@ func networkName(agentName string) string {
 // and iptables DROP rules in the DOCKER-USER chain.
 func (p *RemoteProvider) createNetwork(ctx context.Context, name string) error {
 	_, err := p.ssh.Run(ctx, "docker network create "+shellQuote(name)+" --driver bridge")
+	if err != nil && strings.Contains(err.Error(), "already exists") {
+		return nil
+	}
 	return err
 }
 
 // removeNetwork removes a Docker network on the remote host.
 func (p *RemoteProvider) removeNetwork(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "network", "rm", name)
+	if err != nil && strings.Contains(err.Error(), "not found") {
+		return nil
+	}
 	return err
 }
 
@@ -148,12 +154,18 @@ func (p *RemoteProvider) runRouterContainer(ctx context.Context, opts routerCont
 // stopContainer stops a container on the remote host.
 func (p *RemoteProvider) stopContainer(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "stop", name)
+	if err != nil && strings.Contains(err.Error(), "No such container") {
+		return nil
+	}
 	return err
 }
 
 // removeContainer removes a container on the remote host.
 func (p *RemoteProvider) removeContainer(ctx context.Context, name string) error {
 	_, err := p.dockerRun(ctx, "rm", "-f", name)
+	if err != nil && (strings.Contains(err.Error(), "No such container") || strings.Contains(err.Error(), "already in progress")) {
+		return nil
+	}
 	return err
 }
 

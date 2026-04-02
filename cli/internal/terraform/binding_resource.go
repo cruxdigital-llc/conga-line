@@ -3,6 +3,7 @@ package terraform
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -105,8 +106,11 @@ func (r *channelBindingResource) Create(ctx context.Context, req resource.Create
 
 	agentName := plan.Agent.ValueString()
 	if err := r.prov.BindChannel(ctx, agentName, binding); err != nil {
-		resp.Diagnostics.AddError("Failed to bind channel", err.Error())
-		return
+		// If binding already exists, treat as success (idempotent create).
+		if !strings.Contains(err.Error(), "already has a") {
+			resp.Diagnostics.AddError("Failed to bind channel", err.Error())
+			return
+		}
 	}
 
 	plan.ID = types.StringValue(agentName + "/" + binding.Platform)

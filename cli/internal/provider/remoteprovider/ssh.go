@@ -3,6 +3,8 @@ package remoteprovider
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -191,8 +193,11 @@ func (c *SSHClient) Upload(path string, content []byte, perm os.FileMode) error 
 	dir := posixpath.Dir(path)
 	sftpClient.MkdirAll(dir)
 
-	// Atomic write: temp file + rename
-	tmpPath := path + ".tmp"
+	// Atomic write: temp file with unique suffix + rename.
+	// Unique suffix prevents races when multiple uploads target the same path concurrently.
+	var suffix [4]byte
+	rand.Read(suffix[:])
+	tmpPath := path + ".tmp." + hex.EncodeToString(suffix[:])
 	f, err := sftpClient.Create(tmpPath)
 	if err != nil {
 		return fmt.Errorf("failed to create remote file %s: %w", tmpPath, err)

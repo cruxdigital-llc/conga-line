@@ -3,6 +3,7 @@ package terraform
 import (
 	"context"
 
+	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -65,8 +66,9 @@ func (r *agentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 			"gateway_port": schema.Int64Attribute{
+				Optional:    true,
 				Computed:    true,
-				Description: "Allocated gateway port on the host.",
+				Description: "Gateway port on the host. Auto-assigned if omitted.",
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
 				},
@@ -90,9 +92,23 @@ func (r *agentResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
+	// Use explicit port if provided, otherwise auto-assign.
+	var port int
+	if !plan.GatewayPort.IsNull() && !plan.GatewayPort.IsUnknown() {
+		port = int(plan.GatewayPort.ValueInt64())
+	} else {
+		existing, err := r.prov.ListAgents(ctx)
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to list agents for port assignment", err.Error())
+			return
+		}
+		port = common.NextAvailablePort(existing)
+	}
+
 	cfg := congaprovider.AgentConfig{
-		Name: plan.Name.ValueString(),
-		Type: congaprovider.AgentType(plan.Type.ValueString()),
+		Name:        plan.Name.ValueString(),
+		Type:        congaprovider.AgentType(plan.Type.ValueString()),
+		GatewayPort: port,
 	}
 
 	if err := r.prov.ProvisionAgent(ctx, cfg); err != nil {

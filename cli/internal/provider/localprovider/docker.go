@@ -173,6 +173,9 @@ func stopContainer(ctx context.Context, name string) error {
 // removeContainer removes a container.
 func removeContainer(ctx context.Context, name string) error {
 	_, err := dockerRun(ctx, "rm", "-f", name)
+	if err != nil && (strings.Contains(err.Error(), "No such container") || strings.Contains(err.Error(), "already in progress")) {
+		return nil
+	}
 	return err
 }
 

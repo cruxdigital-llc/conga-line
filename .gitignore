@@ -15,6 +15,10 @@ cli/conga
 cli/dist/
 bin/
 
+# Terraform provider binary and secrets
+cli/cmd/terraform-provider-conga/terraform-provider-conga
+terraform.tfvars
+
 # MCP config (user-specific)
 .mcp.json
 .mcp.json.*

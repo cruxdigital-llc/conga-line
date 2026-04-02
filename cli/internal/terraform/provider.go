@@ -16,6 +16,9 @@ import (
 	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/awsprovider"
 	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/localprovider"
 	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/remoteprovider"
+
+	// Register all channel implementations so AddChannel() can find them.
+	_ "github.com/cruxdigital-llc/conga-line/cli/internal/channels/slack"
 )
 
 var _ provider.Provider = &congaProvider{}
