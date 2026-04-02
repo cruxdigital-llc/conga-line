@@ -46,9 +46,6 @@ jobs:
   terraform:
     name: Terraform Validate
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: terraform
     steps:
       - uses: actions/checkout@v4
 
@@ -58,9 +55,12 @@ jobs:
 
       - name: Format check
         run: terraform fmt -check -recursive
+        working-directory: terraform
 
-      - name: Init (backend disabled)
+      - name: Init infrastructure module
         run: terraform init -backend=false
+        working-directory: terraform/modules/infrastructure
 
-      - name: Validate
+      - name: Validate infrastructure module
         run: terraform validate
+        working-directory: terraform/modules/infrastructure
