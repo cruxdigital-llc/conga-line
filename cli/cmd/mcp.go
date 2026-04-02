@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/mcpserver"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/pkg/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/mcpserver"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

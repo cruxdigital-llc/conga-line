@@ -53,8 +53,8 @@ No violations. No blocking issues.
   - `terraform/variables.tf`, `terraform/data.tf`, `terraform/outputs.tf`
   - `terraform/router.tf`, `terraform/compute.tf`, `terraform/user-data-shim.sh.tftpl`, `terraform/user-data.sh.tftpl`
   - `terraform/bootstrap.sh`, `terraform/populate-secrets.sh`
-  - `cli/internal/config/config.go`, `cli/cmd/init.go` (new), `cli/cmd/root.go`
-  - `cli/cmd/admin.go`, `cli/cmd/refresh.go`, `cli/internal/ui/prompt.go`
+  - `cli/pkg/config/config.go`, `cli/cmd/init.go` (new), `cli/cmd/root.go`
+  - `cli/cmd/admin.go`, `cli/cmd/refresh.go`, `cli/pkg/ui/prompt.go`
   - `cli/scripts/add-user.sh.tmpl`, `cli/scripts/refresh-user.sh.tmpl`
   - `README.md` (rewritten), `cli/README.md` (deleted), `CLAUDE.md`, `product-knowledge/ROADMAP.md`
   - `git rm --cached terraform/backend.tf`

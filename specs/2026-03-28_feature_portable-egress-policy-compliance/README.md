@@ -33,10 +33,10 @@
 ### 2026-03-28 — Implementation Complete
 
 **Modified Files**:
-- `cli/internal/policy/policy.go` — Added `normalizeDefaults()` to resolve empty mode to `enforce`, updated mode comment
-- `cli/internal/policy/enforcement.go` — Unified `egressReport()` to be mode-driven for all providers
-- `cli/internal/policy/policy_test.go` — Added 4 new tests: AWSValidate, RemoteValidate, DefaultModeIsEnforce, DefaultModeAgentOverride
-- `cli/internal/provider/remoteprovider/provider.go` — Updated ProvisionAgent, RefreshAgent, ensureEgressIptables to check mode
+- `cli/pkg/policy/policy.go` — Added `normalizeDefaults()` to resolve empty mode to `enforce`, updated mode comment
+- `cli/pkg/policy/enforcement.go` — Unified `egressReport()` to be mode-driven for all providers
+- `cli/pkg/policy/policy_test.go` — Added 4 new tests: AWSValidate, RemoteValidate, DefaultModeIsEnforce, DefaultModeAgentOverride
+- `cli/pkg/provider/remoteprovider/provider.go` — Updated ProvisionAgent, RefreshAgent, ensureEgressIptables to check mode
 - `terraform/user-data.sh.tftpl` — Added mode parsing to generate_egress_conf(), iptables DROP rules in bootstrap + systemd unit hooks + agent removal cleanup
 - `cli/scripts/refresh-user.sh.tmpl` — Added iptables re-application after refresh
 - `conga-policy.yaml.example` — Updated default to enforce, fixed comment
@@ -74,16 +74,16 @@
 **Trigger**: During remote provider E2E testing, user discovered that agents with no policy had no egress proxy — unrestricted outbound access. Requested secure-by-default: proxy always deploys, deny-all when no policy.
 
 **Modified Files**:
-- `cli/internal/policy/egress.go` — `GenerateProxyConf` always emits Lua filter (empty allowlist = deny all)
-- `cli/internal/provider/localprovider/provider.go` — Removed `egressPolicy != nil` gates in ProvisionAgent and RefreshAgent
-- `cli/internal/provider/remoteprovider/provider.go` — Same changes for remote provider
-- `cli/internal/provider/awsprovider/provider.go` — ProvisionAgent now generates egress config, passes to scripts
+- `cli/pkg/policy/egress.go` — `GenerateProxyConf` always emits Lua filter (empty allowlist = deny all)
+- `cli/pkg/provider/localprovider/provider.go` — Removed `egressPolicy != nil` gates in ProvisionAgent and RefreshAgent
+- `cli/pkg/provider/remoteprovider/provider.go` — Same changes for remote provider
+- `cli/pkg/provider/awsprovider/provider.go` — ProvisionAgent now generates egress config, passes to scripts
 - `cli/scripts/add-user.sh.tmpl` — Deploys egress proxy + iptables during provisioning
 - `cli/scripts/add-team.sh.tmpl` — Same
-- `cli/internal/mcpserver/tools_policy.go` — toolPolicyDeploy deploys to all agents including empty domains
+- `cli/pkg/mcpserver/tools_policy.go` — toolPolicyDeploy deploys to all agents including empty domains
 - `terraform/user-data.sh.tftpl` — Generates deny-all config when no policy file exists
-- `cli/internal/policy/egress_test.go` — 4 new tests: deny-all nil, deny-all empty, enforce mode assertion, all-blocked
-- `cli/internal/mcpserver/tools_policy_test.go` — Mock captures config/mode, deploy test verifies deny-all
+- `cli/pkg/policy/egress_test.go` — 4 new tests: deny-all nil, deny-all empty, enforce mode assertion, all-blocked
+- `cli/pkg/mcpserver/tools_policy_test.go` — Mock captures config/mode, deploy test verifies deny-all
 - `cli/scripts/scripts_test.go` — 2 new tests: add-user and add-team template rendering with egress fields
 - `product-knowledge/standards/architecture.md` — Principle 4 updated: "Secure by default, open by policy"
 - `DEMO.md` — Updated demo flow: agents start locked down, policy opens them up

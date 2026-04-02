@@ -73,13 +73,13 @@
 - `specs/2026-03-25_feature_egress-allowlist/plan.md` — created
 - `specs/2026-03-25_feature_egress-allowlist/spec.md` — created
 - `specs/2026-03-25_feature_egress-allowlist/tasks.md` — created
-- `cli/internal/policy/egress.go` — created (LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateProxyConf, EgressProxyDockerfile)
-- `cli/internal/policy/egress_test.go` — created (11 unit tests)
-- `cli/internal/policy/enforcement.go` — modified (remote egress now Enforced, not Partial)
-- `cli/internal/policy/policy_test.go` — modified (updated remote enforcement test)
-- `cli/internal/provider/localprovider/docker.go` — modified (EgressEnforce/EgressProxyName on opts, proxy env vars)
-- `cli/internal/provider/localprovider/provider.go` — modified (policy loading in ProvisionAgent/RefreshAgent, startAgentEgressProxy, stopAgentEgressProxy, RemoveAgent cleanup)
-- `cli/internal/provider/remoteprovider/docker.go` — modified (same opts extension)
-- `cli/internal/provider/remoteprovider/provider.go` — modified (policy loading, startAgentEgressProxy/stopAgentEgressProxy via SSH)
+- `cli/pkg/policy/egress.go` — created (LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateProxyConf, EgressProxyDockerfile)
+- `cli/pkg/policy/egress_test.go` — created (11 unit tests)
+- `cli/pkg/policy/enforcement.go` — modified (remote egress now Enforced, not Partial)
+- `cli/pkg/policy/policy_test.go` — modified (updated remote enforcement test)
+- `cli/pkg/provider/localprovider/docker.go` — modified (EgressEnforce/EgressProxyName on opts, proxy env vars)
+- `cli/pkg/provider/localprovider/provider.go` — modified (policy loading in ProvisionAgent/RefreshAgent, startAgentEgressProxy, stopAgentEgressProxy, RemoveAgent cleanup)
+- `cli/pkg/provider/remoteprovider/docker.go` — modified (same opts extension)
+- `cli/pkg/provider/remoteprovider/provider.go` — modified (policy loading, startAgentEgressProxy/stopAgentEgressProxy via SSH)
 - `terraform/user-data.sh.tftpl` — modified (per-agent proxy section in setup_agent_common)
 - `product-knowledge/standards/security.md` — modified (enforcement escalation table updated)

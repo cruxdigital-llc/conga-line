@@ -25,11 +25,11 @@
 
 | File | Action | Description |
 |---|---|---|
-| `cli/internal/policy/mutate.go` | **New** | `Save`, `SetEgress`, `SetRouting`, `SetPosture`, `ensureAgentOverride` |
-| `cli/internal/policy/mutate_test.go` | **New** | 11 unit tests for mutation helpers |
-| `cli/internal/mcpserver/tools_policy.go` | **New** | 7 MCP tools + `policyPath`, `loadPolicy`, `getStringSlice`, `getCostLimits` helpers |
-| `cli/internal/mcpserver/tools_policy_test.go` | **New** | 16 MCP tool tests with policy file fixtures |
-| `cli/internal/mcpserver/tools.go` | **Edit** | Registered 7 policy tools in `registerTools()` |
+| `cli/pkg/policy/mutate.go` | **New** | `Save`, `SetEgress`, `SetRouting`, `SetPosture`, `ensureAgentOverride` |
+| `cli/pkg/policy/mutate_test.go` | **New** | 11 unit tests for mutation helpers |
+| `cli/pkg/mcpserver/tools_policy.go` | **New** | 7 MCP tools + `policyPath`, `loadPolicy`, `getStringSlice`, `getCostLimits` helpers |
+| `cli/pkg/mcpserver/tools_policy_test.go` | **New** | 16 MCP tool tests with policy file fixtures |
+| `cli/pkg/mcpserver/tools.go` | **Edit** | Registered 7 policy tools in `registerTools()` |
 
 ## Test Results
 

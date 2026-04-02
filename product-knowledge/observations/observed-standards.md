@@ -81,8 +81,8 @@
 
 ### 2026-04-01 - Internal package stays internal — new binaries must be in-module
 - **Source**: Implementation constraint — Go `internal/` visibility rule forced restructuring
-- **Context**: Terraform provider spec called for a separate Go module (`terraform-provider-conga/`), but Go prohibits importing `internal/` packages from external modules. Restructured to `cli/internal/tfprovider/` with `cli/cmd/terraform-provider-conga/` entry point.
-- **Proposed Standard**: "New binaries that need access to `cli/internal/` must live within the CLI module as `cli/cmd/<binary-name>/`, not as separate Go modules."
+- **Context**: Terraform provider spec called for a separate Go module (`terraform-provider-conga/`), but Go prohibits importing `internal/` packages from external modules. Restructured to `cli/pkg/tfprovider/` with `cli/cmd/terraform-provider-conga/` entry point.
+- **Proposed Standard**: "New binaries that need access to `cli/pkg/` must live within the CLI module as `cli/cmd/<binary-name>/`, not as separate Go modules."
 - **Suggested Severity**: must
 - **Confidence**: High
 - **Status**: pending

@@ -66,15 +66,15 @@
 All 6 phases completed. 24/24 tasks done.
 
 #### New Files Created
-- `cli/internal/ui/json_mode.go` — JSON mode state, `SetJSONMode`, typed getters (`GetString`, `GetInt`, `GetBool`), `*J` prompt variants (`TextPromptJ`, `SecretPromptJ`, `ConfirmJ`)
-- `cli/internal/ui/json_output.go` — `EmitJSON`, `EmitError`, `Info`, `Infoln` (stderr routing in JSON mode)
-- `cli/internal/ui/json_mode_test.go` — 25 unit tests for JSON mode
+- `cli/pkg/ui/json_mode.go` — JSON mode state, `SetJSONMode`, typed getters (`GetString`, `GetInt`, `GetBool`), `*J` prompt variants (`TextPromptJ`, `SecretPromptJ`, `ConfirmJ`)
+- `cli/pkg/ui/json_output.go` — `EmitJSON`, `EmitError`, `Info`, `Infoln` (stderr routing in JSON mode)
+- `cli/pkg/ui/json_mode_test.go` — 25 unit tests for JSON mode
 - `cli/cmd/json_schema.go` — `json-schema` command with schema registry for all 20 commands
 
 #### Modified Files
 - `cli/cmd/root.go` — `--json` and `--output` persistent flags, JSON mode init in `PersistentPreRunE`, JSON error in `Execute()`
-- `cli/internal/ui/spinner.go` — no-op spinner in JSON mode
-- `cli/internal/ui/table.go` — no-op PrintTable in JSON mode
+- `cli/pkg/ui/spinner.go` — no-op spinner in JSON mode
+- `cli/pkg/ui/table.go` — no-op PrintTable in JSON mode
 - `cli/cmd/version.go` — JSON output
 - `cli/cmd/auth.go` — JSON output for `login` and `status`
 - `cli/cmd/status.go` — JSON output with full status struct

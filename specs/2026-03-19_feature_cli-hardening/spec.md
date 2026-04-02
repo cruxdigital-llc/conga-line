@@ -77,7 +77,7 @@ if len(cleanupErrs) > 0 {
 
 ### 1c. Wrap `DeleteSecret` Error
 
-**File:** `cli/internal/aws/secrets.go`
+**File:** `cli/pkg/aws/secrets.go`
 
 **Current:**
 ```go
@@ -319,7 +319,7 @@ The CLI currently couples command logic to AWS SSM for remote script execution. 
 
 To support both backends with the same CLI commands, we introduce a `HostExecutor` interface at the boundary between "what to do" and "how to reach the host."
 
-**New file:** `cli/internal/executor/executor.go`
+**New file:** `cli/pkg/executor/executor.go`
 
 ```go
 package executor
@@ -349,7 +349,7 @@ type HostExecutor interface {
 }
 ```
 
-**New file:** `cli/internal/executor/ssm.go`
+**New file:** `cli/pkg/executor/ssm.go`
 
 ```go
 package executor
@@ -358,7 +358,7 @@ import (
     "context"
     "time"
 
-    awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
+    awsutil "github.com/cruxdigital-llc/conga-line/cli/pkg/aws"
 )
 
 // SSMExecutor executes scripts on a remote EC2 instance via AWS SSM.
@@ -384,7 +384,7 @@ func (e *SSMExecutor) InstanceID() string {
 }
 ```
 
-**Future (not in this spec):** `cli/internal/executor/local.go`
+**Future (not in this spec):** `cli/pkg/executor/local.go`
 
 ```go
 // LocalExecutor executes scripts directly on the local machine.
@@ -421,7 +421,7 @@ This means commands like `status`, `logs`, `refresh`, `connect`, `admin add-user
 
 Below the executor, we still need interfaces for direct AWS SDK calls used by parameter store, secrets manager, EC2, and STS operations.
 
-**New file:** `cli/internal/aws/interfaces.go`
+**New file:** `cli/pkg/aws/interfaces.go`
 
 ```go
 package aws
@@ -472,7 +472,7 @@ type STSClient interface {
 
 ### 6c. Update `Clients` Struct
 
-**File:** `cli/internal/aws/session.go`
+**File:** `cli/pkg/aws/session.go`
 
 ```go
 type Clients struct {
@@ -509,8 +509,8 @@ package cmd
 import (
     "time"
 
-    awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
-    "github.com/cruxdigital-llc/conga-line/cli/internal/executor"
+    awsutil "github.com/cruxdigital-llc/conga-line/cli/pkg/aws"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/executor"
 )
 
 type CLIContext struct {
@@ -544,7 +544,7 @@ The `findInstance` call moves into `ensureClients` (or a new `ensureExecutor`), 
 
 ### 6e. UI Reader/Writer Injection
 
-**File:** `cli/internal/ui/prompt.go`
+**File:** `cli/pkg/ui/prompt.go`
 
 ```go
 func ConfirmWith(r io.Reader, w io.Writer, prompt string) bool {
@@ -627,7 +627,7 @@ func TestValidateChannelID(t *testing.T) {
 }
 ```
 
-**File:** `cli/internal/discovery/identity_test.go`
+**File:** `cli/pkg/discovery/identity_test.go`
 
 ```go
 func TestARNParsing(t *testing.T) {
@@ -639,7 +639,7 @@ func TestARNParsing(t *testing.T) {
 
 ### 7b. Mocked AWS Tests
 
-**File:** `cli/internal/aws/ssm_test.go`
+**File:** `cli/pkg/aws/ssm_test.go`
 
 Test `RunCommand` with a mock `SSMClient`:
 - **Happy path:** `SendCommand` succeeds, `GetCommandInvocation` returns `Success` on second poll
@@ -648,7 +648,7 @@ Test `RunCommand` with a mock `SSMClient`:
 - **Consecutive errors:** `GetCommandInvocation` returns errors 5 times then succeeds — verify recovery
 - **Consecutive errors exceeded:** 6+ consecutive errors — verify error returned
 
-**File:** `cli/internal/aws/secrets_test.go`
+**File:** `cli/pkg/aws/secrets_test.go`
 
 Test `SetSecret`:
 - **Update existing:** `PutSecretValue` succeeds — verify no `CreateSecret` call
@@ -660,7 +660,7 @@ Test `ListSecrets`:
 - **Multi-page:** Two calls, first returns `NextToken`, second returns `nil`
 - **Empty:** Returns empty list
 
-**File:** `cli/internal/discovery/agent_test.go`
+**File:** `cli/pkg/discovery/agent_test.go`
 
 Test `ListAgents`:
 - **Parses valid JSON configs correctly**
@@ -669,7 +669,7 @@ Test `ListAgents`:
 
 ### 7c. UI Tests
 
-**File:** `cli/internal/ui/prompt_test.go`
+**File:** `cli/pkg/ui/prompt_test.go`
 
 ```go
 func TestConfirm(t *testing.T) {
@@ -746,7 +746,7 @@ jobs:
 | `router/` | Not in scope |
 | `scripts/*.sh.tmpl` | Embedded templates unchanged |
 | `.goreleaser.yaml` | Build config unchanged |
-| `cli/internal/tunnel/` | Tunnel management unchanged (only `connect.go` caller changes) |
+| `cli/pkg/tunnel/` | Tunnel management unchanged (only `connect.go` caller changes) |
 | `cli/cmd/auth.go` | Auth commands unchanged |
 | `cli/cmd/logs.go` | Logs command unchanged (benefits from timeout via context) |
 | `cli/cmd/refresh.go` | Refresh command unchanged (benefits from timeout via context) |

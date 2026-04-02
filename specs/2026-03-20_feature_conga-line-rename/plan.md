@@ -6,7 +6,7 @@ Bottom-up rename: start with leaf files (Go code, scripts), then infrastructure 
 ## Phases
 
 ### Phase 1: CLI Code (Go)
-**Files**: `cli/go.mod`, `cli/main.go`, `cli/cmd/*.go`, `cli/internal/**/*.go`, `cli/internal/**/*_test.go`
+**Files**: `cli/go.mod`, `cli/main.go`, `cli/cmd/*.go`, `cli/pkg/**/*.go`, `cli/pkg/**/*_test.go`
 
 1. Update `go.mod` module path: `github.com/cruxdigital-llc/openclaw-template/cli` → `github.com/cruxdigital-llc/conga/cli`
 2. Update all import paths across every `.go` file

@@ -2,7 +2,7 @@
 
 ## Overview
 
-New `conga bootstrap <manifest.yaml>` command and backing `cli/internal/manifest/` package. Parses a YAML manifest describing an environment's desired state (setup, agents, secrets, channels, bindings, policy), validates it, expands environment variable references in secrets, and executes provisioning steps sequentially through the existing `Provider` interface.
+New `conga bootstrap <manifest.yaml>` command and backing `cli/pkg/manifest/` package. Parses a YAML manifest describing an environment's desired state (setup, agents, secrets, channels, bindings, policy), validates it, expands environment variable references in secrets, and executes provisioning steps sequentially through the existing `Provider` interface.
 
 ---
 
@@ -83,7 +83,7 @@ channels:
 
 ### 1.5 `policy` Section
 
-Reuses the exact types from `cli/internal/policy/`. The manifest's `policy` section maps directly to a `PolicyFile` (with `apiVersion` inherited from the manifest's top-level field).
+Reuses the exact types from `cli/pkg/policy/`. The manifest's `policy` section maps directly to a `PolicyFile` (with `apiVersion` inherited from the manifest's top-level field).
 
 ```yaml
 policy:
@@ -131,12 +131,12 @@ expanding secrets for agent "aaron": environment variable ANTHROPIC_API_KEY is n
 
 ## 2. Data Models
 
-### 2.1 Manifest Structs (`cli/internal/manifest/manifest.go`)
+### 2.1 Manifest Structs (`cli/pkg/manifest/manifest.go`)
 
 ```go
 package manifest
 
-import "github.com/cruxdigital-llc/conga-line/cli/internal/policy"
+import "github.com/cruxdigital-llc/conga-line/cli/pkg/policy"
 
 type Manifest struct {
     APIVersion string            `yaml:"apiVersion"`
@@ -184,7 +184,7 @@ type ManifestPolicy struct {
 }
 ```
 
-### 2.2 Bootstrap Result Structs (`cli/internal/manifest/bootstrap.go`)
+### 2.2 Bootstrap Result Structs (`cli/pkg/manifest/bootstrap.go`)
 
 ```go
 type ApplyResult struct {
@@ -200,7 +200,7 @@ type StepResult struct {
 
 ---
 
-## 3. API Interface — `cli/internal/manifest` Package
+## 3. API Interface — `cli/pkg/manifest` Package
 
 ### 3.1 `Load(path string) (*Manifest, error)`
 
@@ -540,8 +540,8 @@ import (
     "fmt"
     "path/filepath"
 
-    "github.com/cruxdigital-llc/conga-line/cli/internal/manifest"
-    "github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/manifest"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/ui"
     "github.com/spf13/cobra"
 )
 
@@ -672,10 +672,10 @@ No new filesystem operations introduced outside of the existing provider contrac
 
 | File | Lines (est.) | Purpose |
 |---|---|---|
-| `cli/internal/manifest/manifest.go` | ~120 | Structs, Load, Validate, ExpandSecrets |
-| `cli/internal/manifest/bootstrap.go` | ~200 | Bootstrap orchestrator + 7 step functions |
+| `cli/pkg/manifest/manifest.go` | ~120 | Structs, Load, Validate, ExpandSecrets |
+| `cli/pkg/manifest/bootstrap.go` | ~200 | Bootstrap orchestrator + 7 step functions |
 | `cli/cmd/bootstrap.go` | ~70 | Cobra command |
-| `cli/internal/manifest/manifest_test.go` | ~200 | Unit tests |
+| `cli/pkg/manifest/manifest_test.go` | ~200 | Unit tests |
 | `demo.yaml.example` | ~35 | Example manifest |
 
 ### Modified Files (1)
@@ -688,7 +688,7 @@ No new filesystem operations introduced outside of the existing provider contrac
 
 ## 9. Test Plan
 
-### 9.1 Unit Tests (`cli/internal/manifest/manifest_test.go`)
+### 9.1 Unit Tests (`cli/pkg/manifest/manifest_test.go`)
 
 | Test | What it verifies |
 |---|---|

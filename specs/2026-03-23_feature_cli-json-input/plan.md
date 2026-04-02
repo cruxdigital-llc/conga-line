@@ -10,7 +10,7 @@ This is implemented as a thin layer between the command handlers and the existin
 
 ## Phase 1: JSON Mode Infrastructure (root + ui package)
 
-**Files**: `cli/cmd/root.go`, `cli/internal/ui/json_mode.go`
+**Files**: `cli/cmd/root.go`, `cli/pkg/ui/json_mode.go`
 
 1. Add `--json` persistent flag to root command (string, optional value)
    - When present with a value: JSON input mode + JSON output mode
@@ -36,7 +36,7 @@ This is implemented as a thin layer between the command handlers and the existin
 
 ## Phase 2: JSON Output Envelope
 
-**Files**: `cli/internal/ui/json_output.go`
+**Files**: `cli/pkg/ui/json_output.go`
 
 1. Create output helpers:
    - `type Result struct` — wraps any command output
@@ -105,7 +105,7 @@ These have multi-field interactive wizards.
 
 ## Phase 5: Tests
 
-**Files**: `cli/cmd/*_test.go`, `cli/internal/ui/json_mode_test.go`
+**Files**: `cli/cmd/*_test.go`, `cli/pkg/ui/json_mode_test.go`
 
 1. `json_mode_test.go`:
    - Parse valid JSON, empty JSON, malformed JSON

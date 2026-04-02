@@ -29,29 +29,29 @@
 - `cli/cmd/auth.go` — commandContext() migration
 - `cli/cmd/logs.go` — commandContext() migration
 - `cli/cmd/refresh.go` — commandContext() migration
-- `cli/internal/aws/interfaces.go` — **new** — SSMClient, SecretsManagerClient, EC2Client, STSClient interfaces
-- `cli/internal/aws/session.go` — Clients struct uses interface types
-- `cli/internal/aws/ssm.go` — RunCommand accepts SSMClient interface
-- `cli/internal/aws/params.go` — all functions accept SSMClient interface
-- `cli/internal/aws/secrets.go` — all functions accept SecretsManagerClient interface, DeleteSecret error wrapping
-- `cli/internal/aws/ec2.go` — all functions accept EC2Client interface
-- `cli/internal/executor/executor.go` — **new** — HostExecutor interface + Result type
-- `cli/internal/executor/ssm.go` — **new** — SSMExecutor implementation
-- `cli/internal/discovery/instance.go` — accepts awsutil.EC2Client interface
-- `cli/internal/discovery/agent.go` — accepts awsutil.SSMClient interface
-- `cli/internal/discovery/identity.go` — accepts awsutil.STSClient + SSMClient interfaces
-- `cli/internal/tunnel/tunnel.go` — accepts awsutil.SSMClient interface
-- `cli/internal/ui/prompt.go` — added ConfirmWith, TextPromptWith, TextPromptWithDefaultFrom (io.Reader/Writer)
+- `cli/pkg/aws/interfaces.go` — **new** — SSMClient, SecretsManagerClient, EC2Client, STSClient interfaces
+- `cli/pkg/aws/session.go` — Clients struct uses interface types
+- `cli/pkg/aws/ssm.go` — RunCommand accepts SSMClient interface
+- `cli/pkg/aws/params.go` — all functions accept SSMClient interface
+- `cli/pkg/aws/secrets.go` — all functions accept SecretsManagerClient interface, DeleteSecret error wrapping
+- `cli/pkg/aws/ec2.go` — all functions accept EC2Client interface
+- `cli/pkg/executor/executor.go` — **new** — HostExecutor interface + Result type
+- `cli/pkg/executor/ssm.go` — **new** — SSMExecutor implementation
+- `cli/pkg/discovery/instance.go` — accepts awsutil.EC2Client interface
+- `cli/pkg/discovery/agent.go` — accepts awsutil.SSMClient interface
+- `cli/pkg/discovery/identity.go` — accepts awsutil.STSClient + SSMClient interfaces
+- `cli/pkg/tunnel/tunnel.go` — accepts awsutil.SSMClient interface
+- `cli/pkg/ui/prompt.go` — added ConfirmWith, TextPromptWith, TextPromptWithDefaultFrom (io.Reader/Writer)
 - `.github/workflows/ci.yml` — added test + coverage steps
 
 ### Test Files Created
 - `cli/cmd/status_test.go` — parseKeyValues, splitStats, formatUptime
 - `cli/cmd/secrets_test.go` — secretNameToEnvVar
 - `cli/cmd/root_test.go` — validateAgentName, validateMemberID, validateChannelID
-- `cli/internal/aws/ssm_test.go` — RunCommand (5 test cases with mock SSMClient)
-- `cli/internal/aws/secrets_test.go` — SetSecret, ListSecrets, DeleteSecret (7 test cases)
-- `cli/internal/discovery/identity_test.go` — ARN session name extraction
-- `cli/internal/ui/prompt_test.go` — ConfirmWith, TextPromptWith, TextPromptWithDefaultFrom
+- `cli/pkg/aws/ssm_test.go` — RunCommand (5 test cases with mock SSMClient)
+- `cli/pkg/aws/secrets_test.go` — SetSecret, ListSecrets, DeleteSecret (7 test cases)
+- `cli/pkg/discovery/identity_test.go` — ARN session name extraction
+- `cli/pkg/ui/prompt_test.go` — ConfirmWith, TextPromptWith, TextPromptWithDefaultFrom
 
 ### Files Created (Spec Phase)
 - `specs/2026-03-19_feature_cli-hardening/requirements.md`

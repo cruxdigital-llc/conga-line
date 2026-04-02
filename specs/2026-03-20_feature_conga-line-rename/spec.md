@@ -50,17 +50,17 @@ Comprehensive rename of the project from "OpenClaw"/"CruxClaw" to "Conga Line" a
 ### 1b. Import paths (all `.go` files)
 Replace across all files in `cli/`:
 ```
-- github.com/cruxdigital-llc/openclaw-template/cli/internal/aws
-+ github.com/cruxdigital-llc/conga-line/cli/internal/aws
+- github.com/cruxdigital-llc/openclaw-template/cli/pkg/aws
++ github.com/cruxdigital-llc/conga-line/cli/pkg/aws
 
-- github.com/cruxdigital-llc/openclaw-template/cli/internal/discovery
-+ github.com/cruxdigital-llc/conga-line/cli/internal/discovery
+- github.com/cruxdigital-llc/openclaw-template/cli/pkg/discovery
++ github.com/cruxdigital-llc/conga-line/cli/pkg/discovery
 
-- github.com/cruxdigital-llc/openclaw-template/cli/internal/tunnel
-+ github.com/cruxdigital-llc/conga-line/cli/internal/tunnel
+- github.com/cruxdigital-llc/openclaw-template/cli/pkg/tunnel
++ github.com/cruxdigital-llc/conga-line/cli/pkg/tunnel
 
-- github.com/cruxdigital-llc/openclaw-template/cli/internal/ui
-+ github.com/cruxdigital-llc/conga-line/cli/internal/ui
+- github.com/cruxdigital-llc/openclaw-template/cli/pkg/ui
++ github.com/cruxdigital-llc/conga-line/cli/pkg/ui
 
 - github.com/cruxdigital-llc/openclaw-template/cli/scripts
 + github.com/cruxdigital-llc/conga-line/cli/scripts
@@ -73,8 +73,8 @@ Replace across all files in `cli/`:
 - `cli/main.go`
 - `cli/cmd/root.go`, `admin.go`, `admin_setup.go`, `admin_provision.go`, `admin_cycle.go`, `admin_refresh_all.go`, `admin_remove.go`
 - `cli/cmd/auth.go`, `connect.go`, `logs.go`, `refresh.go`, `secrets.go`, `status.go`
-- `cli/internal/discovery/agent.go`, `identity.go`, `instance.go`
-- `cli/internal/tunnel/tunnel.go`
+- `cli/pkg/discovery/agent.go`, `identity.go`, `instance.go`
+- `cli/pkg/tunnel/tunnel.go`
 
 ### 1c. CLI binary name and help text
 **File**: `cli/cmd/root.go`
@@ -133,7 +133,7 @@ Replace across all files in `cli/`:
 + fmt.Printf("  3. conga connect ...
 ```
 
-**File**: `cli/internal/discovery/agent.go`
+**File**: `cli/pkg/discovery/agent.go`
 ```go
 - fmt.Sprintf("/openclaw/agents/%s", name)
 + fmt.Sprintf("/conga/agents/%s", name)
@@ -224,7 +224,7 @@ Replace across all files in `cli/`:
 ```
 
 ### 1f. Test files
-**File**: `cli/internal/aws/ssm_test.go`
+**File**: `cli/pkg/aws/ssm_test.go`
 ```go
 - "/openclaw/agents/myagent"  → "/conga/agents/myagent"
 - "/openclaw/agents/leadership"  → "/conga/agents/leadership"
@@ -232,7 +232,7 @@ Replace across all files in `cli/`:
 - "/openclaw/agents/"  → "/conga/agents/"
 ```
 
-**File**: `cli/internal/discovery/identity_test.go`
+**File**: `cli/pkg/discovery/identity_test.go`
 ```go
 - "/openclaw/agents/myagent"  → "/conga/agents/myagent"
 ```

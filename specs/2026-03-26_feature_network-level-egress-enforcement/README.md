@@ -35,12 +35,12 @@
 
 | File | Changes |
 |------|---------|
-| `cli/internal/policy/egress.go` | Added `EgressExtNetwork` constant, `socat` in Dockerfile |
-| `cli/internal/provider/remoteprovider/docker.go` | `createNetwork` internal flag, `-p` conditional, `startPortForwarder`/`stopPortForwarder` |
-| `cli/internal/provider/remoteprovider/provider.go` | All createNetwork call sites, RefreshAgent network recreation, proxy dual-homing, cleanup in Remove/Pause/Teardown |
-| `cli/internal/provider/remoteprovider/setup.go` | `socat` added to Docker install script |
-| `cli/internal/provider/localprovider/docker.go` | `createNetwork` internal flag, `-p` conditional, forwarder container helpers |
-| `cli/internal/provider/localprovider/provider.go` | Same patterns as remote, forwarder lifecycle, cleanup |
+| `cli/pkg/policy/egress.go` | Added `EgressExtNetwork` constant, `socat` in Dockerfile |
+| `cli/pkg/provider/remoteprovider/docker.go` | `createNetwork` internal flag, `-p` conditional, `startPortForwarder`/`stopPortForwarder` |
+| `cli/pkg/provider/remoteprovider/provider.go` | All createNetwork call sites, RefreshAgent network recreation, proxy dual-homing, cleanup in Remove/Pause/Teardown |
+| `cli/pkg/provider/remoteprovider/setup.go` | `socat` added to Docker install script |
+| `cli/pkg/provider/localprovider/docker.go` | `createNetwork` internal flag, `-p` conditional, forwarder container helpers |
+| `cli/pkg/provider/localprovider/provider.go` | Same patterns as remote, forwarder lifecycle, cleanup |
 
 ## Standards Gate Report (Pre-Implementation)
 

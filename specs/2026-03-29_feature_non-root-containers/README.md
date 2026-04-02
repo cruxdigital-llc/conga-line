@@ -29,8 +29,8 @@
 - **Phase 4**: Compilation success, all 17 test packages pass
 
 **Files modified**:
-- `cli/internal/provider/localprovider/docker.go` — `--user 1000:1000` on agent + router
-- `cli/internal/provider/remoteprovider/docker.go` — `--user 1000:1000` on agent + router
+- `cli/pkg/provider/localprovider/docker.go` — `--user 1000:1000` on agent + router
+- `cli/pkg/provider/remoteprovider/docker.go` — `--user 1000:1000` on agent + router
 - `terraform/user-data.sh.tftpl` — `--user 1000:1000` on agent + router; added missing `--tmpfs` to router
 - `cli/scripts/add-user.sh.tmpl` — `--user 1000:1000` on agent ExecStart
 - `cli/scripts/add-team.sh.tmpl` — `--user 1000:1000` on agent ExecStart

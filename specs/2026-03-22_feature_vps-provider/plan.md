@@ -26,7 +26,7 @@ VPS Host (/opt/conga/)
 
 ## Package Structure
 ```
-cli/internal/provider/vpsprovider/
+cli/pkg/provider/vpsprovider/
     provider.go      — VPSProvider struct, init/factory, 17 Provider methods
     ssh.go           — SSH client: connect, exec, SFTP upload/download, tunnel
     docker.go        — Remote Docker CLI helpers (mirror of localprovider/docker.go)
@@ -78,16 +78,16 @@ File-based secrets at `/opt/conga/secrets/` via SFTP. SHA256 integrity checking 
 ## Files to Modify
 | File | Change |
 |---|---|
-| `cli/internal/provider/vpsprovider/*` | **New** — 6 files |
-| `cli/internal/provider/config.go` | Add SSHHost, SSHPort, SSHUser, SSHKeyPath fields |
+| `cli/pkg/provider/vpsprovider/*` | **New** — 6 files |
+| `cli/pkg/provider/config.go` | Add SSHHost, SSHPort, SSHUser, SSHKeyPath fields |
 | `cli/cmd/root.go` | Add vpsprovider import, update provider flag help |
 | `cli/go.mod` / `cli/go.sum` | Add golang.org/x/crypto |
 
 ## Files to Reuse (no changes needed)
-- `cli/internal/provider/provider.go` — Provider interface
-- `cli/internal/provider/registry.go` — Register/Get pattern
-- `cli/internal/provider/localprovider/*` — Primary reference to port
-- `cli/internal/common/*` — Config generation, routing, behavior, validation, ports
+- `cli/pkg/provider/provider.go` — Provider interface
+- `cli/pkg/provider/registry.go` — Register/Get pattern
+- `cli/pkg/provider/localprovider/*` — Primary reference to port
+- `cli/pkg/common/*` — Config generation, routing, behavior, validation, ports
 
 ## Security
 - No inbound ports beyond SSH — gateway via SSH tunnel only

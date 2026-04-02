@@ -61,7 +61,7 @@ The previous attempt failed because the egress proxy was only on the internal ne
 
 #### 1a. `createNetwork` supports `--internal`
 
-**File**: `cli/internal/provider/remoteprovider/docker.go`
+**File**: `cli/pkg/provider/remoteprovider/docker.go`
 
 Add `internal bool` parameter:
 ```go
@@ -79,7 +79,7 @@ Update all call sites in `provider.go` (`ProvisionAgent`, `RefreshAgent`, `start
 
 #### 1b. Shared external network for proxies
 
-**File**: `cli/internal/provider/remoteprovider/provider.go`
+**File**: `cli/pkg/provider/remoteprovider/provider.go`
 
 Add constant and ensure it exists:
 ```go
@@ -90,7 +90,7 @@ Create in `Setup()` and check before each proxy start. Standard bridge (NOT inte
 
 #### 1c. Dual-home the egress proxy
 
-**File**: `cli/internal/provider/remoteprovider/provider.go` — `startAgentEgressProxy`
+**File**: `cli/pkg/provider/remoteprovider/provider.go` — `startAgentEgressProxy`
 
 After starting the proxy on the agent's internal network, connect to external network:
 ```go
@@ -99,7 +99,7 @@ p.connectNetwork(ctx, egressExtNetwork, proxyName)
 
 #### 1d. Drop `-p` and add socat forwarding
 
-**File**: `cli/internal/provider/remoteprovider/docker.go`
+**File**: `cli/pkg/provider/remoteprovider/docker.go`
 
 - `runAgentContainer`: omit `-p` when `EgressEnforce` is true
 - Add `startPortForwarder(agentName, port)` — gets container IP via `docker inspect`, starts socat on the host
@@ -123,7 +123,7 @@ func (p *RemoteProvider) startPortForwarder(ctx context.Context, agentName strin
 
 #### 1e. Network recreation during RefreshAgent
 
-**File**: `cli/internal/provider/remoteprovider/provider.go`
+**File**: `cli/pkg/provider/remoteprovider/provider.go`
 
 When refreshing, the network may need to change type (standard → internal or vice versa). The existing flow already stops the container and proxy. Add:
 1. Disconnect router from network
@@ -132,13 +132,13 @@ When refreshing, the network may need to change type (standard → internal or v
 
 #### 1f. Install socat during setup
 
-**File**: `cli/internal/provider/remoteprovider/setup.go`
+**File**: `cli/pkg/provider/remoteprovider/setup.go`
 
 Add `socat` to the Docker install script alongside `docker.io`.
 
 #### 1g. Cleanup
 
-**File**: `cli/internal/provider/remoteprovider/provider.go`
+**File**: `cli/pkg/provider/remoteprovider/provider.go`
 
 - `RemoveAgent`: call `stopPortForwarder` before removing container/network
 - `PauseAgent`: call `stopPortForwarder`
@@ -150,19 +150,19 @@ Add `socat` to the Docker install script alongside `docker.io`.
 
 #### 2a. `createNetwork` supports `--internal`
 
-**File**: `cli/internal/provider/localprovider/docker.go`
+**File**: `cli/pkg/provider/localprovider/docker.go`
 
 Same pattern as remote — add `internal bool` parameter.
 
 #### 2b. Shared external network + dual-homed proxy
 
-**File**: `cli/internal/provider/localprovider/provider.go`
+**File**: `cli/pkg/provider/localprovider/provider.go`
 
 Same `conga-egress-ext` constant. Create during setup. Connect proxy after starting.
 
 #### 2c. Forwarder container instead of socat
 
-**File**: `cli/internal/provider/localprovider/docker.go`
+**File**: `cli/pkg/provider/localprovider/docker.go`
 
 macOS Docker Desktop can't route to container IPs from the Mac host, so socat on the host won't work. Instead, use a lightweight forwarder container:
 
@@ -225,7 +225,7 @@ Same pattern as remote: omit `-p` when enforcing, clean up forwarder in `RemoveA
 
 ### Egress proxy image
 
-**File**: `cli/internal/policy/egress.go`
+**File**: `cli/pkg/policy/egress.go`
 
 Add `socat` to the Dockerfile for the forwarder container (used by local provider):
 ```go
@@ -236,7 +236,7 @@ func EgressProxyDockerfile() string {
 
 ### Egress external network helpers
 
-**File**: `cli/internal/policy/egress.go`
+**File**: `cli/pkg/policy/egress.go`
 
 Add constant:
 ```go
@@ -249,12 +249,12 @@ const EgressExtNetwork = "conga-egress-ext"
 
 | File | Phase | Changes |
 |------|-------|---------|
-| `cli/internal/policy/egress.go` | 1 | Add `socat` to Dockerfile, add `EgressExtNetwork` constant |
-| `cli/internal/provider/remoteprovider/docker.go` | 1 | `createNetwork` internal flag, `runAgentContainer` drops `-p`, `startPortForwarder`/`stopPortForwarder` |
-| `cli/internal/provider/remoteprovider/provider.go` | 1 | All `createNetwork` call sites, `RefreshAgent` recreates network, proxy dual-homing, cleanup in Remove/Pause/Teardown |
-| `cli/internal/provider/remoteprovider/setup.go` | 1 | Add `socat` to install script |
-| `cli/internal/provider/localprovider/docker.go` | 2 | `createNetwork` internal flag, `runAgentContainer` drops `-p`, forwarder container helpers |
-| `cli/internal/provider/localprovider/provider.go` | 2 | Same patterns as remote, forwarder lifecycle |
+| `cli/pkg/policy/egress.go` | 1 | Add `socat` to Dockerfile, add `EgressExtNetwork` constant |
+| `cli/pkg/provider/remoteprovider/docker.go` | 1 | `createNetwork` internal flag, `runAgentContainer` drops `-p`, `startPortForwarder`/`stopPortForwarder` |
+| `cli/pkg/provider/remoteprovider/provider.go` | 1 | All `createNetwork` call sites, `RefreshAgent` recreates network, proxy dual-homing, cleanup in Remove/Pause/Teardown |
+| `cli/pkg/provider/remoteprovider/setup.go` | 1 | Add `socat` to install script |
+| `cli/pkg/provider/localprovider/docker.go` | 2 | `createNetwork` internal flag, `runAgentContainer` drops `-p`, forwarder container helpers |
+| `cli/pkg/provider/localprovider/provider.go` | 2 | Same patterns as remote, forwarder lifecycle |
 | `terraform/user-data.sh.tftpl` | 3 | Network creation, socat, dual-homed proxy |
 | `cli/scripts/refresh-user.sh.tmpl` | 3 | socat lifecycle in refresh |
 

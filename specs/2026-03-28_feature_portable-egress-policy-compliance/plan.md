@@ -45,4 +45,4 @@ The local provider already implements correct mode-checking. The remote provider
 ## Risk Assessment
 - **Low risk for remote/AWS**: These providers were already enforcing — the change just makes them respect `mode: validate` when explicitly requested.
 - **Behavioral change for local**: Local previously defaulted to `validate`. With the new default of `enforce`, local deployments with no explicit mode will start enforcing. This is intentional — security-first.
-- **AWS iptables**: New enforcement mechanism on AWS. Uses the same proven rule pattern from `cli/internal/provider/iptables/rules.go`. Idempotent insertion, idempotent removal.
+- **AWS iptables**: New enforcement mechanism on AWS. Uses the same proven rule pattern from `cli/pkg/provider/iptables/rules.go`. Idempotent insertion, idempotent removal.

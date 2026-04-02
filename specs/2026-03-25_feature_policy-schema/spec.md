@@ -16,7 +16,7 @@ cd cli && go get gopkg.in/yaml.v3 && go mod tidy
 
 This is the first YAML dependency in the project. All other config files remain JSON. The distinction is intentional: the policy file is operator-authored intent; JSON files are machine-generated config.
 
-### 2. New package: `cli/internal/policy/policy.go`
+### 2. New package: `cli/pkg/policy/policy.go`
 
 Go types and core logic.
 
@@ -283,7 +283,7 @@ func MatchDomain(pattern, domain string) bool {
 }
 ```
 
-### 3. New file: `cli/internal/policy/enforcement.go`
+### 3. New file: `cli/pkg/policy/enforcement.go`
 
 Per-provider enforcement capability reporting.
 
@@ -546,7 +546,7 @@ func postureReport(p *PostureDeclarations, providerName string) []RuleReport {
 }
 ```
 
-### 4. New file: `cli/internal/policy/policy_test.go`
+### 4. New file: `cli/pkg/policy/policy_test.go`
 
 ```go
 package policy
@@ -895,9 +895,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/cruxdigital-llc/conga-line/cli/internal/policy"
-	provpkg "github.com/cruxdigital-llc/conga-line/cli/internal/provider"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/policy"
+	provpkg "github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

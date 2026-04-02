@@ -71,11 +71,11 @@ conga admin unpause <name>
 
 | File | Action |
 |------|--------|
-| `cli/internal/provider/provider.go` | Modify — add `Paused` to AgentConfig, add PauseAgent/UnpauseAgent to interface |
-| `cli/internal/provider/localprovider/provider.go` | Modify — implement PauseAgent, UnpauseAgent; update RefreshAll/CycleHost |
-| `cli/internal/provider/awsprovider/provider.go` | Modify — implement PauseAgent, UnpauseAgent; update RefreshAll |
-| `cli/internal/common/routing.go` | Modify — filter paused agents in GenerateRoutingJSON |
-| `cli/internal/discovery/agent.go` | Modify — add Paused field to AgentConfig struct |
+| `cli/pkg/provider/provider.go` | Modify — add `Paused` to AgentConfig, add PauseAgent/UnpauseAgent to interface |
+| `cli/pkg/provider/localprovider/provider.go` | Modify — implement PauseAgent, UnpauseAgent; update RefreshAll/CycleHost |
+| `cli/pkg/provider/awsprovider/provider.go` | Modify — implement PauseAgent, UnpauseAgent; update RefreshAll |
+| `cli/pkg/common/routing.go` | Modify — filter paused agents in GenerateRoutingJSON |
+| `cli/pkg/discovery/agent.go` | Modify — add Paused field to AgentConfig struct |
 | `cli/cmd/admin.go` | Modify — register pause/unpause commands, add STATUS column to list-agents |
 | `cli/cmd/admin_pause.go` | Create — pause/unpause command handlers |
 | `cli/scripts/pause-agent.sh.tmpl` | Create — AWS: stop systemd, update routing, disconnect router |

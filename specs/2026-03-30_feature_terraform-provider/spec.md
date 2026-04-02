@@ -20,7 +20,7 @@ User Interfaces:  CLI  |  MCP Server  |  Terraform Provider
 
 ## Module Structure
 
-Located within the CLI module at `cli/internal/terraform/` (not a separate Go module — Go's `internal/` visibility rules prevent external modules from importing the Provider interface). Binary entry point at `cli/cmd/terraform-provider-conga/`.
+Located within the CLI module at `cli/pkg/terraform/` (not a separate Go module — Go's `internal/` visibility rules prevent external modules from importing the Provider interface). Binary entry point at `cli/cmd/terraform-provider-conga/`.
 
 Terraform modules for composable deployments at `terraform/modules/congaline/`.
 
@@ -87,10 +87,10 @@ Maps to `provider.Get(providerType, cfg)`.
 ## Key Import Paths
 
 ```go
-import "github.com/cruxdigital-llc/conga-line/cli/internal/provider"
-import "github.com/cruxdigital-llc/conga-line/cli/internal/policy"
-import "github.com/cruxdigital-llc/conga-line/cli/internal/channels"
-import "github.com/cruxdigital-llc/conga-line/cli/internal/common"
+import "github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
+import "github.com/cruxdigital-llc/conga-line/cli/pkg/policy"
+import "github.com/cruxdigital-llc/conga-line/cli/pkg/channels"
+import "github.com/cruxdigital-llc/conga-line/cli/pkg/common"
 ```
 
 ## Reference: Provider Interface Methods Used

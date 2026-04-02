@@ -638,11 +638,11 @@ if cfg.Paused {
 
 | File | Action | Description |
 |------|--------|-------------|
-| `cli/internal/provider/provider.go` | Modify | Add `Paused` to AgentConfig; add PauseAgent/UnpauseAgent to Provider interface |
-| `cli/internal/provider/localprovider/provider.go` | Modify | Implement PauseAgent, UnpauseAgent, saveAgentConfig; update RefreshAll, CycleHost, RefreshAgent guard |
-| `cli/internal/provider/awsprovider/provider.go` | Modify | Implement PauseAgent, UnpauseAgent, setAgentPaused; update RefreshAll, RefreshAgent guard |
-| `cli/internal/common/routing.go` | Modify | Filter paused agents in GenerateRoutingJSON |
-| `cli/internal/discovery/agent.go` | Modify | Add `Paused bool` field to AgentConfig |
+| `cli/pkg/provider/provider.go` | Modify | Add `Paused` to AgentConfig; add PauseAgent/UnpauseAgent to Provider interface |
+| `cli/pkg/provider/localprovider/provider.go` | Modify | Implement PauseAgent, UnpauseAgent, saveAgentConfig; update RefreshAll, CycleHost, RefreshAgent guard |
+| `cli/pkg/provider/awsprovider/provider.go` | Modify | Implement PauseAgent, UnpauseAgent, setAgentPaused; update RefreshAll, RefreshAgent guard |
+| `cli/pkg/common/routing.go` | Modify | Filter paused agents in GenerateRoutingJSON |
+| `cli/pkg/discovery/agent.go` | Modify | Add `Paused bool` field to AgentConfig |
 | `cli/cmd/admin.go` | Modify | Register pause/unpause commands; add STATUS column to list-agents |
 | `cli/cmd/admin_pause.go` | Create | Pause/unpause command handlers |
 | `cli/scripts/pause-agent.sh.tmpl` | Create | AWS: stop systemd, remove from routing, disconnect router |

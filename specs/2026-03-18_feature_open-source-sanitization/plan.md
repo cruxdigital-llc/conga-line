@@ -37,7 +37,7 @@ Three workstreams executed in order: (1) Terraform genericization, (2) CLI gener
 ## Workstream 2: CLI
 
 ### 2a. Remove org-specific defaults
-- `cli/internal/config/config.go`: Empty defaults for `Region`, `SSOStartURL`, `SSOAccountID`, `SSORoleName`. Keep `InstanceTag` default (`conga-host`)
+- `cli/pkg/config/config.go`: Empty defaults for `Region`, `SSOStartURL`, `SSOAccountID`, `SSORoleName`. Keep `InstanceTag` default (`conga-host`)
 - Add `Conga LineImage` field to `Config` struct with `CONGA_CONGA_IMAGE` env var override
 - Add validation in `Load()` — return clear error when required fields are unconfigured
 
@@ -82,7 +82,7 @@ Three workstreams executed in order: (1) Terraform genericization, (2) CLI gener
 | `terraform/router.tf` | Pass `conga_image`, `state_bucket` to templatefile |
 | `terraform/bootstrap.sh` | Dynamic bucket/table derivation |
 | `terraform/populate-secrets.sh` | Env var defaults for profile/region |
-| `cli/internal/config/config.go` | Empty defaults, add `Conga LineImage` field |
+| `cli/pkg/config/config.go` | Empty defaults, add `Conga LineImage` field |
 | `cli/cmd/root.go` | Generic example IDs in error messages |
 | `cli/cmd/admin.go` | Pass `Conga LineImage` to template |
 | `cli/cmd/refresh.go` | Pass `Conga LineImage` to template |

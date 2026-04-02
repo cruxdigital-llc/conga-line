@@ -100,7 +100,7 @@ f. **Replace section 10 template loops:**
 
 ### Step 4: Update CLI SSM parameter reads (if needed)
 
-**File:** `cli/cmd/admin.go`, `cli/internal/discovery/user.go`
+**File:** `cli/cmd/admin.go`, `cli/pkg/discovery/user.go`
 
 **What:** Verify the CLI's `list-agents`, `ResolveUser`, and `ResolveTeam` still work with the enriched SSM parameter values from step 1. The extra fields (`type`, `member_id`) should be harmlessly ignored by Go's `json.Unmarshal`, but verify.
 

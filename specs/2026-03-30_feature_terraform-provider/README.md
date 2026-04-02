@@ -26,23 +26,23 @@
 - `cli/cmd/terraform-provider-conga/main.go` — plugin server entry point
 - `cli/cmd/terraform-provider-conga/.goreleaser.yml` — release build config
 - `cli/cmd/terraform-provider-conga/terraform-registry-manifest.json` — registry manifest
-- `cli/internal/terraform/provider.go` — terraform-plugin-framework provider (Configure → provider.Get)
-- `cli/internal/terraform/helpers.go` — shared utilities (splitImportID, extractProvider)
-- `cli/internal/terraform/environment_resource.go` — conga_environment resource
-- `cli/internal/terraform/agent_resource.go` — conga_agent resource
-- `cli/internal/terraform/secret_resource.go` — conga_secret resource
-- `cli/internal/terraform/channel_resource.go` — conga_channel resource
-- `cli/internal/terraform/binding_resource.go` — conga_channel_binding resource
-- `cli/internal/terraform/policy_resource.go` — conga_policy resource
-- `cli/internal/terraform/agent_status_datasource.go` — conga_agent_status data source
-- `cli/internal/terraform/policy_datasource.go` — conga_policy data source
-- `cli/internal/terraform/channels_datasource.go` — conga_channels data source
-- `cli/internal/terraform/provider_test.go` — test factory setup
-- `cli/internal/terraform/environment_resource_test.go` — environment acceptance tests
-- `cli/internal/terraform/agent_resource_test.go` — agent acceptance tests
-- `cli/internal/terraform/secret_resource_test.go` — secret acceptance tests
-- `cli/internal/terraform/channel_resource_test.go` — channel + binding acceptance tests
-- `cli/internal/terraform/policy_resource_test.go` — policy acceptance tests
+- `cli/pkg/terraform/provider.go` — terraform-plugin-framework provider (Configure → provider.Get)
+- `cli/pkg/terraform/helpers.go` — shared utilities (splitImportID, extractProvider)
+- `cli/pkg/terraform/environment_resource.go` — conga_environment resource
+- `cli/pkg/terraform/agent_resource.go` — conga_agent resource
+- `cli/pkg/terraform/secret_resource.go` — conga_secret resource
+- `cli/pkg/terraform/channel_resource.go` — conga_channel resource
+- `cli/pkg/terraform/binding_resource.go` — conga_channel_binding resource
+- `cli/pkg/terraform/policy_resource.go` — conga_policy resource
+- `cli/pkg/terraform/agent_status_datasource.go` — conga_agent_status data source
+- `cli/pkg/terraform/policy_datasource.go` — conga_policy data source
+- `cli/pkg/terraform/channels_datasource.go` — conga_channels data source
+- `cli/pkg/terraform/provider_test.go` — test factory setup
+- `cli/pkg/terraform/environment_resource_test.go` — environment acceptance tests
+- `cli/pkg/terraform/agent_resource_test.go` — agent acceptance tests
+- `cli/pkg/terraform/secret_resource_test.go` — secret acceptance tests
+- `cli/pkg/terraform/channel_resource_test.go` — channel + binding acceptance tests
+- `cli/pkg/terraform/policy_resource_test.go` — policy acceptance tests
 
 ## Decisions
 - **Enterprise lifecycle management** — Terraform handles state, drift, dependencies, destroy
@@ -50,7 +50,7 @@
 - **Coexists with bootstrap** — different audiences, same underlying engine
 - **6 resources**: `conga_environment`, `conga_agent`, `conga_secret`, `conga_channel`, `conga_channel_binding`, `conga_policy`
 - **3 data sources**: `conga_agent_status`, `conga_policy`, `conga_channels`
-- **Same Go module** — `cli/internal/terraform/` (not separate module, due to Go `internal` package visibility rules)
+- **Same Go module** — `cli/pkg/terraform/` (not separate module, due to Go `internal` package visibility rules)
 - **terraform-plugin-framework** (not deprecated SDK)
 
 ### 2026-04-01 — Implement Feature
@@ -68,7 +68,7 @@
 - **Build**: Both terraform provider binary and CLI compile clean
 - **E2E**: Full lifecycle tested on local (create/update/destroy), remote (create/update/destroy), AWS (15 resources applied including channels/bindings/policy)
 - **Standards gate**: All observed standards pass
-- **Spec divergences**: Module structure updated (cli/internal/terraform/ instead of separate module), AWS channel management implemented (was "not yet implemented"), per-agent policy overrides added (not in original spec), terraform modules restructured into terraform/modules/ + terraform/environments/
+- **Spec divergences**: Module structure updated (cli/pkg/terraform/ instead of separate module), AWS channel management implemented (was "not yet implemented"), per-agent policy overrides added (not in original spec), terraform modules restructured into terraform/modules/ + terraform/environments/
 
 **Additional work beyond original spec**:
 - AWS provider channel management (AddChannel, RemoveChannel, ListChannels, BindChannel, UnbindChannel)

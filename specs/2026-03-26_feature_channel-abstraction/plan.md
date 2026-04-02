@@ -6,7 +6,7 @@ Extract all Slack-specific logic from core packages into a `channels/` package s
 
 ## Phase 1: Channel Interface + Slack Implementation
 
-**New package**: `cli/internal/channels/channels.go`
+**New package**: `cli/pkg/channels/channels.go`
 
 Define the `Channel` interface that any messaging platform must implement:
 
@@ -75,7 +75,7 @@ type RoutingEntry struct {
 }
 ```
 
-**New package**: `cli/internal/channels/slack/slack.go`
+**New package**: `cli/pkg/channels/slack/slack.go`
 
 Implements `Channel` for Slack. Moves from:
 - `common/validate.go` → `ValidateMemberID`, `ValidateChannelID` become `ValidateBinding()`
@@ -84,7 +84,7 @@ Implements `Channel` for Slack. Moves from:
 - `common/config.go` → Slack env vars in `GenerateEnvFile()` become `EnvVars()`
 - `common/routing.go` → Slack routing logic becomes `GenerateRoutingEntries()`
 
-**New file**: `cli/internal/channels/registry.go`
+**New file**: `cli/pkg/channels/registry.go`
 
 Channel registry (same pattern as provider registry):
 ```go
@@ -99,7 +99,7 @@ Slack auto-registers via `init()` in its package.
 
 ## Phase 2: AgentConfig Refactor
 
-**File**: `cli/internal/provider/provider.go`
+**File**: `cli/pkg/provider/provider.go`
 
 Replace Slack-specific fields with generic channel bindings:
 
@@ -317,38 +317,38 @@ Minimal changes — AWS provider reads secrets from Secrets Manager by name. The
 ### New Files (4)
 | File | Purpose |
 |------|---------|
-| `cli/internal/channels/channels.go` | Channel interface + types |
-| `cli/internal/channels/registry.go` | Channel registry |
-| `cli/internal/channels/slack/slack.go` | Slack implementation |
-| `cli/internal/channels/slack/slack_test.go` | Slack tests |
+| `cli/pkg/channels/channels.go` | Channel interface + types |
+| `cli/pkg/channels/registry.go` | Channel registry |
+| `cli/pkg/channels/slack/slack.go` | Slack implementation |
+| `cli/pkg/channels/slack/slack_test.go` | Slack tests |
 
 ### Modified Files (~15)
 | File | Change |
 |------|--------|
-| `cli/internal/provider/provider.go` | `AgentConfig` channels field |
-| `cli/internal/provider/setup_config.go` | Generalize Slack secret fields |
-| `cli/internal/common/config.go` | Delegate to channel interface |
-| `cli/internal/common/routing.go` | Delegate to channel interface |
-| `cli/internal/common/behavior.go` | Delegate template vars to channel |
-| `cli/internal/common/validate.go` | Remove Slack validation (moved) |
+| `cli/pkg/provider/provider.go` | `AgentConfig` channels field |
+| `cli/pkg/provider/setup_config.go` | Generalize Slack secret fields |
+| `cli/pkg/common/config.go` | Delegate to channel interface |
+| `cli/pkg/common/routing.go` | Delegate to channel interface |
+| `cli/pkg/common/behavior.go` | Delegate template vars to channel |
+| `cli/pkg/common/validate.go` | Remove Slack validation (moved) |
 | `cli/cmd/admin.go` | Update list-agents display |
 | `cli/cmd/admin_provision.go` | Channel-aware provisioning |
 | `cli/cmd/root.go` | Remove Slack validation wrappers |
 | `cli/cmd/json_schema.go` | Update schemas |
-| `cli/internal/mcpserver/tools_lifecycle.go` | Channel-aware provision tool |
-| `cli/internal/provider/localprovider/provider.go` | Channel-driven setup/routing |
-| `cli/internal/provider/remoteprovider/provider.go` | Channel-driven setup/routing |
-| `cli/internal/provider/remoteprovider/setup.go` | Channel-driven setup prompts |
-| `cli/internal/provider/remoteprovider/secrets.go` | Generic secret map |
+| `cli/pkg/mcpserver/tools_lifecycle.go` | Channel-aware provision tool |
+| `cli/pkg/provider/localprovider/provider.go` | Channel-driven setup/routing |
+| `cli/pkg/provider/remoteprovider/provider.go` | Channel-driven setup/routing |
+| `cli/pkg/provider/remoteprovider/setup.go` | Channel-driven setup prompts |
+| `cli/pkg/provider/remoteprovider/secrets.go` | Generic secret map |
 
 ### Test Files Modified (~5)
 | File | Change |
 |------|--------|
-| `cli/internal/common/routing_test.go` | New AgentConfig format |
+| `cli/pkg/common/routing_test.go` | New AgentConfig format |
 | `cli/cmd/root_test.go` | Remove Slack validation tests |
-| `cli/internal/mcpserver/server_test.go` | New provision params |
-| `cli/internal/provider/awsprovider/provider_test.go` | New secret format |
-| `cli/internal/common/validate_test.go` | Remove Slack tests (moved) |
+| `cli/pkg/mcpserver/server_test.go` | New provision params |
+| `cli/pkg/provider/awsprovider/provider_test.go` | New secret format |
+| `cli/pkg/common/validate_test.go` | Remove Slack tests (moved) |
 
 ## Persona Review Checkpoints
 

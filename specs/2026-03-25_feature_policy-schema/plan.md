@@ -2,13 +2,13 @@
 
 ## Approach
 
-Create a new `cli/internal/policy/` package that owns the policy data model, loading, validation, and enforcement reporting. Add a `conga policy validate` CLI command following the existing cobra subcommand pattern. The policy file is optional — when absent, all behavior is unchanged. When present, it's parsed and validated but not enforced (enforcement is Spec 2+).
+Create a new `cli/pkg/policy/` package that owns the policy data model, loading, validation, and enforcement reporting. Add a `conga policy validate` CLI command following the existing cobra subcommand pattern. The policy file is optional — when absent, all behavior is unchanged. When present, it's parsed and validated but not enforced (enforcement is Spec 2+).
 
 This is the first YAML file in the project. All other config files are JSON. The distinction is intentional: the policy file is operator-authored intent; JSON files are machine-generated config. Add `gopkg.in/yaml.v3` as the sole new dependency.
 
 ## Changes
 
-### 1. New package: `cli/internal/policy/`
+### 1. New package: `cli/pkg/policy/`
 
 **policy.go** — Types and core logic:
 - `PolicyFile` struct with `APIVersion`, `Egress`, `Routing`, `Posture`, `Agents` fields
@@ -74,7 +74,7 @@ In project root. All fields documented with YAML comments. Includes realistic de
 
 ## Test Plan
 
-1. `go test ./cli/internal/policy/` — all unit tests pass
+1. `go test ./cli/pkg/policy/` — all unit tests pass
 2. `go build ./cli/cmd/` — CLI compiles with new command
 3. `conga policy validate --file conga-policy.yaml.example` — exits 0, prints enforcement report
 4. `conga policy validate --file /dev/null` — exits 1 with parse error

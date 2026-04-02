@@ -39,16 +39,16 @@
 ### 2026-03-22 — Implement Feature
 
 #### Files Created
-- `cli/internal/provider/remoteprovider/ssh.go` — SSH client (SSHConnect, Run, Upload, Download, UploadDir, ForwardPort, shelljoin)
-- `cli/internal/provider/remoteprovider/docker.go` — Remote Docker CLI helpers (21 functions mirroring localprovider)
-- `cli/internal/provider/remoteprovider/provider.go` — RemoteProvider struct + all 17 Provider interface methods
-- `cli/internal/provider/remoteprovider/secrets.go` — Remote file-based secret management (6 methods)
-- `cli/internal/provider/remoteprovider/integrity.go` — Remote config integrity monitoring (3 methods)
-- `cli/internal/provider/remoteprovider/setup.go` — Setup wizard with Docker auto-install
-- `cli/internal/provider/remoteprovider/ssh_test.go` — 29 unit tests for shell quoting
+- `cli/pkg/provider/remoteprovider/ssh.go` — SSH client (SSHConnect, Run, Upload, Download, UploadDir, ForwardPort, shelljoin)
+- `cli/pkg/provider/remoteprovider/docker.go` — Remote Docker CLI helpers (21 functions mirroring localprovider)
+- `cli/pkg/provider/remoteprovider/provider.go` — RemoteProvider struct + all 17 Provider interface methods
+- `cli/pkg/provider/remoteprovider/secrets.go` — Remote file-based secret management (6 methods)
+- `cli/pkg/provider/remoteprovider/integrity.go` — Remote config integrity monitoring (3 methods)
+- `cli/pkg/provider/remoteprovider/setup.go` — Setup wizard with Docker auto-install
+- `cli/pkg/provider/remoteprovider/ssh_test.go` — 29 unit tests for shell quoting
 
 #### Files Modified
-- `cli/internal/provider/config.go` — Added SSHHost, SSHPort, SSHUser, SSHKeyPath fields
+- `cli/pkg/provider/config.go` — Added SSHHost, SSHPort, SSHUser, SSHKeyPath fields
 - `cli/cmd/root.go` — Added remoteprovider import, updated provider flag help and Long description
 - `cli/go.mod` / `cli/go.sum` — Added golang.org/x/crypto, github.com/pkg/sftp, github.com/kr/fs
 - `README.md` — Added Remote provider documentation, quick start, and architecture

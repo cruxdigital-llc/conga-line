@@ -45,7 +45,7 @@
 - [x] Update `terraform.tfvars` with `slack_member_id` field name
 - [x] Update `terraform.tfvars.example` with new schema and placeholder IDs
 
-## Task 8: CLI — discovery refactor (`cli/internal/discovery/`)
+## Task 8: CLI — discovery refactor (`cli/pkg/discovery/`)
 - [x] Create `agent.go` with unified `AgentConfig` struct
 - [x] `ResolveAgent(ctx, ssmClient, name)` — direct lookup at `/conga/agents/<name>`
 - [x] `ResolveAgentByIAM(ctx, ssmClient, iamIdentity)` — scan + match `iam_identity`

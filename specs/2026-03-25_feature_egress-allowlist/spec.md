@@ -2,7 +2,7 @@
 
 ## Overview
 
-Enforce egress domain restrictions from `conga-policy.yaml` across all three providers, closing the #1 security gap. Uses the policy schema from Spec 1 (`cli/internal/policy/`) for data model and validation.
+Enforce egress domain restrictions from `conga-policy.yaml` across all three providers, closing the #1 security gap. Uses the policy schema from Spec 1 (`cli/pkg/policy/`) for data model and validation.
 
 **Unified enforcement mechanism:** Per-agent nginx SNI filtering proxy on all providers. One proxy container per agent, on the agent's own Docker network. Same code path everywhere — only the transport differs (local Docker CLI, SSH, bootstrap script).
 
@@ -40,7 +40,7 @@ Each agent gets its own nginx proxy with its own allowlist derived from `MergeFo
 
 ## Deliverables
 
-### 1. Shared: `cli/internal/policy/egress.go`
+### 1. Shared: `cli/pkg/policy/egress.go`
 
 Egress enforcement helpers shared across providers.
 
@@ -228,7 +228,7 @@ The proxy container IP is resolved at runtime via `docker inspect --format '{{ra
 
 ### 3. Local Provider Changes
 
-#### `cli/internal/provider/localprovider/provider.go`
+#### `cli/pkg/provider/localprovider/provider.go`
 
 **ProvisionAgent** — insert after step 4 (read image, line 183), before step 5 (create network):
 
@@ -270,7 +270,7 @@ if err := runAgentContainer(ctx, agentContainerOpts{
 
 **RemoveAgent** — add `stopAgentEgressProxy(ctx, name)` alongside existing container/network cleanup.
 
-#### `cli/internal/provider/localprovider/docker.go`
+#### `cli/pkg/provider/localprovider/docker.go`
 
 Extend `agentContainerOpts`:
 
@@ -366,7 +366,7 @@ func (p *LocalProvider) stopAgentEgressProxy(ctx context.Context, agentName stri
 
 Mirror the local provider pattern, executed via SSH:
 
-#### `cli/internal/provider/remoteprovider/provider.go`
+#### `cli/pkg/provider/remoteprovider/provider.go`
 
 Same policy loading in `ProvisionAgent` and `RefreshAgent`. Uses `p.ssh.Run()` for Docker commands instead of local `dockerRun()`.
 
@@ -405,7 +405,7 @@ func (p *RemoteProvider) stopAgentEgressProxy(ctx context.Context, agentName str
 }
 ```
 
-#### `cli/internal/provider/remoteprovider/docker.go`
+#### `cli/pkg/provider/remoteprovider/docker.go`
 
 Same `agentContainerOpts` extension and `runAgentContainer` changes as local, but Docker commands execute via SSH.
 
@@ -453,7 +453,7 @@ The existing `deploy/egress-proxy/` Dockerfile and image build are no longer nee
 
 **Keep `deploy/egress-proxy/`** as reference/documentation but don't build or deploy it. The `nginx:alpine` image is pulled directly.
 
-### 7. Tests: `cli/internal/policy/egress_test.go`
+### 7. Tests: `cli/pkg/policy/egress_test.go`
 
 ```go
 package policy
@@ -606,12 +606,12 @@ func TestGenerateNginxConfEmpty(t *testing.T) {
 
 | File | Action | Purpose |
 |---|---|---|
-| `cli/internal/policy/egress.go` | Create | LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateNginxConf |
-| `cli/internal/policy/egress_test.go` | Create | 10 unit tests |
-| `cli/internal/provider/localprovider/provider.go` | Modify | Policy loading in ProvisionAgent/RefreshAgent, startAgentEgressProxy, stopAgentEgressProxy |
-| `cli/internal/provider/localprovider/docker.go` | Modify | EgressEnforce/EgressProxyName fields on opts, proxy env vars in runAgentContainer |
-| `cli/internal/provider/remoteprovider/provider.go` | Modify | Same pattern as local via SSH |
-| `cli/internal/provider/remoteprovider/docker.go` | Modify | Same opts extension as local |
+| `cli/pkg/policy/egress.go` | Create | LoadEgressPolicy, EffectiveAllowedDomains, EgressProxyName, GenerateNginxConf |
+| `cli/pkg/policy/egress_test.go` | Create | 10 unit tests |
+| `cli/pkg/provider/localprovider/provider.go` | Modify | Policy loading in ProvisionAgent/RefreshAgent, startAgentEgressProxy, stopAgentEgressProxy |
+| `cli/pkg/provider/localprovider/docker.go` | Modify | EgressEnforce/EgressProxyName fields on opts, proxy env vars in runAgentContainer |
+| `cli/pkg/provider/remoteprovider/provider.go` | Modify | Same pattern as local via SSH |
+| `cli/pkg/provider/remoteprovider/docker.go` | Modify | Same opts extension as local |
 | `terraform/user-data.sh.tftpl` | Modify | Per-agent proxy section in agent setup functions |
 
 ## What This Does NOT Do

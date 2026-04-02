@@ -1,33 +1,33 @@
 # Implementation Tasks: Agent Pause / Unpause
 
 ## Task 1: Add Paused field to agent config structs
-- [x] `cli/internal/provider/provider.go` — add `Paused bool json:"paused,omitempty"` to `AgentConfig`
-- [x] `cli/internal/discovery/agent.go` — add `Paused bool json:"paused,omitempty"` to `AgentConfig`
-- [x] `cli/internal/provider/awsprovider/provider.go` — propagate `Paused` in `convertAgent` helper
+- [x] `cli/pkg/provider/provider.go` — add `Paused bool json:"paused,omitempty"` to `AgentConfig`
+- [x] `cli/pkg/discovery/agent.go` — add `Paused bool json:"paused,omitempty"` to `AgentConfig`
+- [x] `cli/pkg/provider/awsprovider/provider.go` — propagate `Paused` in `convertAgent` helper
 
 ## Task 2: Add PauseAgent/UnpauseAgent to Provider interface
-- [x] `cli/internal/provider/provider.go` — add two methods to the `Provider` interface
+- [x] `cli/pkg/provider/provider.go` — add two methods to the `Provider` interface
 
 ## Task 3: Update routing to exclude paused agents
-- [x] `cli/internal/common/routing.go` — add `if a.Paused { continue }` in `GenerateRoutingJSON`
+- [x] `cli/pkg/common/routing.go` — add `if a.Paused { continue }` in `GenerateRoutingJSON`
 
 ## Task 4: Implement local provider pause/unpause
-- [x] `cli/internal/provider/localprovider/provider.go` — implement `PauseAgent`
-- [x] `cli/internal/provider/localprovider/provider.go` — implement `UnpauseAgent`
-- [x] `cli/internal/provider/localprovider/provider.go` — extract `saveAgentConfig` helper
-- [x] `cli/internal/provider/localprovider/provider.go` — add paused guard to `RefreshAgent`
-- [x] `cli/internal/provider/localprovider/provider.go` — skip paused agents in `RefreshAll`
-- [x] `cli/internal/provider/localprovider/provider.go` — skip paused agents in `CycleHost`
+- [x] `cli/pkg/provider/localprovider/provider.go` — implement `PauseAgent`
+- [x] `cli/pkg/provider/localprovider/provider.go` — implement `UnpauseAgent`
+- [x] `cli/pkg/provider/localprovider/provider.go` — extract `saveAgentConfig` helper
+- [x] `cli/pkg/provider/localprovider/provider.go` — add paused guard to `RefreshAgent`
+- [x] `cli/pkg/provider/localprovider/provider.go` — skip paused agents in `RefreshAll`
+- [x] `cli/pkg/provider/localprovider/provider.go` — skip paused agents in `CycleHost`
 
 ## Task 5: Implement AWS provider pause/unpause
 - [x] Create `cli/scripts/pause-agent.sh.tmpl`
 - [x] Create `cli/scripts/unpause-agent.sh.tmpl`
 - [x] Update `cli/scripts/embed.go` — embed new templates
-- [x] `cli/internal/provider/awsprovider/provider.go` — implement `PauseAgent`
-- [x] `cli/internal/provider/awsprovider/provider.go` — implement `UnpauseAgent`
-- [x] `cli/internal/provider/awsprovider/provider.go` — implement `setAgentPaused` helper
-- [x] `cli/internal/provider/awsprovider/provider.go` — add paused guard to `RefreshAgent`
-- [x] `cli/internal/provider/awsprovider/provider.go` — skip paused agents in `RefreshAll`
+- [x] `cli/pkg/provider/awsprovider/provider.go` — implement `PauseAgent`
+- [x] `cli/pkg/provider/awsprovider/provider.go` — implement `UnpauseAgent`
+- [x] `cli/pkg/provider/awsprovider/provider.go` — implement `setAgentPaused` helper
+- [x] `cli/pkg/provider/awsprovider/provider.go` — add paused guard to `RefreshAgent`
+- [x] `cli/pkg/provider/awsprovider/provider.go` — skip paused agents in `RefreshAll`
 
 ## Task 6: CLI commands
 - [x] Create `cli/cmd/admin_pause.go` — `adminPauseRun`, `adminUnpauseRun`

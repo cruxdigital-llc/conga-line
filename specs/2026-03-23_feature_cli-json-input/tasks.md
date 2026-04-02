@@ -1,12 +1,12 @@
 # Tasks — CLI JSON Input
 
 ## Phase 1: Infrastructure
-- [x] 1.1 Create `cli/internal/ui/json_mode.go` — state vars, `SetJSONMode`, typed getters, `*J` prompt variants
-- [x] 1.2 Create `cli/internal/ui/json_output.go` — `EmitJSON`, `EmitError`, `Info`, `Infoln`
+- [x] 1.1 Create `cli/pkg/ui/json_mode.go` — state vars, `SetJSONMode`, typed getters, `*J` prompt variants
+- [x] 1.2 Create `cli/pkg/ui/json_output.go` — `EmitJSON`, `EmitError`, `Info`, `Infoln`
 - [x] 1.3 Modify `cli/cmd/root.go` — add `--json` + `--output` flags, init in `PersistentPreRunE`, JSON error in `Execute()`
-- [x] 1.4 Modify `cli/internal/ui/spinner.go` — no-op when `OutputJSON` is true
-- [x] 1.5 Modify `cli/internal/ui/table.go` — no-op when `OutputJSON` is true
-- [x] 1.6 Create `cli/internal/ui/json_mode_test.go` — unit tests for JSON mode (25 tests, all pass)
+- [x] 1.4 Modify `cli/pkg/ui/spinner.go` — no-op when `OutputJSON` is true
+- [x] 1.5 Modify `cli/pkg/ui/table.go` — no-op when `OutputJSON` is true
+- [x] 1.6 Create `cli/pkg/ui/json_mode_test.go` — unit tests for JSON mode (25 tests, all pass)
 - [x] 1.7 Verify: `go build` and `go test ./cli/...` pass
 
 ## Phase 2: Tier 1 Commands (output only)

@@ -8,7 +8,7 @@ Third `provider.Provider` implementation managing OpenClaw agent clusters on any
 ## 1. Package Structure
 
 ```
-cli/internal/provider/vpsprovider/
+cli/pkg/provider/vpsprovider/
     provider.go      — VPSProvider struct, init/factory, 17 Provider interface methods
     ssh.go           — SSH client wrapper (connect, exec, SFTP, tunnel)
     docker.go        — Remote Docker CLI helpers
@@ -21,7 +21,7 @@ cli/internal/provider/vpsprovider/
 
 ## 2. Data Models
 
-### 2.1 Config Changes (`cli/internal/provider/config.go`)
+### 2.1 Config Changes (`cli/pkg/provider/config.go`)
 
 Add SSH fields to the existing `Config` struct:
 
@@ -175,7 +175,7 @@ If SFTP is unavailable (some minimal VPS images), falls back to `Run("cat > path
 func (c *SSHClient) ForwardPort(ctx context.Context, localPort, remotePort int) (*SSHTunnel, error)
 ```
 
-Opens a local TCP listener on `127.0.0.1:localPort`. For each incoming connection, dials `localhost:remotePort` on the remote host via `c.client.Dial("tcp", fmt.Sprintf("localhost:%d", remotePort))` and bidirectionally copies data. Returns `SSHTunnel` with `Wait()` and `Stop()` methods matching the existing tunnel pattern from `cli/internal/tunnel/tunnel.go`.
+Opens a local TCP listener on `127.0.0.1:localPort`. For each incoming connection, dials `localhost:remotePort` on the remote host via `c.client.Dial("tcp", fmt.Sprintf("localhost:%d", remotePort))` and bidirectionally copies data. Returns `SSHTunnel` with `Wait()` and `Stop()` methods matching the existing tunnel pattern from `cli/pkg/tunnel/tunnel.go`.
 
 ---
 
@@ -427,7 +427,7 @@ On "y": append `{host} {key-type} {base64-key}` to `~/.ssh/known_hosts`. On "n":
 
 Add blank import:
 ```go
-_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/vpsprovider"
+_ "github.com/cruxdigital-llc/conga-line/cli/pkg/provider/vpsprovider"
 ```
 
 Update `--provider` flag help text:
@@ -549,11 +549,11 @@ Both are well-maintained, widely-used Go packages with no transitive dependencie
 ### Modified Files (3)
 | File | Change |
 |---|---|
-| `cli/internal/provider/config.go` | Add 4 SSH fields to Config struct |
+| `cli/pkg/provider/config.go` | Add 4 SSH fields to Config struct |
 | `cli/cmd/root.go` | Add vpsprovider import, update flag help |
 | `cli/go.mod` | Add golang.org/x/crypto, github.com/pkg/sftp |
 
 ### Reused (no changes)
-- `cli/internal/provider/provider.go` — Provider interface
-- `cli/internal/provider/registry.go` — Registration pattern
-- `cli/internal/common/*` — All config generation, routing, behavior, validation
+- `cli/pkg/provider/provider.go` — Provider interface
+- `cli/pkg/provider/registry.go` — Registration pattern
+- `cli/pkg/common/*` — All config generation, routing, behavior, validation

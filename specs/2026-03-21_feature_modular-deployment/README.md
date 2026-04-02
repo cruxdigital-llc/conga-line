@@ -55,30 +55,30 @@
 ### Implementation Phase — 2026-03-21
 - Session resumed for implementation
 - **Phase 1** (Provider interface + common package): 9 new files created
-  - `cli/internal/provider/provider.go` — Provider interface (16 methods) + 7 shared types
-  - `cli/internal/provider/registry.go` — Provider registry with Register/Get/Names
-  - `cli/internal/provider/config.go` — Config load/save from `~/.conga/config.json`
-  - `cli/internal/common/config.go` — OpenClaw config generation + env file generation
-  - `cli/internal/common/routing.go` — Routing JSON generation
-  - `cli/internal/common/behavior.go` — Behavior file composition
-  - `cli/internal/common/ports.go` — Gateway port allocation
-  - `cli/internal/common/secrets.go` — Secret name to env var conversion
-  - `cli/internal/common/validate.go` — Slack ID + agent name validators
+  - `cli/pkg/provider/provider.go` — Provider interface (16 methods) + 7 shared types
+  - `cli/pkg/provider/registry.go` — Provider registry with Register/Get/Names
+  - `cli/pkg/provider/config.go` — Config load/save from `~/.conga/config.json`
+  - `cli/pkg/common/config.go` — OpenClaw config generation + env file generation
+  - `cli/pkg/common/routing.go` — Routing JSON generation
+  - `cli/pkg/common/behavior.go` — Behavior file composition
+  - `cli/pkg/common/ports.go` — Gateway port allocation
+  - `cli/pkg/common/secrets.go` — Secret name to env var conversion
+  - `cli/pkg/common/validate.go` — Slack ID + agent name validators
 - **Phase 2** (AWS provider + command refactoring): 1 new file, 13 files modified
-  - `cli/internal/provider/awsprovider/provider.go` — Full Provider implementation wrapping existing code
+  - `cli/pkg/provider/awsprovider/provider.go` — Full Provider implementation wrapping existing code
   - All 13 command files refactored to use `prov.Method()` instead of direct AWS calls
   - `root.go` — replaced `clients *awsutil.Clients` with `prov provider.Provider`, added `--provider`/`--data-dir` flags
   - Test files updated: `secrets_test.go`, `status_test.go` — adapted for extracted functions
   - All existing tests pass, `go vet` clean
 - **Phase 3** (Local Docker provider): 3 new files
-  - `cli/internal/provider/localprovider/provider.go` — Full Provider implementation (16 methods)
-  - `cli/internal/provider/localprovider/docker.go` — Docker CLI wrapper (20+ functions)
-  - `cli/internal/provider/localprovider/secrets.go` — File-based secrets (mode 0400)
+  - `cli/pkg/provider/localprovider/provider.go` — Full Provider implementation (16 methods)
+  - `cli/pkg/provider/localprovider/docker.go` — Docker CLI wrapper (20+ functions)
+  - `cli/pkg/provider/localprovider/secrets.go` — File-based secrets (mode 0400)
 - **Phase 4** (Network isolation): 2 new files
   - `deploy/egress-proxy/Dockerfile` — Alpine nginx for HTTPS/DNS-only egress
   - `deploy/egress-proxy/nginx.conf` — Stream proxy: 443 passthrough + DNS forwarding
 - **Phase 5** (Config integrity): 1 new file
-  - `cli/internal/provider/localprovider/integrity.go` — SHA256 hash verification + logging
+  - `cli/pkg/provider/localprovider/integrity.go` — SHA256 hash verification + logging
 - **Phase 6** (CLI integration): Integrated into root.go
   - Provider auto-detection: config file → default AWS
   - `auth login` shows "not applicable" for local
@@ -97,10 +97,10 @@
 - **Spec retrospection**: Implementation matches spec. Minor additions: `Waiter` field on `ConnectInfo`, `gatewayToken` param on config gen
 - **Test synchronization**: Added 4 test files for common package (secrets, validate, ports, routing). Removed stale `parseKeyValues`/`splitStats` tests from cmd package. All 5 packages pass.
 - **New test files**:
-  - `cli/internal/common/secrets_test.go` — 7 test cases for SecretNameToEnvVar
-  - `cli/internal/common/validate_test.go` — 20 test cases for member ID, channel ID, agent name validation
-  - `cli/internal/common/ports_test.go` — 4 test cases for port allocation
-  - `cli/internal/common/routing_test.go` — 2 test cases for routing JSON generation
+  - `cli/pkg/common/secrets_test.go` — 7 test cases for SecretNameToEnvVar
+  - `cli/pkg/common/validate_test.go` — 20 test cases for member ID, channel ID, agent name validation
+  - `cli/pkg/common/ports_test.go` — 4 test cases for port allocation
+  - `cli/pkg/common/routing_test.go` — 2 test cases for routing JSON generation
 
 ### Standards Gate — 2026-03-21
 - **Result**: PROCEED (no violations, 1 warning)

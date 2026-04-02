@@ -38,6 +38,6 @@ Design a Terraform provider (`terraform-provider-conga`) that maps Terraform res
 ## Constraints
 
 - Must use `terraform-plugin-framework` (not the deprecated `terraform-plugin-sdk`)
-- Separate Go module (`terraform-provider-conga/`) that imports `cli/internal/provider`
+- Separate Go module (`terraform-provider-conga/`) that imports `cli/pkg/provider`
 - Published to Terraform Registry under `cruxdigital-llc/conga`
 - Secrets must use `sensitive = true` in the Terraform schema

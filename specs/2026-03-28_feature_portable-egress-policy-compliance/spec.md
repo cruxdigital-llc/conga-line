@@ -21,7 +21,7 @@ This spec aligns all three providers. The egress proxy is **always deployed** wh
 
 The `mode` field currently defaults to `validate` when empty/absent. Change to default to `enforce`.
 
-**File**: `cli/internal/policy/policy.go`
+**File**: `cli/pkg/policy/policy.go`
 
 In `Validate()` or after loading, normalize empty mode to `enforce`:
 
@@ -36,7 +36,7 @@ This must also apply to agent overrides — if an agent override has an egress s
 
 ### 1.2 Update validation
 
-**File**: `cli/internal/policy/policy.go`
+**File**: `cli/pkg/policy/policy.go`
 
 The `validateEgress()` function accepts `""` as valid. Keep this — the normalization in 1.1 means empty mode is resolved to `enforce` before reaching provider code.
 
@@ -53,7 +53,7 @@ When `egressProxy` is true but `egressEnforce` is false (validate mode), the pro
 
 ### 2.1 Local Provider — `ProvisionAgent` and `RefreshAgent`
 
-**File**: `cli/internal/provider/localprovider/provider.go`
+**File**: `cli/pkg/provider/localprovider/provider.go`
 
 Replace:
 ```go
@@ -90,13 +90,13 @@ Then update all proxy-related code to use `egressProxy` instead of `egressEnforc
 
 ### 2.2 Remote Provider — `ProvisionAgent` and `RefreshAgent`
 
-**File**: `cli/internal/provider/remoteprovider/provider.go`
+**File**: `cli/pkg/provider/remoteprovider/provider.go`
 
 Same split as local provider. Both `ProvisionAgent` (~line 236) and `RefreshAgent` (~line 599) get the same pattern.
 
 ### 2.3 Remote Provider — `ensureEgressIptables`
 
-**File**: `cli/internal/provider/remoteprovider/provider.go`
+**File**: `cli/pkg/provider/remoteprovider/provider.go`
 
 No change from current implementation — already checks `egressPolicy.Mode != "enforce"`.
 
@@ -195,7 +195,7 @@ After the proxy startup section (line ~743) and before the systemd unit generati
   fi
 ```
 
-This mirrors the exact same iptables rule structure used by the shared `iptables.AddRulesCmd()` in `cli/internal/provider/iptables/rules.go` (lines 21-35).
+This mirrors the exact same iptables rule structure used by the shared `iptables.AddRulesCmd()` in `cli/pkg/provider/iptables/rules.go` (lines 21-35).
 
 ### 3.5 Add iptables cleanup to systemd unit
 
@@ -265,7 +265,7 @@ fi
 
 ### 3b.1 Add `mode` parameter to `GenerateProxyConf()`
 
-**File**: `cli/internal/policy/egress.go`
+**File**: `cli/pkg/policy/egress.go`
 
 Change signature from:
 ```go
@@ -291,7 +291,7 @@ When `mode == "validate"` and domains are provided, set `HasDomains = true` AND 
 
 ### 3b.2 Update Envoy config template
 
-**File**: `cli/internal/policy/templates/envoy-config.yaml.tmpl`
+**File**: `cli/pkg/policy/templates/envoy-config.yaml.tmpl`
 
 Replace the Lua `envoy_on_request` function body:
 
@@ -375,7 +375,7 @@ All call sites must pass the mode:
 
 ### 4.1 Update `egressReport()`
 
-**File**: `cli/internal/policy/enforcement.go`
+**File**: `cli/pkg/policy/enforcement.go`
 
 Replace the current `egressReport` function (lines 40-74):
 
@@ -419,7 +419,7 @@ This unifies all three providers under the same mode-driven logic. The provider 
 
 ### 5.1 Update enforcement report tests
 
-**File**: `cli/internal/policy/policy_test.go`
+**File**: `cli/pkg/policy/policy_test.go`
 
 Update `TestEnforcementReportAWS` (line ~251) — with the new default of `enforce`, a policy with no explicit mode should report `Enforced`:
 ```go

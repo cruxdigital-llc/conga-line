@@ -16,7 +16,7 @@
 - **YAML over JSON** — policy file is operator-authored; YAML is more ergonomic for domain lists and nested config. Only YAML file in the project; all machine-generated config stays JSON.
 - **Optional file** — policy is opt-in. When absent, all existing behavior is unchanged. No enforcement in this spec.
 - **Shallow merge for agent overrides** — agent override replaces entire section (e.g., entire egress block), not individual fields. Predictable behavior.
-- **New package** — `cli/internal/policy/` keeps policy logic separate from providers. Providers will consume it in future specs.
+- **New package** — `cli/pkg/policy/` keeps policy logic separate from providers. Providers will consume it in future specs.
 - **No Provider interface changes** — this spec is data model only. Enforcement integration comes in Spec 2+.
 
 ## Session Log
@@ -55,9 +55,9 @@
 - `specs/2026-03-25_feature_policy-schema/plan.md` — created
 - `specs/2026-03-25_feature_policy-schema/spec.md` — created
 - `specs/2026-03-25_feature_policy-schema/tasks.md` — created
-- `cli/internal/policy/policy.go` — created (types, Load, Validate, MergeForAgent, MatchDomain)
-- `cli/internal/policy/enforcement.go` — created (EnforcementReport, per-provider capability matrix)
-- `cli/internal/policy/policy_test.go` — created (19 unit tests)
+- `cli/pkg/policy/policy.go` — created (types, Load, Validate, MergeForAgent, MatchDomain)
+- `cli/pkg/policy/enforcement.go` — created (EnforcementReport, per-provider capability matrix)
+- `cli/pkg/policy/policy_test.go` — created (19 unit tests)
 - `cli/cmd/policy.go` — created (conga policy validate command)
 - `conga-policy.yaml.example` — created (documented example)
 - `cli/go.mod` — modified (added gopkg.in/yaml.v3)

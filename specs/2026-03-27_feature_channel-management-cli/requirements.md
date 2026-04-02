@@ -6,7 +6,7 @@ Decouple channel (Slack) configuration from environment setup so that channels c
 
 ## Background
 
-Today, `admin setup` lumps Slack credential collection in with environment bootstrapping. The Channel interface (`cli/internal/channels/`) is already cleanly abstracted — Slack is a proper plugin that declares secrets, validates IDs, and generates config. However, there's no way to add or remove a channel *after* setup without re-running `admin setup` or manually editing secrets/config.
+Today, `admin setup` lumps Slack credential collection in with environment bootstrapping. The Channel interface (`cli/pkg/channels/`) is already cleanly abstracted — Slack is a proper plugin that declares secrets, validates IDs, and generates config. However, there's no way to add or remove a channel *after* setup without re-running `admin setup` or manually editing secrets/config.
 
 Similarly, the `--channel slack:ID` flag on `admin add-user`/`admin add-team` is the only way to bind an agent to Slack. There's no way to add Slack to an existing gateway-only agent, or remove Slack from an agent that has it.
 

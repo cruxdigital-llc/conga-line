@@ -6,7 +6,7 @@ This spec details the refactoring of Conga Line's CLI and deployment layer into 
 
 ---
 
-## 2. Package: `cli/internal/provider` — Interface & Shared Types
+## 2. Package: `cli/pkg/provider` — Interface & Shared Types
 
 ### 2.1 Core Types
 
@@ -234,7 +234,7 @@ func SaveConfig(path string, cfg *Config) error { /* ... */ }
 
 ---
 
-## 3. Package: `cli/internal/common` — Shared Logic
+## 3. Package: `cli/pkg/common` — Shared Logic
 
 ### 3.1 Config Generation
 
@@ -335,7 +335,7 @@ func SecretNameToEnvVar(name string) string
 
 ---
 
-## 4. Package: `cli/internal/provider/aws` — AWS Provider
+## 4. Package: `cli/pkg/provider/aws` — AWS Provider
 
 ### 4.1 Structure
 
@@ -345,10 +345,10 @@ package aws
 
 import (
     "context"
-    awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
-    "github.com/cruxdigital-llc/conga-line/cli/internal/discovery"
-    "github.com/cruxdigital-llc/conga-line/cli/internal/provider"
-    "github.com/cruxdigital-llc/conga-line/cli/internal/tunnel"
+    awsutil "github.com/cruxdigital-llc/conga-line/cli/pkg/aws"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/discovery"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/tunnel"
 )
 
 // AWSProvider implements provider.Provider using AWS services.
@@ -410,7 +410,7 @@ The existing `discovery.AgentConfig` struct maps 1:1 to `provider.AgentConfig`. 
 
 ---
 
-## 5. Package: `cli/internal/provider/local` — Local Docker Provider
+## 5. Package: `cli/pkg/provider/local` — Local Docker Provider
 
 ### 5.1 Structure
 
@@ -419,7 +419,7 @@ The existing `discovery.AgentConfig` struct maps 1:1 to `provider.AgentConfig`. 
 package local
 
 import (
-    "github.com/cruxdigital-llc/conga-line/cli/internal/provider"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
 )
 
 // LocalProvider implements provider.Provider using local Docker.
@@ -956,20 +956,20 @@ Hash baselines are stored at `~/.conga/config/{name}.sha256` and compared agains
 
 | File | Lines (est.) | Purpose |
 |------|-------------|---------|
-| `cli/internal/provider/provider.go` | ~120 | Interface + shared types |
-| `cli/internal/provider/registry.go` | ~40 | Provider registry |
-| `cli/internal/provider/config.go` | ~60 | Config load/save |
-| `cli/internal/common/config.go` | ~100 | OpenClaw config generation |
-| `cli/internal/common/routing.go` | ~40 | Routing JSON generation |
-| `cli/internal/common/behavior.go` | ~80 | Behavior file composition |
-| `cli/internal/common/ports.go` | ~20 | Port allocation |
-| `cli/internal/common/secrets.go` | ~15 | Secret name conversion |
-| `cli/internal/provider/aws/provider.go` | ~400 | AWS provider implementation |
-| `cli/internal/provider/local/provider.go` | ~150 | Local provider struct + lifecycle |
-| `cli/internal/provider/local/docker.go` | ~250 | Docker CLI wrapper |
-| `cli/internal/provider/local/secrets.go` | ~80 | Local secrets file storage |
-| `cli/internal/provider/local/network.go` | ~60 | Network isolation + egress proxy |
-| `cli/internal/provider/local/integrity.go` | ~50 | Config integrity monitoring |
+| `cli/pkg/provider/provider.go` | ~120 | Interface + shared types |
+| `cli/pkg/provider/registry.go` | ~40 | Provider registry |
+| `cli/pkg/provider/config.go` | ~60 | Config load/save |
+| `cli/pkg/common/config.go` | ~100 | OpenClaw config generation |
+| `cli/pkg/common/routing.go` | ~40 | Routing JSON generation |
+| `cli/pkg/common/behavior.go` | ~80 | Behavior file composition |
+| `cli/pkg/common/ports.go` | ~20 | Port allocation |
+| `cli/pkg/common/secrets.go` | ~15 | Secret name conversion |
+| `cli/pkg/provider/aws/provider.go` | ~400 | AWS provider implementation |
+| `cli/pkg/provider/local/provider.go` | ~150 | Local provider struct + lifecycle |
+| `cli/pkg/provider/local/docker.go` | ~250 | Docker CLI wrapper |
+| `cli/pkg/provider/local/secrets.go` | ~80 | Local secrets file storage |
+| `cli/pkg/provider/local/network.go` | ~60 | Network isolation + egress proxy |
+| `cli/pkg/provider/local/integrity.go` | ~50 | Config integrity monitoring |
 | `deploy/egress-proxy/Dockerfile` | ~5 | Egress proxy image |
 | `deploy/egress-proxy/nginx.conf` | ~30 | Egress proxy config |
 
@@ -997,9 +997,9 @@ Hash baselines are stored at `~/.conga/config/{name}.sha256` and compared agains
 - All `terraform/` files
 - `router/src/index.js`
 - `behavior/` files
-- `cli/internal/aws/` (kept for AWS provider, not modified)
-- `cli/internal/discovery/` (kept for AWS provider, not modified)
-- `cli/internal/tunnel/` (kept for AWS provider, not modified)
+- `cli/pkg/aws/` (kept for AWS provider, not modified)
+- `cli/pkg/discovery/` (kept for AWS provider, not modified)
+- `cli/pkg/tunnel/` (kept for AWS provider, not modified)
 - `cli/scripts/` (kept for AWS provider shell templates)
 
 ---

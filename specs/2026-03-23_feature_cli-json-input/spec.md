@@ -59,7 +59,7 @@ if flagOutput == "json" {
 
 ---
 
-## 2. UI Package — JSON Mode (`cli/internal/ui/json_mode.go`)
+## 2. UI Package — JSON Mode (`cli/pkg/ui/json_mode.go`)
 
 ### 2.1 Package-Level State
 
@@ -258,7 +258,7 @@ func PrintTable(headers []string, rows [][]string) {
 
 ---
 
-## 3. JSON Output (`cli/internal/ui/json_output.go`)
+## 3. JSON Output (`cli/pkg/ui/json_output.go`)
 
 ### 3.1 Output Helpers
 
@@ -677,10 +677,10 @@ In JSON mode, confirmation is auto-accepted (like `--force`). The `"Cancelled."`
 
 | File | Purpose |
 |---|---|
-| `cli/internal/ui/json_mode.go` | JSON mode state, getters, modified prompt variants |
-| `cli/internal/ui/json_output.go` | `EmitJSON`, `EmitError`, `Info`, `Infoln` |
+| `cli/pkg/ui/json_mode.go` | JSON mode state, getters, modified prompt variants |
+| `cli/pkg/ui/json_output.go` | `EmitJSON`, `EmitError`, `Info`, `Infoln` |
 | `cli/cmd/json_schema.go` | `json-schema` command + schema registry |
-| `cli/internal/ui/json_mode_test.go` | Unit tests for JSON mode parsing and getters |
+| `cli/pkg/ui/json_mode_test.go` | Unit tests for JSON mode parsing and getters |
 | `cli/cmd/json_schema_test.go` | Tests for schema command |
 
 ### Modified Files
@@ -688,8 +688,8 @@ In JSON mode, confirmation is auto-accepted (like `--force`). The `"Cancelled."`
 | File | Change |
 |---|---|
 | `cli/cmd/root.go` | Add `--json`, `--output` flags; init JSON mode in `PersistentPreRunE`; JSON error in `Execute()` |
-| `cli/internal/ui/spinner.go` | No-op when `OutputJSON` is true |
-| `cli/internal/ui/table.go` | No-op when `OutputJSON` is true |
+| `cli/pkg/ui/spinner.go` | No-op when `OutputJSON` is true |
+| `cli/pkg/ui/table.go` | No-op when `OutputJSON` is true |
 | `cli/cmd/version.go` | Add JSON output branch |
 | `cli/cmd/auth.go` | Add JSON output for `login` and `status` |
 | `cli/cmd/status.go` | Add JSON output branch |
@@ -709,30 +709,30 @@ In JSON mode, confirmation is auto-accepted (like `--force`). The `"Cancelled."`
 
 | File | Change |
 |---|---|
-| `cli/internal/provider/provider.go` | `Setup(ctx)` → `Setup(ctx, *SetupConfig)` to accept non-interactive config |
-| `cli/internal/provider/setup_config.go` | New file: `SetupConfig` struct + `ParseSetupConfig()` |
-| `cli/internal/provider/awsprovider/provider.go` | Updated `Setup` signature |
-| `cli/internal/provider/localprovider/provider.go` | Updated `Setup` to use `SetupConfig` values when non-nil |
-| `cli/internal/provider/remoteprovider/setup.go` | Updated `Setup` to use `SetupConfig` values when non-nil |
+| `cli/pkg/provider/provider.go` | `Setup(ctx)` → `Setup(ctx, *SetupConfig)` to accept non-interactive config |
+| `cli/pkg/provider/setup_config.go` | New file: `SetupConfig` struct + `ParseSetupConfig()` |
+| `cli/pkg/provider/awsprovider/provider.go` | Updated `Setup` signature |
+| `cli/pkg/provider/localprovider/provider.go` | Updated `Setup` to use `SetupConfig` values when non-nil |
+| `cli/pkg/provider/remoteprovider/setup.go` | Updated `Setup` to use `SetupConfig` values when non-nil |
 
 ### Files NOT Modified
 
 | File | Reason |
 |---|---|
-| `cli/internal/common/*` | No changes to shared logic |
-| `cli/internal/ui/prompt.go` | Original functions preserved; new `*J` variants in `json_mode.go` |
+| `cli/pkg/common/*` | No changes to shared logic |
+| `cli/pkg/ui/prompt.go` | Original functions preserved; new `*J` variants in `json_mode.go` |
 
 ---
 
 ## 8. Implementation Phases
 
 ### Phase 1: Infrastructure (~2 new files, 3 modified)
-1. Create `cli/internal/ui/json_mode.go` — state, `SetJSONMode`, getters, `*J` prompt variants
-2. Create `cli/internal/ui/json_output.go` — `EmitJSON`, `EmitError`, `Info`, `Infoln`
+1. Create `cli/pkg/ui/json_mode.go` — state, `SetJSONMode`, getters, `*J` prompt variants
+2. Create `cli/pkg/ui/json_output.go` — `EmitJSON`, `EmitError`, `Info`, `Infoln`
 3. Modify `cli/cmd/root.go` — add flags, init in `PersistentPreRunE`, JSON error in `Execute()`
-4. Modify `cli/internal/ui/spinner.go` — no-op in JSON mode
-5. Modify `cli/internal/ui/table.go` — no-op in JSON mode
-6. Create `cli/internal/ui/json_mode_test.go` — unit tests
+4. Modify `cli/pkg/ui/spinner.go` — no-op in JSON mode
+5. Modify `cli/pkg/ui/table.go` — no-op in JSON mode
+6. Create `cli/pkg/ui/json_mode_test.go` — unit tests
 
 ### Phase 2: Tier 1 Commands — Output Only (~6 files modified)
 - `version.go`, `auth.go`, `status.go`, `logs.go`, `admin.go` (list-agents), pause/unpause in admin files
@@ -750,7 +750,7 @@ In JSON mode, confirmation is auto-accepted (like `--force`). The `"Cancelled."`
 
 ## 9. Test Plan
 
-### Unit Tests (`cli/internal/ui/json_mode_test.go`)
+### Unit Tests (`cli/pkg/ui/json_mode_test.go`)
 
 | Test | What it verifies |
 |---|---|

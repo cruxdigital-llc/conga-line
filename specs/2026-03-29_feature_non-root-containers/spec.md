@@ -28,7 +28,7 @@ This change does not affect agent data. The `--user` flag controls the process U
 
 ### 1. Agent Container — Local Provider
 
-**File**: `cli/internal/provider/localprovider/docker.go`
+**File**: `cli/pkg/provider/localprovider/docker.go`
 **Function**: `runAgentContainer()` (line 76)
 **Change**: Insert `"--user", "1000:1000"` into the args slice after `"--pids-limit", "256"`.
 
@@ -45,7 +45,7 @@ This change does not affect agent data. The `--user` flag controls the process U
 
 ### 2. Agent Container — Remote Provider
 
-**File**: `cli/internal/provider/remoteprovider/docker.go`
+**File**: `cli/pkg/provider/remoteprovider/docker.go`
 **Function**: `runAgentContainer()` (line 76)
 **Change**: Identical to local provider — insert `"--user", "1000:1000"` after `"--pids-limit", "256"`.
 
@@ -94,7 +94,7 @@ ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME ... --pids-limit 256 --us
 
 ### 7. Router Container — Local Provider
 
-**File**: `cli/internal/provider/localprovider/docker.go`
+**File**: `cli/pkg/provider/localprovider/docker.go`
 **Function**: `runRouterContainer()` (line 128)
 **Change**: Insert `"--user", "1000:1000"` after `"--tmpfs", "/tmp:rw,noexec,nosuid"`.
 
@@ -111,7 +111,7 @@ ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME ... --pids-limit 256 --us
 
 ### 8. Router Container — Remote Provider
 
-**File**: `cli/internal/provider/remoteprovider/docker.go`
+**File**: `cli/pkg/provider/remoteprovider/docker.go`
 **Function**: `runRouterContainer()` (line 124)
 **Change**: Identical to local provider.
 

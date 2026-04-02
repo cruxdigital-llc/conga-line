@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

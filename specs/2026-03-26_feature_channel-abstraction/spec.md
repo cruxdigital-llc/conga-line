@@ -2,13 +2,13 @@
 
 ## Overview
 
-Extract all Slack-specific logic from the core CLI into a `cli/internal/channels/` package behind a `Channel` interface. Slack becomes the first (and currently only) implementation. No new channel types are added — this is a structural refactor.
+Extract all Slack-specific logic from the core CLI into a `cli/pkg/channels/` package behind a `Channel` interface. Slack becomes the first (and currently only) implementation. No new channel types are added — this is a structural refactor.
 
 ---
 
 ## 1. Data Models
 
-### 1.1 `ChannelBinding` (new type in `cli/internal/channels/channels.go`)
+### 1.1 `ChannelBinding` (new type in `cli/pkg/channels/channels.go`)
 
 ```go
 // ChannelBinding links an agent to a specific endpoint on a messaging platform.
@@ -34,7 +34,7 @@ Serialized in agent JSON files (`~/.conga/agents/*.json`):
 
 **Breaking change**: replaces `"slack_member_id"` and `"slack_channel"` fields. Existing agent JSON files are incompatible — agents must be re-provisioned.
 
-### 1.2 `SecretDef` (new type in `cli/internal/channels/channels.go`)
+### 1.2 `SecretDef` (new type in `cli/pkg/channels/channels.go`)
 
 ```go
 // SecretDef declares a secret that a channel needs during admin setup.
@@ -47,7 +47,7 @@ type SecretDef struct {
 }
 ```
 
-### 1.3 `RoutingEntry` (new type in `cli/internal/channels/channels.go`)
+### 1.3 `RoutingEntry` (new type in `cli/pkg/channels/channels.go`)
 
 ```go
 // RoutingEntry is one entry for a channel's routing config.
@@ -58,7 +58,7 @@ type RoutingEntry struct {
 }
 ```
 
-### 1.4 `AgentConfig` (modified in `cli/internal/provider/provider.go`)
+### 1.4 `AgentConfig` (modified in `cli/pkg/provider/provider.go`)
 
 ```go
 type AgentConfig struct {
@@ -87,7 +87,7 @@ func (a *AgentConfig) ChannelBinding(platform string) *channels.ChannelBinding {
 }
 ```
 
-### 1.5 `SharedSecrets` (modified in `cli/internal/common/config.go`)
+### 1.5 `SharedSecrets` (modified in `cli/pkg/common/config.go`)
 
 Replace Slack-specific fields with a generic value map:
 
@@ -101,7 +101,7 @@ type SharedSecrets struct {
 
 The `HasSlack()` method is removed. Channel credential checks use `channels.Get("slack").HasCredentials(secrets.Values)`.
 
-### 1.6 `SetupConfig` (modified in `cli/internal/provider/setup_config.go`)
+### 1.6 `SetupConfig` (modified in `cli/pkg/provider/setup_config.go`)
 
 Replace Slack-named fields with a generic secrets map:
 
@@ -134,7 +134,7 @@ type SetupConfig struct {
 
 ## 2. Channel Interface
 
-### 2.1 `Channel` (new interface in `cli/internal/channels/channels.go`)
+### 2.1 `Channel` (new interface in `cli/pkg/channels/channels.go`)
 
 ```go
 // Channel defines the contract for a messaging platform integration.
@@ -175,7 +175,7 @@ type Channel interface {
 }
 ```
 
-### 2.2 Registry (new file `cli/internal/channels/registry.go`)
+### 2.2 Registry (new file `cli/pkg/channels/registry.go`)
 
 ```go
 package channels
@@ -232,7 +232,7 @@ func registeredNames() []string {
 
 ## 3. Slack Implementation
 
-### 3.1 `cli/internal/channels/slack/slack.go`
+### 3.1 `cli/pkg/channels/slack/slack.go`
 
 ```go
 package slack
@@ -241,7 +241,7 @@ import (
     "fmt"
     "regexp"
 
-    "github.com/cruxdigital-llc/conga-line/cli/internal/channels"
+    "github.com/cruxdigital-llc/conga-line/cli/pkg/channels"
 )
 
 func init() {
@@ -361,7 +361,7 @@ func (s *Slack) BehaviorTemplateVars(agentType string, binding channels.ChannelB
 }
 ```
 
-### 3.2 `cli/internal/channels/slack/slack_test.go`
+### 3.2 `cli/pkg/channels/slack/slack_test.go`
 
 Table-driven tests covering:
 
@@ -805,7 +805,7 @@ provider/ ─────► channels/ (ChannelBinding)  │
 The Slack `init()` registration means any binary that imports `channels/slack` (directly or transitively) gets Slack registered. This import must be added to `main.go` or `cmd/root.go`:
 
 ```go
-import _ "github.com/cruxdigital-llc/conga-line/cli/internal/channels/slack"
+import _ "github.com/cruxdigital-llc/conga-line/cli/pkg/channels/slack"
 ```
 
 ---
@@ -863,38 +863,38 @@ No backward compat shim — breaking change.
 
 | File | Lines (est.) | Purpose |
 |------|-------------|---------|
-| `cli/internal/channels/channels.go` | ~60 | Interface, types (`ChannelBinding`, `SecretDef`, `RoutingEntry`) |
-| `cli/internal/channels/registry.go` | ~50 | Registry + `ParseBinding()` |
-| `cli/internal/channels/slack/slack.go` | ~130 | Slack `Channel` implementation |
-| `cli/internal/channels/slack/slack_test.go` | ~200 | 13 test cases |
-| `cli/internal/channels/registry_test.go` | ~40 | Registry + ParseBinding tests |
+| `cli/pkg/channels/channels.go` | ~60 | Interface, types (`ChannelBinding`, `SecretDef`, `RoutingEntry`) |
+| `cli/pkg/channels/registry.go` | ~50 | Registry + `ParseBinding()` |
+| `cli/pkg/channels/slack/slack.go` | ~130 | Slack `Channel` implementation |
+| `cli/pkg/channels/slack/slack_test.go` | ~200 | 13 test cases |
+| `cli/pkg/channels/registry_test.go` | ~40 | Registry + ParseBinding tests |
 
 ### Modified Files (~15)
 
 | File | Change Summary |
 |------|---------------|
-| `cli/internal/provider/provider.go` | `AgentConfig`: remove `SlackMemberID`/`SlackChannel`, add `Channels []ChannelBinding`, add `ChannelBinding()` helper |
-| `cli/internal/provider/setup_config.go` | Replace Slack fields with `Secrets map[string]string`, simplify `SecretValue()` |
-| `cli/internal/common/config.go` | Remove `SharedSecrets.Slack*` fields, add `Values` map; remove `HasSlack()`; refactor `GenerateOpenClawConfig()` and `GenerateEnvFile()` to delegate to channels |
-| `cli/internal/common/routing.go` | Refactor `GenerateRoutingJSON()` to delegate to channels |
-| `cli/internal/common/behavior.go` | Replace `{{SLACK_ID}}` hardcoding with channel-provided template vars |
-| `cli/internal/common/validate.go` | Remove `ValidateMemberID()`, `ValidateChannelID()` (moved to Slack channel) |
+| `cli/pkg/provider/provider.go` | `AgentConfig`: remove `SlackMemberID`/`SlackChannel`, add `Channels []ChannelBinding`, add `ChannelBinding()` helper |
+| `cli/pkg/provider/setup_config.go` | Replace Slack fields with `Secrets map[string]string`, simplify `SecretValue()` |
+| `cli/pkg/common/config.go` | Remove `SharedSecrets.Slack*` fields, add `Values` map; remove `HasSlack()`; refactor `GenerateOpenClawConfig()` and `GenerateEnvFile()` to delegate to channels |
+| `cli/pkg/common/routing.go` | Refactor `GenerateRoutingJSON()` to delegate to channels |
+| `cli/pkg/common/behavior.go` | Replace `{{SLACK_ID}}` hardcoding with channel-provided template vars |
+| `cli/pkg/common/validate.go` | Remove `ValidateMemberID()`, `ValidateChannelID()` (moved to Slack channel) |
 | `cli/cmd/admin.go` | Update `add-user`/`add-team` command defs (remove positional arg, add `--channel`); update `list-agents` display |
 | `cli/cmd/admin_provision.go` | Rewrite to use `channels.ParseBinding()` + `ch.ValidateBinding()` |
 | `cli/cmd/root.go` | Remove `validateMemberID()`/`validateChannelID()` wrappers; add Slack import |
 | `cli/cmd/json_schema.go` | Update schemas for add-user, add-team, list-agents, setup |
-| `cli/internal/mcpserver/tools_lifecycle.go` | Replace `slack_member_id`/`slack_channel` with `channel` param |
-| `cli/internal/provider/localprovider/provider.go` | `readSharedSecrets()` → generic map; `Setup()` → channel-driven prompts; `HasSlack()` → `ch.HasCredentials()` |
-| `cli/internal/provider/remoteprovider/provider.go` | Same changes as local |
-| `cli/internal/provider/remoteprovider/setup.go` | Channel-driven setup prompts |
-| `cli/internal/provider/remoteprovider/secrets.go` | `readSharedSecrets()` → generic map |
+| `cli/pkg/mcpserver/tools_lifecycle.go` | Replace `slack_member_id`/`slack_channel` with `channel` param |
+| `cli/pkg/provider/localprovider/provider.go` | `readSharedSecrets()` → generic map; `Setup()` → channel-driven prompts; `HasSlack()` → `ch.HasCredentials()` |
+| `cli/pkg/provider/remoteprovider/provider.go` | Same changes as local |
+| `cli/pkg/provider/remoteprovider/setup.go` | Channel-driven setup prompts |
+| `cli/pkg/provider/remoteprovider/secrets.go` | `readSharedSecrets()` → generic map |
 
 ### Modified Test Files (~5)
 
 | File | Change Summary |
 |------|---------------|
-| `cli/internal/common/routing_test.go` | Update `AgentConfig` literals to use `Channels` field |
-| `cli/internal/common/validate_test.go` | Remove Slack validation tests (moved to `slack/slack_test.go`) |
+| `cli/pkg/common/routing_test.go` | Update `AgentConfig` literals to use `Channels` field |
+| `cli/pkg/common/validate_test.go` | Remove Slack validation tests (moved to `slack/slack_test.go`) |
 | `cli/cmd/root_test.go` | Remove/update validation wrapper tests |
-| `cli/internal/mcpserver/server_test.go` | Update provision tool param from `slack_member_id` → `channel` |
-| `cli/internal/provider/awsprovider/provider_test.go` | Update SharedSecrets construction |
+| `cli/pkg/mcpserver/server_test.go` | Update provision tool param from `slack_member_id` → `channel` |
+| `cli/pkg/provider/awsprovider/provider_test.go` | Update SharedSecrets construction |

@@ -44,10 +44,10 @@
 **Implementation complete.** All 5 phases done.
 
 **New files created:**
-- `cli/internal/manifest/manifest.go` — 6 structs, Load, Validate, ExpandSecrets (~135 lines)
-- `cli/internal/manifest/apply.go` — Apply orchestrator + 7 step functions (~200 lines)
+- `cli/pkg/manifest/manifest.go` — 6 structs, Load, Validate, ExpandSecrets (~135 lines)
+- `cli/pkg/manifest/apply.go` — Apply orchestrator + 7 step functions (~200 lines)
 - `cli/cmd/apply.go` — Cobra command with `-f` flag, JSON output support (~65 lines)
-- `cli/internal/manifest/manifest_test.go` — 19 unit tests (~300 lines)
+- `cli/pkg/manifest/manifest_test.go` — 19 unit tests (~300 lines)
 - `demo.yaml.example` — example manifest for demos (~45 lines)
 
 **Modified files:**

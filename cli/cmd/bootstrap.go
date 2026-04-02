@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/cruxdigital-llc/conga-line/cli/internal/manifest"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/manifest"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

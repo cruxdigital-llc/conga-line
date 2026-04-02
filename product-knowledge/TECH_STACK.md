@@ -46,16 +46,16 @@ To modify: Edit directly.
 ## CLI Architecture
 | Package | Purpose |
 |---|---|
-| `cli/internal/provider/` | Provider interface (17+ methods), registry, config |
-| `cli/internal/provider/awsprovider/` | AWS implementation (wraps SSM, Secrets Manager, EC2, STS) |
-| `cli/internal/provider/localprovider/` | Local Docker implementation (Docker CLI, file secrets) |
-| `cli/internal/provider/remoteprovider/` | Remote SSH implementation (SSH + Docker CLI, file secrets, tunneling) |
-| `cli/internal/policy/` | Portable policy schema: YAML parsing, validation, enforcement reporting |
-| `cli/internal/common/` | Shared logic: config gen, routing, behavior composition, validation |
-| `cli/internal/aws/` | AWS SDK wrappers and interfaces |
-| `cli/internal/discovery/` | Agent and identity resolution (AWS) |
-| `cli/internal/tunnel/` | SSM port forwarding (AWS) |
-| `cli/internal/ui/` | Spinners, prompts, tables, JSON output |
+| `cli/pkg/provider/` | Provider interface (17+ methods), registry, config |
+| `cli/pkg/provider/awsprovider/` | AWS implementation (wraps SSM, Secrets Manager, EC2, STS) |
+| `cli/pkg/provider/localprovider/` | Local Docker implementation (Docker CLI, file secrets) |
+| `cli/pkg/provider/remoteprovider/` | Remote SSH implementation (SSH + Docker CLI, file secrets, tunneling) |
+| `cli/pkg/policy/` | Portable policy schema: YAML parsing, validation, enforcement reporting |
+| `cli/pkg/common/` | Shared logic: config gen, routing, behavior composition, validation |
+| `cli/pkg/aws/` | AWS SDK wrappers and interfaces |
+| `cli/pkg/discovery/` | Agent and identity resolution (AWS) |
+| `cli/pkg/tunnel/` | SSM port forwarding (AWS) |
+| `cli/pkg/ui/` | Spinners, prompts, tables, JSON output |
 
 ## No Frontend / No Backend / No Database
 This is a pure infrastructure project. There is no application code to write — OpenClaw is consumed as a Docker image. The deliverable is Terraform configuration + bootstrap scripts + a Go CLI with pluggable deployment providers and a portable policy artifact.

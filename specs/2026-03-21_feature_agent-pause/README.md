@@ -44,11 +44,11 @@
   - `cli/scripts/unpause-agent.sh.tmpl` — AWS unpause script (start systemd, re-add to routing)
   - `cli/cmd/admin_pause.go` — pause/unpause CLI command handlers
 - **Files modified**:
-  - `cli/internal/provider/provider.go` — added `Paused` field to `AgentConfig`, added `PauseAgent`/`UnpauseAgent` to Provider interface
-  - `cli/internal/discovery/agent.go` — added `Paused` field to `AgentConfig`
-  - `cli/internal/common/routing.go` — filter paused agents in `GenerateRoutingJSON`
-  - `cli/internal/provider/localprovider/provider.go` — implemented `PauseAgent`, `UnpauseAgent`, `saveAgentConfig`; added paused guard to `RefreshAgent`; skip paused in `RefreshAll`, `CycleHost`
-  - `cli/internal/provider/awsprovider/provider.go` — implemented `PauseAgent`, `UnpauseAgent`, `setAgentPaused`; propagated `Paused` in `convertAgent`; added paused guard to `RefreshAgent`; skip paused in `RefreshAll`
+  - `cli/pkg/provider/provider.go` — added `Paused` field to `AgentConfig`, added `PauseAgent`/`UnpauseAgent` to Provider interface
+  - `cli/pkg/discovery/agent.go` — added `Paused` field to `AgentConfig`
+  - `cli/pkg/common/routing.go` — filter paused agents in `GenerateRoutingJSON`
+  - `cli/pkg/provider/localprovider/provider.go` — implemented `PauseAgent`, `UnpauseAgent`, `saveAgentConfig`; added paused guard to `RefreshAgent`; skip paused in `RefreshAll`, `CycleHost`
+  - `cli/pkg/provider/awsprovider/provider.go` — implemented `PauseAgent`, `UnpauseAgent`, `setAgentPaused`; propagated `Paused` in `convertAgent`; added paused guard to `RefreshAgent`; skip paused in `RefreshAll`
   - `cli/scripts/embed.go` — embedded new script templates
   - `cli/cmd/admin.go` — registered pause/unpause subcommands; added STATUS column to `list-agents`
   - `terraform/user-data.sh.tftpl` — skip paused agents in bootstrap discovery loop

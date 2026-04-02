@@ -9,28 +9,28 @@
 ## Phase 2: Go CLI Scaffold
 - [x] **Task 2.1**: Initialize Go module, install dependencies (cobra, aws-sdk-go-v2, toml, x/term)
 - [x] **Task 2.2**: Create `cli/main.go` + `cli/cmd/root.go` — root command with persistent flags
-- [x] **Task 2.3**: Create `cli/internal/config/config.go` — config loading (defaults → toml → env → flags)
+- [x] **Task 2.3**: Create `cli/pkg/config/config.go` — config loading (defaults → toml → env → flags)
 - [x] **Task 2.4**: Create `cli/cmd/version.go` — version command with ldflags
 
 ## Phase 3: AWS Session + Identity
-- [x] **Task 3.1**: Create `cli/internal/aws/session.go` — AWS SDK config with SSO credential provider
+- [x] **Task 3.1**: Create `cli/pkg/aws/session.go` — AWS SDK config with SSO credential provider
 - [x] **Task 3.2**: Create `cli/cmd/auth.go` — `auth login` (SSO instructions) + `auth status` (GetCallerIdentity)
 
 ## Phase 4: Infrastructure Discovery
-- [x] **Task 4.1**: Create `cli/internal/aws/ec2.go` — DescribeInstances by tag + Stop/Start/WaitForState
-- [x] **Task 4.2**: Create `cli/internal/aws/params.go` — SSM Parameter Store CRUD
-- [x] **Task 4.3**: Create `cli/internal/discovery/instance.go` — FindInstance with sync.Once caching
-- [x] **Task 4.4**: Create `cli/internal/discovery/identity.go` — IAM identity → member ID resolution
-- [x] **Task 4.5**: Create `cli/internal/discovery/user.go` — user config from Parameter Store
+- [x] **Task 4.1**: Create `cli/pkg/aws/ec2.go` — DescribeInstances by tag + Stop/Start/WaitForState
+- [x] **Task 4.2**: Create `cli/pkg/aws/params.go` — SSM Parameter Store CRUD
+- [x] **Task 4.3**: Create `cli/pkg/discovery/instance.go` — FindInstance with sync.Once caching
+- [x] **Task 4.4**: Create `cli/pkg/discovery/identity.go` — IAM identity → member ID resolution
+- [x] **Task 4.5**: Create `cli/pkg/discovery/user.go` — user config from Parameter Store
 
 ## Phase 5: UI Helpers
-- [x] **Task 5.1**: Create `cli/internal/ui/prompt.go` — SecretPrompt, Confirm, TextPrompt
-- [x] **Task 5.2**: Create `cli/internal/ui/spinner.go` — Spinner with status text
-- [x] **Task 5.3**: Create `cli/internal/ui/table.go` — formatted table output
+- [x] **Task 5.1**: Create `cli/pkg/ui/prompt.go` — SecretPrompt, Confirm, TextPrompt
+- [x] **Task 5.2**: Create `cli/pkg/ui/spinner.go` — Spinner with status text
+- [x] **Task 5.3**: Create `cli/pkg/ui/table.go` — formatted table output
 
 ## Phase 6: SSM RunCommand Wrapper
-- [x] **Task 6.1**: Create `cli/internal/aws/ssm.go` — SendCommand + poll + return result
-- [x] **Task 6.2**: Create `cli/internal/aws/secrets.go` — Secrets Manager CRUD
+- [x] **Task 6.1**: Create `cli/pkg/aws/ssm.go` — SendCommand + poll + return result
+- [x] **Task 6.2**: Create `cli/pkg/aws/secrets.go` — Secrets Manager CRUD
 
 ## Phase 7: User Commands
 - [x] **Task 7.1**: Create `cli/cmd/secrets.go` — secrets set/list/delete
@@ -39,7 +39,7 @@
 - [x] **Task 7.4**: Create `cli/cmd/refresh.go` + `cli/scripts/refresh-user.sh.tmpl`
 
 ## Phase 8: Connect Command
-- [x] **Task 8.1**: Create `cli/internal/tunnel/tunnel.go` — plugin check, StartTunnel, Stop
+- [x] **Task 8.1**: Create `cli/pkg/tunnel/tunnel.go` — plugin check, StartTunnel, Stop
 - [x] **Task 8.2**: Create `cli/cmd/connect.go` — tunnel + token + device pairing flow
 
 ## Phase 9: Admin Commands

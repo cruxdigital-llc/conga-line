@@ -10,7 +10,7 @@ Replace advisory `HTTPS_PROXY` env var enforcement with Docker `--internal` netw
 
 ### 1.1 Shared Constants
 
-**File**: `cli/internal/policy/egress.go`
+**File**: `cli/pkg/policy/egress.go`
 
 ```go
 // EgressExtNetwork is the shared bridge network that gives egress proxy containers
@@ -28,7 +28,7 @@ func EgressProxyDockerfile() string {
 
 ### 1.2 Network Creation with `--internal`
 
-**File**: `cli/internal/provider/remoteprovider/docker.go`
+**File**: `cli/pkg/provider/remoteprovider/docker.go`
 
 Change `createNetwork` signature:
 
@@ -45,7 +45,7 @@ func (p *RemoteProvider) createNetwork(ctx context.Context, name string, interna
 
 ### 1.3 Agent Container: Drop `-p` When Enforcing
 
-**File**: `cli/internal/provider/remoteprovider/docker.go`
+**File**: `cli/pkg/provider/remoteprovider/docker.go`
 
 In `runAgentContainer`, conditionally omit `-p`:
 
@@ -59,7 +59,7 @@ When `-p` is omitted, the container is only reachable via Docker DNS on the inte
 
 ### 1.4 Port Forwarding via socat
 
-**File**: `cli/internal/provider/remoteprovider/docker.go`
+**File**: `cli/pkg/provider/remoteprovider/docker.go`
 
 New helpers:
 
@@ -107,7 +107,7 @@ func portForwarderPidFile(containerName string) string {
 
 ### 1.5 Dual-Homed Egress Proxy
 
-**File**: `cli/internal/provider/remoteprovider/provider.go` — `startAgentEgressProxy`
+**File**: `cli/pkg/provider/remoteprovider/provider.go` — `startAgentEgressProxy`
 
 After starting the proxy container on the agent's internal network, connect it to the external network:
 
@@ -131,7 +131,7 @@ if err := p.connectNetwork(ctx, policy.EgressExtNetwork, proxyName); err != nil 
 
 ### 1.6 Network Lifecycle in RefreshAgent
 
-**File**: `cli/internal/provider/remoteprovider/provider.go` — `RefreshAgent`
+**File**: `cli/pkg/provider/remoteprovider/provider.go` — `RefreshAgent`
 
 After stopping the container and proxy, recreate the network with the correct flag:
 
@@ -168,13 +168,13 @@ if egressEnforce {
 
 ### 1.7 Network Lifecycle in ProvisionAgent
 
-**File**: `cli/internal/provider/remoteprovider/provider.go` — `ProvisionAgent`
+**File**: `cli/pkg/provider/remoteprovider/provider.go` — `ProvisionAgent`
 
 Same pattern: `createNetwork(ctx, netName, egressEnforce)` and start port forwarder after container startup when enforcing.
 
 ### 1.8 Install socat During Setup
 
-**File**: `cli/internal/provider/remoteprovider/setup.go`
+**File**: `cli/pkg/provider/remoteprovider/setup.go`
 
 In the `installDocker()` shell script, add `socat` alongside `docker.io`:
 
@@ -190,7 +190,7 @@ pacman -S --noconfirm docker socat >/dev/null
 
 ### 1.9 Cleanup
 
-**File**: `cli/internal/provider/remoteprovider/provider.go`
+**File**: `cli/pkg/provider/remoteprovider/provider.go`
 
 **RemoveAgent**: Add before container/network removal:
 ```go
@@ -234,7 +234,7 @@ Wait — `startAgentEgressProxy` currently calls `createNetwork` as a fallback. 
 
 ### 2.1 Network Creation with `--internal`
 
-**File**: `cli/internal/provider/localprovider/docker.go`
+**File**: `cli/pkg/provider/localprovider/docker.go`
 
 ```go
 func createNetwork(ctx context.Context, name string, internal bool) error {
@@ -253,7 +253,7 @@ Same conditional as remote in `runAgentContainer`.
 
 ### 2.3 Forwarder Container (macOS Gateway Access)
 
-**File**: `cli/internal/provider/localprovider/docker.go`
+**File**: `cli/pkg/provider/localprovider/docker.go`
 
 On macOS Docker Desktop, the host cannot route to container IPs (they're inside a Linux VM). Use a lightweight forwarder container:
 

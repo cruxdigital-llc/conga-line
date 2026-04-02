@@ -4,13 +4,13 @@
 
 Three phases: (1) add policy mutation helpers to the existing `policy` package, (2) add MCP tool handlers, (3) wire up deploy via existing provider refresh methods.
 
-The mutation layer is the key new capability — the policy package today can parse and validate but not write back. The MCP tools themselves are thin wrappers following the established pattern in `cli/internal/mcpserver/`.
+The mutation layer is the key new capability — the policy package today can parse and validate but not write back. The MCP tools themselves are thin wrappers following the established pattern in `cli/pkg/mcpserver/`.
 
 ---
 
 ## Phase 1: Policy Mutation Helpers
 
-**Files**: `cli/internal/policy/mutate.go`, `cli/internal/policy/mutate_test.go`
+**Files**: `cli/pkg/policy/mutate.go`, `cli/pkg/policy/mutate_test.go`
 
 Add read-modify-write helpers to the `policy` package:
 
@@ -32,7 +32,7 @@ Design notes:
 
 ## Phase 2: MCP Tool Handlers
 
-**Files**: `cli/internal/mcpserver/tools_policy.go`, `cli/internal/mcpserver/tools_policy_test.go`
+**Files**: `cli/pkg/mcpserver/tools_policy.go`, `cli/pkg/mcpserver/tools_policy_test.go`
 
 Seven tools following the existing pattern (see `tools_secrets.go` for a good model):
 
@@ -91,7 +91,7 @@ The MCP server already has access to the provider (`s.prov`). Add a `PolicyPath(
 
 ## Phase 3: Provider Integration
 
-**Files**: Possibly `cli/internal/provider/provider.go` (interface), provider implementations
+**Files**: Possibly `cli/pkg/provider/provider.go` (interface), provider implementations
 
 1. **Add `PolicyPath() string`** to the Provider interface if not already present — returns the path to the policy YAML file for this provider
 2. **Local**: returns `~/.conga/conga-policy.yaml`
@@ -105,7 +105,7 @@ If all three providers already use `~/.conga/conga-policy.yaml` as the source (a
 
 ## Phase 4: Registration & Wiring
 
-**Files**: `cli/internal/mcpserver/tools.go`
+**Files**: `cli/pkg/mcpserver/tools.go`
 
 1. Add all 7 tools to `registerTools()` in tools.go
 2. Group them together as a policy section (consistent with existing grouping)
@@ -127,12 +127,12 @@ If all three providers already use `~/.conga/conga-policy.yaml` as the source (a
 
 | File | Action | Description |
 |---|---|---|
-| `cli/internal/policy/mutate.go` | **New** | SaveFile, SetEgress, SetRouting, SetPosture, EffectivePolicy |
-| `cli/internal/policy/mutate_test.go` | **New** | Tests for mutation helpers |
-| `cli/internal/mcpserver/tools_policy.go` | **New** | 7 MCP tool handlers |
-| `cli/internal/mcpserver/tools_policy_test.go` | **New** | Tests for MCP tools |
-| `cli/internal/mcpserver/tools.go` | **Edit** | Register policy tools in registerTools() |
-| `cli/internal/provider/provider.go` | **Edit** (maybe) | Add PolicyPath() if needed |
+| `cli/pkg/policy/mutate.go` | **New** | SaveFile, SetEgress, SetRouting, SetPosture, EffectivePolicy |
+| `cli/pkg/policy/mutate_test.go` | **New** | Tests for mutation helpers |
+| `cli/pkg/mcpserver/tools_policy.go` | **New** | 7 MCP tool handlers |
+| `cli/pkg/mcpserver/tools_policy_test.go` | **New** | Tests for MCP tools |
+| `cli/pkg/mcpserver/tools.go` | **Edit** | Register policy tools in registerTools() |
+| `cli/pkg/provider/provider.go` | **Edit** (maybe) | Add PolicyPath() if needed |
 | Provider implementations | **Edit** (maybe) | Implement PolicyPath() if added to interface |
 
 ---

@@ -6,7 +6,7 @@ Add egress enforcement to each provider by reading the `egress` section from `co
 
 ## Shared: Policy Loading in Providers
 
-Add a shared helper in `cli/internal/policy/` (or `common/`) that each provider calls:
+Add a shared helper in `cli/pkg/policy/` (or `common/`) that each provider calls:
 
 ```
 func LoadEgressPolicy(configDir string, agentName string) (*EgressPolicy, error)
@@ -28,15 +28,15 @@ Each provider calls this early in `ProvisionAgent` and `RefreshAgent`.
 ### Enforce mode (mode: "enforce")
 - **Upgrade egress proxy**: Generate an nginx allowlist file from `allowed_domains` / `blocked_domains`. Mount into the proxy container. Nginx rejects non-whitelisted SNI hostnames by returning 502.
 - **Wire agent containers**: Add `--env HTTPS_PROXY=http://conga-egress-proxy:3128` and `--dns <proxy-IP>` to `runAgentContainer()` args. Container already shares a network with the proxy (existing `connectNetwork` call).
-- **Allowlist generation**: New function in `cli/internal/policy/egress.go` generates the nginx `map` block from the domain list. Wildcards converted to nginx regex patterns.
+- **Allowlist generation**: New function in `cli/pkg/policy/egress.go` generates the nginx `map` block from the domain list. Wildcards converted to nginx regex patterns.
 - **Proxy rebuild on policy change**: `RefreshAgent` regenerates the allowlist and restarts the proxy if domains changed.
 
 ### Key files
 - `deploy/egress-proxy/nginx.conf` — add `map` block for SNI filtering with include of allowlist file
 - `deploy/egress-proxy/Dockerfile` — no change needed (nginx already supports includes)
-- `cli/internal/provider/localprovider/provider.go` — `ProvisionAgent()` and `RefreshAgent()` load policy
-- `cli/internal/provider/localprovider/docker.go` — `runAgentContainer()` conditionally adds proxy env vars
-- New: `cli/internal/policy/egress.go` — generates nginx allowlist, iptables rules from policy
+- `cli/pkg/provider/localprovider/provider.go` — `ProvisionAgent()` and `RefreshAgent()` load policy
+- `cli/pkg/provider/localprovider/docker.go` — `runAgentContainer()` conditionally adds proxy env vars
+- New: `cli/pkg/policy/egress.go` — generates nginx allowlist, iptables rules from policy
 
 ## Remote Provider: iptables Rules
 
@@ -48,8 +48,8 @@ Each provider calls this early in `ProvisionAgent` and `RefreshAgent`.
 - Document limitation: IP-based, not SNI-based. DNS changes can bypass. Best-effort enforcement.
 
 ### Key files
-- `cli/internal/provider/remoteprovider/provider.go` — `ProvisionAgent()` and `RefreshAgent()` apply rules
-- New: `cli/internal/policy/egress.go` — shared iptables rule generation logic
+- `cli/pkg/provider/remoteprovider/provider.go` — `ProvisionAgent()` and `RefreshAgent()` apply rules
+- New: `cli/pkg/policy/egress.go` — shared iptables rule generation logic
 
 ## Enterprise (AWS) Provider: Squid Proxy
 
@@ -64,7 +64,7 @@ Each provider calls this early in `ProvisionAgent` and `RefreshAgent`.
 - New: `deploy/squid-proxy/Dockerfile` — Squid on Alpine
 - New: `deploy/squid-proxy/squid.conf.tmpl` — template with domain ACLs
 - `terraform/user-data.sh.tftpl` — add Squid proxy section to bootstrap
-- `cli/internal/provider/awsprovider/provider.go` — pass policy to SSM scripts
+- `cli/pkg/provider/awsprovider/provider.go` — pass policy to SSM scripts
 
 ## What This Does NOT Do
 

@@ -18,7 +18,7 @@
 
 ## Workstream 2: CLI
 
-- [x] **T14**: `cli/internal/config/config.go` — empty defaults, add `Conga LineImage` field, add `RequiredFieldsMissing()`, add `Save()`, add env var override
+- [x] **T14**: `cli/pkg/config/config.go` — empty defaults, add `Conga LineImage` field, add `RequiredFieldsMissing()`, add `Save()`, add env var override
 - [x] **T15**: `cli/cmd/init.go` — new `conga init` command with interactive prompts
 - [x] **T16**: `cli/cmd/root.go` — auto-trigger init when config missing, scrub example IDs
 - [x] **T17**: `cli/scripts/add-user.sh.tmpl` — replace hardcoded image with `{{.Conga LineImage}}`

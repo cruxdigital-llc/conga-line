@@ -87,10 +87,10 @@ go test ./...           # all tests pass (existing 29 + new ~10)
 
 Then grep to confirm no stale references:
 ```bash
-grep -rn 'filepath\.Join' cli/internal/provider/remoteprovider/ | grep -v '_test.go'
+grep -rn 'filepath\.Join' cli/pkg/provider/remoteprovider/ | grep -v '_test.go'
 # Remaining hits should only be local-path operations (dataDir, repoPath, os.Stat targets)
 
-grep -rn -i 'vps' cli/internal/provider/remoteprovider/
+grep -rn -i 'vps' cli/pkg/provider/remoteprovider/
 # Should return zero hits
 ```
 

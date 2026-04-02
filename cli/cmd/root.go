@@ -6,19 +6,19 @@ import (
 	"os"
 	"time"
 
-	awsutil "github.com/cruxdigital-llc/conga-line/cli/internal/aws"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
-	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	awsutil "github.com/cruxdigital-llc/conga-line/cli/pkg/aws"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/common"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/ui"
 	"github.com/spf13/cobra"
 
 	// Register channels via init()
-	_ "github.com/cruxdigital-llc/conga-line/cli/internal/channels/slack"
+	_ "github.com/cruxdigital-llc/conga-line/cli/pkg/channels/slack"
 
 	// Register providers via init()
-	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/awsprovider"
-	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/localprovider"
-	_ "github.com/cruxdigital-llc/conga-line/cli/internal/provider/remoteprovider"
+	_ "github.com/cruxdigital-llc/conga-line/cli/pkg/provider/awsprovider"
+	_ "github.com/cruxdigital-llc/conga-line/cli/pkg/provider/localprovider"
+	_ "github.com/cruxdigital-llc/conga-line/cli/pkg/provider/remoteprovider"
 )
 
 var (

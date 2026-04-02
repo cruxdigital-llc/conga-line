@@ -7,7 +7,7 @@ Design and implement a portable policy artifact (`conga-policy.yaml`) that defin
 ## Success Criteria
 
 1. A `conga-policy.yaml` YAML schema exists with three sections: egress rules, routing policy, and security posture declarations, plus per-agent overrides.
-2. Go types in a new `cli/internal/policy/` package parse and validate the schema using `gopkg.in/yaml.v3`.
+2. Go types in a new `cli/pkg/policy/` package parse and validate the schema using `gopkg.in/yaml.v3`.
 3. `Load()` reads the policy file from the provider-appropriate path (`~/.conga/conga-policy.yaml` for local, `/opt/conga/conga-policy.yaml` for remote, SSM parameter for AWS). Returns nil (no error) when the file doesn't exist — policy is optional.
 4. `Validate()` checks structural validity: required fields when sections are present, valid enum values (egress mode, isolation level, secrets backend, monitoring level), domain format validation, no unknown fields.
 5. `MergeForAgent(agentName)` returns an effective policy for a specific agent by shallow-merging the agent's override block onto the global defaults.

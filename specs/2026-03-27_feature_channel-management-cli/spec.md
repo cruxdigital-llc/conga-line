@@ -6,7 +6,7 @@ Extract channel lifecycle management from `admin setup` into five new provider m
 
 ## 1. Provider Interface Extension
 
-### 1.1 New Types (`cli/internal/provider/provider.go`)
+### 1.1 New Types (`cli/pkg/provider/provider.go`)
 
 ```go
 // ChannelStatus reports the state of a configured channel platform.
@@ -18,7 +18,7 @@ type ChannelStatus struct {
 }
 ```
 
-### 1.2 New Interface Methods (`cli/internal/provider/provider.go`)
+### 1.2 New Interface Methods (`cli/pkg/provider/provider.go`)
 
 Add to the `Provider` interface under a new **Channel Management** section:
 
@@ -39,7 +39,7 @@ The duplicated `hasAnyChannel(shared common.SharedSecrets) bool` helper in both 
 
 ## 2. Local Provider Implementation
 
-New file: `cli/internal/provider/localprovider/channels.go`
+New file: `cli/pkg/provider/localprovider/channels.go`
 
 ### 2.1 `AddChannel(ctx, platform, secrets)`
 
@@ -208,7 +208,7 @@ func filterBindings(bindings []channels.ChannelBinding, platform string) []chann
 
 ## 3. Remote Provider Implementation
 
-New file: `cli/internal/provider/remoteprovider/channels.go`
+New file: `cli/pkg/provider/remoteprovider/channels.go`
 
 Same logic as local provider, with SSH/SFTP transport:
 
@@ -226,13 +226,13 @@ The method signatures and logic are identical. Only the I/O layer changes.
 
 ## 4. AWS Provider Stubs
 
-File: `cli/internal/provider/awsprovider/provider.go` (add to existing)
+File: `cli/pkg/provider/awsprovider/provider.go` (add to existing)
 
 All five methods return `fmt.Errorf("channel management not yet implemented for AWS provider")`. Consistent with other deferred AWS features.
 
 ## 5. Setup Flow Simplification
 
-### 5.1 Local Provider (`cli/internal/provider/localprovider/provider.go`)
+### 5.1 Local Provider (`cli/pkg/provider/localprovider/provider.go`)
 
 **Remove from Setup()** (lines ~848-918 in current code):
 - The `channels.All()` secret collection loop (the `secretItems` list that includes channel secrets)
@@ -274,7 +274,7 @@ for _, ch := range channels.All() {
 
 This preserves the existing `conga_setup` MCP tool behavior when called with Slack secrets in the JSON body.
 
-### 5.2 Remote Provider (`cli/internal/provider/remoteprovider/setup.go`)
+### 5.2 Remote Provider (`cli/pkg/provider/remoteprovider/setup.go`)
 
 Same changes: remove channel secret prompts and router startup. Keep Google OAuth, router source upload, image pulls. Add `AddChannel` auto-invoke for backwards compatibility.
 
@@ -429,7 +429,7 @@ The difference: with the old flow, `admin setup` collected Slack secrets. With t
 
 ## 7. MCP Tools
 
-New file: `cli/internal/mcpserver/tools_channels.go`
+New file: `cli/pkg/mcpserver/tools_channels.go`
 
 ### 7.1 Tool Definitions
 
@@ -462,7 +462,7 @@ InputSchema: mcp.ToolInputSchema{
 
 **Handler**: Maps parameter names to secret names (`slack_bot_token` → `"slack-bot-token"`) and calls `prov.AddChannel(ctx, platform, secrets)`.
 
-### 7.3 Registration (`cli/internal/mcpserver/tools.go`)
+### 7.3 Registration (`cli/pkg/mcpserver/tools.go`)
 
 Add a new section after "Policy":
 
@@ -524,23 +524,23 @@ This better showcases the modular architecture and makes the demo resilient to S
 
 | File | Lines (est.) | Purpose |
 |------|-------------|---------|
-| `cli/internal/provider/localprovider/channels.go` | ~320 | Local provider: AddChannel, RemoveChannel, ListChannels, BindChannel, UnbindChannel + helpers |
-| `cli/internal/provider/remoteprovider/channels.go` | ~320 | Remote provider: same methods, SSH/SFTP transport |
+| `cli/pkg/provider/localprovider/channels.go` | ~320 | Local provider: AddChannel, RemoveChannel, ListChannels, BindChannel, UnbindChannel + helpers |
+| `cli/pkg/provider/remoteprovider/channels.go` | ~320 | Remote provider: same methods, SSH/SFTP transport |
 | `cli/cmd/channels.go` | ~250 | CLI commands: channels add/remove/list/bind/unbind |
-| `cli/internal/mcpserver/tools_channels.go` | ~250 | MCP tool handlers for all 5 channel management tools |
-| `cli/internal/mcpserver/tools_channels_test.go` | ~150 | MCP tool handler tests |
+| `cli/pkg/mcpserver/tools_channels.go` | ~250 | MCP tool handlers for all 5 channel management tools |
+| `cli/pkg/mcpserver/tools_channels_test.go` | ~150 | MCP tool handler tests |
 
 ### Modified Files (7)
 
 | File | Change |
 |------|--------|
-| `cli/internal/provider/provider.go` | Add ChannelStatus type + 5 interface methods |
-| `cli/internal/provider/localprovider/provider.go` | Remove channel secret prompts + router startup from Setup(). Add AddChannel auto-invoke for SetupConfig compat. Remove `hasAnyChannel` (promoted). |
-| `cli/internal/provider/remoteprovider/setup.go` | Same Setup simplification as local. |
-| `cli/internal/provider/remoteprovider/provider.go` | Remove `hasAnyChannel` (promoted). |
-| `cli/internal/provider/awsprovider/provider.go` | Add 5 stub methods. |
-| `cli/internal/common/config.go` | Add `HasAnyChannel()` promoted from providers. |
-| `cli/internal/mcpserver/tools.go` | Register 5 new channel management tools. |
+| `cli/pkg/provider/provider.go` | Add ChannelStatus type + 5 interface methods |
+| `cli/pkg/provider/localprovider/provider.go` | Remove channel secret prompts + router startup from Setup(). Add AddChannel auto-invoke for SetupConfig compat. Remove `hasAnyChannel` (promoted). |
+| `cli/pkg/provider/remoteprovider/setup.go` | Same Setup simplification as local. |
+| `cli/pkg/provider/remoteprovider/provider.go` | Remove `hasAnyChannel` (promoted). |
+| `cli/pkg/provider/awsprovider/provider.go` | Add 5 stub methods. |
+| `cli/pkg/common/config.go` | Add `HasAnyChannel()` promoted from providers. |
+| `cli/pkg/mcpserver/tools.go` | Register 5 new channel management tools. |
 
 ### Updated Files (1)
 

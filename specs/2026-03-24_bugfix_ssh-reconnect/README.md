@@ -40,7 +40,7 @@ See [plan.md](plan.md).
 
 ### Code changes
 
-**`cli/internal/provider/remoteprovider/ssh.go`**:
+**`cli/pkg/provider/remoteprovider/ssh.go`**:
 - Added `config *ssh.ClientConfig` field to `SSHClient` struct (stored for reconnection)
 - `SSHConnect` now saves the `config` on the returned struct
 - Added `reconnect()` — closes dead client, re-dials with stored config, starts new keepalive
@@ -49,10 +49,10 @@ See [plan.md](plan.md).
 - Replaced 5 direct `c.client.NewSession()` / `sftp.NewClient(c.client)` calls with wrappers
 - `ForwardPort` left unchanged (intentional — tunnel lifecycle is different)
 
-**`cli/internal/provider/remoteprovider/integrity.go`**:
+**`cli/pkg/provider/remoteprovider/integrity.go`**:
 - Replaced `p.ssh.client.NewSession()` (line 75) with `p.ssh.session()`
 
-**`cli/internal/provider/remoteprovider/ssh_reconnect_test.go`** (new file):
+**`cli/pkg/provider/remoteprovider/ssh_reconnect_test.go`** (new file):
 - `testSSHServer` / `testSSHServerOnPort` — in-process SSH server helpers with connection tracking
 - `TestSessionReconnectsOnStaleConnection` — kill server, restart, verify transparent recovery
 - `TestSessionFailsWhenServerTrulyDown` — verify fail-fast with clear error, no infinite retries

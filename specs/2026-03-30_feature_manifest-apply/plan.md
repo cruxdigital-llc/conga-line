@@ -2,7 +2,7 @@
 
 ## Approach
 
-Add a `conga bootstrap <manifest.yaml>` command backed by a new `cli/internal/manifest/` package. The command parses a YAML manifest, expands environment variable references in secret values, validates the structure, then executes provisioning steps sequentially through the existing `Provider` interface. Each step is idempotent — re-running skips completed work.
+Add a `conga bootstrap <manifest.yaml>` command backed by a new `cli/pkg/manifest/` package. The command parses a YAML manifest, expands environment variable references in secret values, validates the structure, then executes provisioning steps sequentially through the existing `Provider` interface. Each step is idempotent — re-running skips completed work.
 
 ## YAML Manifest Format
 
@@ -56,7 +56,7 @@ policy:
 | `$VAR` for secrets | Familiar from shell/Docker. Never stored in YAML. `os.Expand` handles both `$VAR` and `${VAR}`. |
 | Bindings under `channels` | Channel must exist before bindings. Groups all Slack config in one place. |
 | Auto-assigned gateway ports | Keeps manifest clean. Uses existing `common.NextAvailablePort()`. |
-| Inline `policy` section | "Single file describes everything." Uses exact `PolicyFile` schema from `cli/internal/policy/`. |
+| Inline `policy` section | "Single file describes everything." Uses exact `PolicyFile` schema from `cli/pkg/policy/`. |
 | `kind: Environment` | Reserved for future manifest types (e.g., `kind: Agent` for single-agent manifests). |
 | All sections optional | Manifest with only `agents:` is valid — useful for adding agents to an existing environment. |
 
@@ -97,7 +97,7 @@ The step counter adjusts to show only active steps (e.g., `[1/4]` if setup and p
 
 ## Implementation Phases
 
-### Phase 1: Manifest Package — Parse & Validate (`cli/internal/manifest/manifest.go`)
+### Phase 1: Manifest Package — Parse & Validate (`cli/pkg/manifest/manifest.go`)
 
 **New file.** Structs + parsing + validation + env var expansion.
 
@@ -153,7 +153,7 @@ Functions:
 - `Validate(m *Manifest) error` — check apiVersion, kind, agent names (via `common.ValidateAgentName`), agent types, binding references (agent names must exist in `agents` list), channel platforms
 - `ExpandSecrets(m *Manifest) error` — walk all secret maps, expand `$VAR`/`${VAR}` via `os.Expand`, error if any referenced var is empty/unset
 
-### Phase 2: Apply Engine (`cli/internal/manifest/apply.go`)
+### Phase 2: Apply Engine (`cli/pkg/manifest/apply.go`)
 
 **New file.** Orchestrates the execution sequence.
 
@@ -198,7 +198,7 @@ conga bootstrap -f manifest.yaml
 
 No changes to `root.go` needed — the command self-registers via `init()` like all other commands. The `prov` variable is already initialized by `PersistentPreRunE`.
 
-### Phase 4: Tests (`cli/internal/manifest/manifest_test.go`)
+### Phase 4: Tests (`cli/pkg/manifest/manifest_test.go`)
 
 **New file.** Unit tests for:
 - YAML parsing (valid manifest, minimal manifest, empty sections)
@@ -217,10 +217,10 @@ No changes to `root.go` needed — the command self-registers via `init()` like 
 
 | File | Purpose |
 |---|---|
-| `cli/internal/manifest/manifest.go` | Structs, Load, Validate, ExpandSecrets |
-| `cli/internal/manifest/apply.go` | Apply orchestrator + step functions |
+| `cli/pkg/manifest/manifest.go` | Structs, Load, Validate, ExpandSecrets |
+| `cli/pkg/manifest/apply.go` | Apply orchestrator + step functions |
 | `cli/cmd/apply.go` | Cobra command |
-| `cli/internal/manifest/manifest_test.go` | Unit tests |
+| `cli/pkg/manifest/manifest_test.go` | Unit tests |
 | `demo.yaml.example` | Example manifest for demos |
 
 ### Modified Files (1)
@@ -233,14 +233,14 @@ No changes to `root.go` needed — the command self-registers via `init()` like 
 
 | What | Where |
 |---|---|
-| `provider.Provider` interface (17 methods) | `cli/internal/provider/provider.go` |
-| `provider.SetupConfig` | `cli/internal/provider/setup_config.go` |
-| `provider.AgentConfig`, `provider.AgentType` | `cli/internal/provider/provider.go` |
-| `channels.ChannelBinding` | `cli/internal/channels/channels.go` |
-| `policy.PolicyFile`, `policy.Save` | `cli/internal/policy/policy.go`, `mutate.go` |
-| `common.ValidateAgentName` | `cli/internal/common/validate.go` |
-| `common.NextAvailablePort` | `cli/internal/common/ports.go` |
-| `ui.NewSpinner`, `ui.EmitJSON` | `cli/internal/ui/` |
+| `provider.Provider` interface (17 methods) | `cli/pkg/provider/provider.go` |
+| `provider.SetupConfig` | `cli/pkg/provider/setup_config.go` |
+| `provider.AgentConfig`, `provider.AgentType` | `cli/pkg/provider/provider.go` |
+| `channels.ChannelBinding` | `cli/pkg/channels/channels.go` |
+| `policy.PolicyFile`, `policy.Save` | `cli/pkg/policy/policy.go`, `mutate.go` |
+| `common.ValidateAgentName` | `cli/pkg/common/validate.go` |
+| `common.NextAvailablePort` | `cli/pkg/common/ports.go` |
+| `ui.NewSpinner`, `ui.EmitJSON` | `cli/pkg/ui/` |
 | `gopkg.in/yaml.v3` | Already in go.mod |
 
 ## Persona Review Checklist
@@ -269,7 +269,7 @@ No changes to `root.go` needed — the command self-registers via `init()` like 
 ## Verification Plan
 
 1. `go build ./cli/...` — compiles
-2. `go test ./cli/internal/manifest/...` — unit tests pass
+2. `go test ./cli/pkg/manifest/...` — unit tests pass
 3. `go test ./cli/...` — all existing tests still pass
 4. Create `demo.yaml` with real env vars, run `conga bootstrap demo.yaml --provider local`
 5. Run `conga bootstrap demo.yaml` again — verify idempotent (steps show "skipped")

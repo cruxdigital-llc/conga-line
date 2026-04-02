@@ -236,7 +236,7 @@ conga_image = "123456789012.dkr.ecr.us-east-2.amazonaws.com/conga:latest"
 
 ### 2.2 Config struct changes
 
-**`cli/internal/config/config.go`**:
+**`cli/pkg/config/config.go`**:
 
 ```go
 type Config struct {
@@ -459,7 +459,7 @@ Replace:
 | 10 | `terraform/router.tf` | Edit — pass new template vars |
 | 11 | `terraform/bootstrap.sh` | Edit — dynamic derivation |
 | 12 | `terraform/populate-secrets.sh` | Edit — env var defaults |
-| 13 | `cli/internal/config/config.go` | Edit — empty defaults, add fields, add validation |
+| 13 | `cli/pkg/config/config.go` | Edit — empty defaults, add fields, add validation |
 | 14 | `cli/cmd/init.go` | New file — `conga init` command |
 | 15 | `cli/cmd/root.go` | Edit — auto-trigger init, scrub example IDs |
 | 16 | `cli/cmd/admin.go` | Edit — pass `Conga LineImage` to template |

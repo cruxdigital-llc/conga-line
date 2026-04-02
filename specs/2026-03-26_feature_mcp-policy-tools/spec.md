@@ -28,7 +28,7 @@ If the policy file does not exist, read tools return an empty policy (`apiVersio
 
 ## 2. API Interface — Mutation Helpers
 
-**File**: `cli/internal/policy/mutate.go`
+**File**: `cli/pkg/policy/mutate.go`
 
 ### `Save(pf *PolicyFile, path string) error`
 
@@ -83,7 +83,7 @@ func SetPosture(pf *PolicyFile, agentName string, patch *PostureDeclarations)
 
 ## 3. API Interface — MCP Tools
 
-**File**: `cli/internal/mcpserver/tools_policy.go`
+**File**: `cli/pkg/mcpserver/tools_policy.go`
 
 All tools follow the established handler pattern:
 - `toolCtx(ctx)` for 5-minute timeout
@@ -461,7 +461,7 @@ type DeployResult struct {
 
 ## 4. Registration
 
-**File**: `cli/internal/mcpserver/tools.go`
+**File**: `cli/pkg/mcpserver/tools.go`
 
 Add to `registerTools()`:
 
@@ -499,7 +499,7 @@ s.tools = []server.ServerTool{
 
 ## 6. Testing Plan
 
-### `cli/internal/policy/mutate_test.go`
+### `cli/pkg/policy/mutate_test.go`
 
 | Test | What it verifies |
 |---|---|
@@ -515,7 +515,7 @@ s.tools = []server.ServerTool{
 | `TestSetPreservesOtherSections` | Set egress doesn't clobber existing routing/posture |
 | `TestSetAgentPreservesOtherOverrides` | Set egress for agent A doesn't affect agent B's overrides |
 
-### `cli/internal/mcpserver/tools_policy_test.go`
+### `cli/pkg/mcpserver/tools_policy_test.go`
 
 | Test | What it verifies |
 |---|---|
@@ -578,11 +578,11 @@ func (m *mockProvider) GetAgent(_ context.Context, name string) (*provider.Agent
 
 | File | Action | Lines (est.) |
 |---|---|---|
-| `cli/internal/policy/mutate.go` | **New** | ~80 |
-| `cli/internal/policy/mutate_test.go` | **New** | ~200 |
-| `cli/internal/mcpserver/tools_policy.go` | **New** | ~350 |
-| `cli/internal/mcpserver/tools_policy_test.go` | **New** | ~400 |
-| `cli/internal/mcpserver/tools.go` | **Edit** | +8 lines (registration) |
+| `cli/pkg/policy/mutate.go` | **New** | ~80 |
+| `cli/pkg/policy/mutate_test.go` | **New** | ~200 |
+| `cli/pkg/mcpserver/tools_policy.go` | **New** | ~350 |
+| `cli/pkg/mcpserver/tools_policy_test.go` | **New** | ~400 |
+| `cli/pkg/mcpserver/tools.go` | **Edit** | +8 lines (registration) |
 
 **Total**: ~4 new files, ~1,030 new lines, 1 edit.
 

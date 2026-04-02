@@ -34,7 +34,7 @@ Shared logic — config generation (`openclaw.json`), routing table generation (
 ## Provider Interface Design
 
 ```go
-// cli/internal/provider/provider.go
+// cli/pkg/provider/provider.go
 type Provider interface {
     // Identity & Discovery
     WhoAmI(ctx context.Context) (*Identity, error)
@@ -74,14 +74,14 @@ Shared types (`AgentConfig`, `AgentStatus`, `SecretEntry`, `Identity`, `SetupMan
 **Goal**: Pull infrastructure-agnostic logic out of the AWS-specific code path into shared packages.
 
 **Work**:
-1. Create `cli/internal/common/` package:
+1. Create `cli/pkg/common/` package:
    - `config.go` — `GenerateOpenClawConfig(agent AgentConfig, sharedSecrets SharedSecrets) []byte` — the openclaw.json generation logic currently embedded in `user-data.sh.tftpl`
    - `routing.go` — `GenerateRoutingJSON(agents []AgentConfig) []byte` — routing table generation currently in the bootstrap script
    - `behavior.go` — `ComposeBehaviorFiles(agentType string, overrides map[string][]byte) map[string][]byte` — behavior file assembly logic
    - `ports.go` — `NextAvailablePort(agents []AgentConfig) int` — gateway port allocation (currently in `admin_provision.go`)
    - `validate.go` — Slack ID validators (already exist, just re-export)
 
-2. Create `cli/internal/provider/` package:
+2. Create `cli/pkg/provider/` package:
    - `provider.go` — Interface definition + shared types
    - `registry.go` — Provider registry (`Register(name, factory)`, `Get(name) Provider`)
 
@@ -91,7 +91,7 @@ Shared types (`AgentConfig`, `AgentStatus`, `SecretEntry`, `Identity`, `SetupMan
 **Goal**: Wrap existing AWS code behind the Provider interface with zero behavioral changes.
 
 **Work**:
-1. Create `cli/internal/provider/aws/` package:
+1. Create `cli/pkg/provider/aws/` package:
    - `provider.go` — `AWSProvider` struct implementing `Provider` interface
    - Wraps existing `awsutil.Clients`, `discovery.*`, `tunnel.*` code
    - `WhoAmI` → calls `discovery.ResolveIdentity()`
@@ -115,7 +115,7 @@ Shared types (`AgentConfig`, `AgentStatus`, `SecretEntry`, `Identity`, `SetupMan
 **Goal**: Implement the local Docker provider for container lifecycle and discovery.
 
 **Work**:
-1. Create `cli/internal/provider/local/` package:
+1. Create `cli/pkg/provider/local/` package:
    - `provider.go` — `LocalProvider` struct implementing `Provider`
    - `config.go` — Local config management (`~/.conga/config.json`, `~/.conga/agents/`, `~/.conga/secrets/`)
    - `docker.go` — Docker operations (create network, run container, stop, remove, logs, inspect)

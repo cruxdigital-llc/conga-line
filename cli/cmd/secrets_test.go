@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/cruxdigital-llc/conga-line/cli/internal/common"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/common"
 )
 
 func TestSecretNameToEnvVar(t *testing.T) {

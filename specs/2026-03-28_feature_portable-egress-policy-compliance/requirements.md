@@ -34,12 +34,12 @@ The policy schema spec (Feature 12) established that `conga-policy.yaml` is a po
 
 ## Affected Files
 
-- `cli/internal/policy/policy.go` — default mode normalization
-- `cli/internal/provider/remoteprovider/provider.go` — `ProvisionAgent`, `RefreshAgent`, `ensureEgressIptables`
+- `cli/pkg/policy/policy.go` — default mode normalization
+- `cli/pkg/provider/remoteprovider/provider.go` — `ProvisionAgent`, `RefreshAgent`, `ensureEgressIptables`
 - `terraform/user-data.sh.tftpl` — `generate_egress_conf()`, iptables rules, systemd unit
 - `cli/scripts/refresh-user.sh.tmpl` — iptables re-application after refresh
-- `cli/internal/policy/enforcement.go` — `egressReport()`
-- `cli/internal/policy/policy_test.go` — enforcement report tests
+- `cli/pkg/policy/enforcement.go` — `egressReport()`
+- `cli/pkg/policy/policy_test.go` — enforcement report tests
 - `conga-policy.yaml.example` — default mode and comment update
 - `product-knowledge/standards/security.md` — enforcement escalation table update
 - `CLAUDE.md` — if any documentation references change

@@ -8,8 +8,8 @@ Extract Slack-specific logic from the core CLI into a `channels/` package struct
 
 ## Success Criteria
 
-1. A `Channel` interface exists in `cli/internal/channels/` that defines the contract for any messaging platform integration
-2. Slack is the sole implementation, in `cli/internal/channels/slack/`
+1. A `Channel` interface exists in `cli/pkg/channels/` that defines the contract for any messaging platform integration
+2. Slack is the sole implementation, in `cli/pkg/channels/slack/`
 3. Core packages (`common/`, `provider/`, `cmd/`) reference the `Channel` interface, not Slack-specific types or logic
 4. `AgentConfig` uses a channel-agnostic binding model (replaces `SlackMemberID`/`SlackChannel`)
 5. All existing functionality works identically — gateway-only mode, Slack mode, pause/unpause, routing, policy, MCP tools

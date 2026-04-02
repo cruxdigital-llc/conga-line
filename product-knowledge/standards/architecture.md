@@ -62,9 +62,9 @@ All new CLI commands must follow these patterns:
 | Command structure | Cobra `*cobra.Command` with `RunE` handler, registered via `init()` | `cli/cmd/secrets.go` |
 | Timeout | `commandContext()` for global timeout via `--timeout` flag | `cli/cmd/root.go:117` |
 | Agent resolution | `resolveAgentName(ctx)` — uses `--agent` flag or identity-based resolution | `cli/cmd/root.go:131` |
-| JSON output | Check `ui.OutputJSON`, emit via `ui.EmitJSON()` | `cli/internal/ui/json_output.go` |
-| Human output | `ui.PrintTable(headers, rows)` for tabular data | `cli/internal/ui/table.go` |
-| JSON input | `ui.JSONInputActive` + `ui.MustGetString()` for non-interactive mode | `cli/internal/ui/json_input.go` |
+| JSON output | Check `ui.OutputJSON`, emit via `ui.EmitJSON()` | `cli/pkg/ui/json_output.go` |
+| Human output | `ui.PrintTable(headers, rows)` for tabular data | `cli/pkg/ui/table.go` |
+| JSON input | `ui.JSONInputActive` + `ui.MustGetString()` for non-interactive mode | `cli/pkg/ui/json_input.go` |
 | Error handling | Return `fmt.Errorf("context: %w", err)` — never swallow errors silently | `specs/2026-03-19_feature_cli-hardening/` |
 
 ## Interface Parity
@@ -83,7 +83,7 @@ Every CLI command must be fully operable through all three interfaces. A feature
 
 1. **Every new flag must have a JSON input field and an MCP parameter.** If a CLI command accepts `--delete-data`, the JSON schema must include `"delete_data"` and the MCP tool must accept a `delete_data` boolean parameter.
 
-2. **Every new command must have an MCP tool.** CLI commands are registered in `cli/cmd/`, JSON schemas in `cli/cmd/json_schema.go`, and MCP tools in `cli/internal/mcpserver/tools*.go`. All three must be updated together.
+2. **Every new command must have an MCP tool.** CLI commands are registered in `cli/cmd/`, JSON schemas in `cli/cmd/json_schema.go`, and MCP tools in `cli/pkg/mcpserver/tools*.go`. All three must be updated together.
 
 3. **Behavior must be identical across interfaces.** A `--force` flag in CLI, `"force": true` in JSON, and no confirmation prompt in MCP must all produce the same result. MCP tools inherently skip interactive prompts (the LLM is the user), but destructive operations should use `DestructiveHint: true` in tool annotations.
 
@@ -102,12 +102,12 @@ New config files should default to JSON unless they are primarily hand-authored 
 
 | Package | Owns | Does NOT Own |
 |---|---|---|
-| `cli/internal/channels/` | Channel interface, registry, shared types (`ChannelBinding`, `SecretDef`, `RoutingEntry`) | Channel-specific implementation |
-| `cli/internal/channels/{name}/` | Platform-specific implementation for one channel (validation, config, routing, secrets) | Cross-channel logic |
-| `cli/internal/provider/` | Provider interface, registry, shared types (`AgentConfig`, `AgentStatus`) | Provider-specific implementation |
-| `cli/internal/provider/{name}provider/` | Transport-specific code for one provider | Shared logic, cross-provider behavior |
-| `cli/internal/common/` | Config generation, routing, behavior composition, validation | Policy, provider interface, CLI commands |
-| `cli/internal/policy/` | Policy schema, parsing, validation, enforcement reporting | Enforcement logic (that's in providers) |
+| `cli/pkg/channels/` | Channel interface, registry, shared types (`ChannelBinding`, `SecretDef`, `RoutingEntry`) | Channel-specific implementation |
+| `cli/pkg/channels/{name}/` | Platform-specific implementation for one channel (validation, config, routing, secrets) | Cross-channel logic |
+| `cli/pkg/provider/` | Provider interface, registry, shared types (`AgentConfig`, `AgentStatus`) | Provider-specific implementation |
+| `cli/pkg/provider/{name}provider/` | Transport-specific code for one provider | Shared logic, cross-provider behavior |
+| `cli/pkg/common/` | Config generation, routing, behavior composition, validation | Policy, provider interface, CLI commands |
+| `cli/pkg/policy/` | Policy schema, parsing, validation, enforcement reporting | Enforcement logic (that's in providers) |
 | `cli/cmd/` | CLI commands, flag parsing, user interaction | Business logic (delegate to providers/packages) |
 
 New packages are preferred over growing existing ones when the domain is distinct. `policy/` was created rather than adding to `common/` because policy is a separate concern with its own lifecycle.
@@ -116,7 +116,7 @@ New packages are preferred over growing existing ones when the domain is distinc
 
 ### Current State
 
-Slack is decoupled from the core via the `Channel` interface (`cli/internal/channels/`):
+Slack is decoupled from the core via the `Channel` interface (`cli/pkg/channels/`):
 - `AgentConfig` has `Channels []channels.ChannelBinding` — platform-agnostic bindings
 - `GenerateOpenClawConfig()` delegates to `ch.OpenClawChannelConfig()` per binding
 - `GenerateRoutingJSON()` delegates to `ch.RoutingEntries()` per binding
@@ -141,12 +141,12 @@ New features must not introduce additional Slack-specific logic outside of the e
 
 4. **Security controls must not depend on Slack constructs.** Channel allowlists are a security boundary, but the enforcement mechanism (which channels an agent responds to) should be expressible for any platform, not just Slack channel IDs.
 
-### Package Structure: `cli/internal/channels/`
+### Package Structure: `cli/pkg/channels/`
 
-Channel integrations live in `cli/internal/channels/`, one subdirectory per platform:
+Channel integrations live in `cli/pkg/channels/`, one subdirectory per platform:
 
 ```
-cli/internal/channels/
+cli/pkg/channels/
   channels.go  — Channel interface + shared types (ChannelBinding, SecretDef, RoutingEntry)
   registry.go  — Register/Get/All + ParseBinding("platform:id")
   slack/       — Slack Channel implementation (validation, config, routing, secrets)
@@ -205,7 +205,7 @@ Platform API
 
 To add a second messaging platform (e.g., Telegram):
 
-1. Create `cli/internal/channels/telegram/telegram.go` implementing the `Channel` interface
+1. Create `cli/pkg/channels/telegram/telegram.go` implementing the `Channel` interface
 2. Register via `init()` — `channels.Register(&Telegram{})`
 3. Add `_ "...channels/telegram"` import to `cmd/root.go`
 4. Add a connection proxy container (if the platform needs one) analogous to the Slack router

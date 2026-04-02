@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/cruxdigital-llc/conga-line/cli/internal/ui"
+	"github.com/cruxdigital-llc/conga-line/cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

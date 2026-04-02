@@ -5,7 +5,7 @@
 Six phases, ordered by risk reduction then enablement. Bug fixes first (they're small, high-value, and unblock confidence). Then testability refactoring (enables everything after). Then tests. Then organization and UX polish last.
 
 ## Phase 1: Fix Silent Failures
-**Files:** `cli/cmd/admin.go`, `cli/internal/aws/secrets.go`
+**Files:** `cli/cmd/admin.go`, `cli/pkg/aws/secrets.go`
 
 1. Check `json.Marshal` error at lines 227 and 308 of `admin.go`
 2. Collect and report cleanup errors in `adminRemoveAgentRun` (lines 443-457)
@@ -21,9 +21,9 @@ Six phases, ordered by risk reduction then enablement. Bug fixes first (they're 
 5. Fix `pollDevicePairing` to log errors when verbose, exit cleanly on context cancellation
 
 ## Phase 3: Testability Refactoring
-**Files:** `cli/internal/aws/*.go`, `cli/cmd/root.go`, `cli/internal/ui/prompt.go`
+**Files:** `cli/pkg/aws/*.go`, `cli/cmd/root.go`, `cli/pkg/ui/prompt.go`
 
-1. Define interfaces for each AWS service in a new file `cli/internal/aws/interfaces.go`:
+1. Define interfaces for each AWS service in a new file `cli/pkg/aws/interfaces.go`:
    - `SSMClient`, `SecretsManagerClient`, `EC2Client`, `STSClient`
    - Each interface declares only the methods actually used
    - Update all function signatures to accept interfaces instead of concrete types
@@ -41,17 +41,17 @@ Six phases, ordered by risk reduction then enablement. Bug fixes first (they're 
 - `cli/cmd/status_test.go` — `parseKeyValues`, `splitStats`, readiness phase logic
 - `cli/cmd/secrets_test.go` — `secretNameToEnvVar`
 - `cli/cmd/root_test.go` — `validateAgentName`, `validateMemberID`, `validateChannelID`
-- `cli/internal/discovery/identity_test.go` — ARN parsing, session name extraction
+- `cli/pkg/discovery/identity_test.go` — ARN parsing, session name extraction
 
 ### Phase 4b: Mocked AWS Tests
-- `cli/internal/aws/ssm_test.go` — `RunCommand` polling, timeout, consecutive error limit
-- `cli/internal/aws/secrets_test.go` — `SetSecret` create-or-update, `ListSecrets` pagination, `DeleteSecret` error wrapping
-- `cli/internal/aws/params_test.go` — `GetParameter`, `PutParameter`, `ListParametersByPath`
-- `cli/internal/discovery/agent_test.go` — `ListAgents` JSON parsing, `ResolveAgent`, `ResolveAgentByIAM`
-- `cli/internal/discovery/identity_test.go` — full `ResolveIdentity` flow with mocked STS + SSM
+- `cli/pkg/aws/ssm_test.go` — `RunCommand` polling, timeout, consecutive error limit
+- `cli/pkg/aws/secrets_test.go` — `SetSecret` create-or-update, `ListSecrets` pagination, `DeleteSecret` error wrapping
+- `cli/pkg/aws/params_test.go` — `GetParameter`, `PutParameter`, `ListParametersByPath`
+- `cli/pkg/discovery/agent_test.go` — `ListAgents` JSON parsing, `ResolveAgent`, `ResolveAgentByIAM`
+- `cli/pkg/discovery/identity_test.go` — full `ResolveIdentity` flow with mocked STS + SSM
 
 ### Phase 4c: UI Tests
-- `cli/internal/ui/prompt_test.go` — `Confirm` (y/n/empty/EOF), `TextPromptWithDefault` (empty input returns default)
+- `cli/pkg/ui/prompt_test.go` — `Confirm` (y/n/empty/EOF), `TextPromptWithDefault` (empty input returns default)
 
 ## Phase 5: Code Organization
 **Files:** `cli/cmd/admin.go` → split

@@ -33,3 +33,5 @@ conga-policy.yaml
 
 # Other local files
 demo.*
+cli/cli
+cli/terraform-provider-conga
