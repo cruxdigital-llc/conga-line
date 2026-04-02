@@ -60,11 +60,11 @@ All new CLI commands must follow these patterns:
 | Pattern | Implementation | Reference |
 |---|---|---|
 | Command structure | Cobra `*cobra.Command` with `RunE` handler, registered via `init()` | `internal/cmd/secrets.go` |
-| Timeout | `commandContext()` for global timeout via `--timeout` flag | `internal/cmd/root.go:117` |
-| Agent resolution | `resolveAgentName(ctx)` — uses `--agent` flag or identity-based resolution | `internal/cmd/root.go:131` |
+| Timeout | `commandContext()` for global timeout via `--timeout` flag | `internal/cmd/root.go` |
+| Agent resolution | `resolveAgentName(ctx)` — uses `--agent` flag or identity-based resolution | `internal/cmd/root.go` |
 | JSON output | Check `ui.OutputJSON`, emit via `ui.EmitJSON()` | `pkg/ui/json_output.go` |
 | Human output | `ui.PrintTable(headers, rows)` for tabular data | `pkg/ui/table.go` |
-| JSON input | `ui.JSONInputActive` + `ui.MustGetString()` for non-interactive mode | `pkg/ui/json_input.go` |
+| JSON input | `ui.JSONInputActive` + `ui.MustGetString()` for non-interactive mode | `pkg/ui/json_mode.go` |
 | Error handling | Return `fmt.Errorf("context: %w", err)` — never swallow errors silently | `specs/2026-03-19_feature_cli-hardening/` |
 
 ## Interface Parity
@@ -227,9 +227,9 @@ To add a second messaging platform (e.g., Telegram):
 
 1. Create `pkg/channels/telegram/telegram.go` implementing the `Channel` interface
 2. Register via `init()` — `channels.Register(&Telegram{})`
-3. Add `_ "...channels/telegram"` import to `cmd/root.go`
+3. Add `_ "...channels/telegram"` import to `internal/cmd/root.go`
 4. Add a connection proxy container (if the platform needs one) analogous to the Slack router
-5. No changes needed to `common/`, `provider/`, or `cmd/` — the interface handles everything
+5. No changes needed to `common/` or `provider/` — the interface handles everything
 
 The `Channel` interface covers: validation, secrets, OpenClaw config generation, plugin config, routing entries, agent/router env vars, webhook paths, and behavior template vars. All delegated per-platform.
 

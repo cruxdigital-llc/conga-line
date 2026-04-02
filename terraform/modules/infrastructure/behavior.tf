@@ -21,6 +21,6 @@ resource "aws_s3_object" "behavior" {
 resource "aws_s3_object" "deploy_behavior_helper" {
   bucket  = local.state_bucket
   key     = "conga/scripts/deploy-behavior.sh"
-  content = file("${var.repo_root}/cli/scripts/deploy-behavior.sh.tmpl")
-  etag    = md5(file("${var.repo_root}/cli/scripts/deploy-behavior.sh.tmpl"))
+  content = file("${var.repo_root}/scripts/deploy-behavior.sh.tmpl")
+  etag    = md5(file("${var.repo_root}/scripts/deploy-behavior.sh.tmpl"))
 }

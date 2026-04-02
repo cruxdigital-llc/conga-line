@@ -50,7 +50,7 @@ Module: `github.com/cruxdigital-llc/conga-line` (go.mod at repo root)
 ### Public library (`pkg/`) — importable by external modules
 | Package | Purpose |
 |---|---|
-| `pkg/provider/` | Provider interface (17+ methods), registry, config |
+| `pkg/provider/` | Provider interface (26 methods), registry, config |
 | `pkg/provider/awsprovider/` | AWS implementation (wraps SSM, Secrets Manager, EC2, STS) |
 | `pkg/provider/localprovider/` | Local Docker implementation (Docker CLI, file secrets) |
 | `pkg/provider/remoteprovider/` | Remote SSH implementation (SSH + Docker CLI, file secrets, tunneling) |
@@ -59,6 +59,7 @@ Module: `github.com/cruxdigital-llc/conga-line` (go.mod at repo root)
 | `pkg/common/` | Shared logic: config gen, routing, behavior composition, validation |
 | `pkg/aws/` | AWS SDK wrappers and interfaces |
 | `pkg/discovery/` | Agent and identity resolution (AWS) |
+| `pkg/manifest/` | YAML manifest parsing for `conga bootstrap` |
 | `pkg/tunnel/` | SSM port forwarding (AWS) |
 | `pkg/ui/` | Spinners, prompts, tables, JSON output |
 

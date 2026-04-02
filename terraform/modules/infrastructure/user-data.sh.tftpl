@@ -230,7 +230,7 @@ ROUTERUNIT
 
 echo "Router configured"
 
-# Download behavior deployment helper from S3 (canonical source: cli/scripts/deploy-behavior.sh.tmpl)
+# Download behavior deployment helper from S3 (canonical source: scripts/deploy-behavior.sh.tmpl)
 aws s3 cp s3://${state_bucket}/conga/scripts/deploy-behavior.sh /opt/conga/bin/deploy-behavior.sh --region "$AWS_REGION"
 chmod +x /opt/conga/bin/deploy-behavior.sh
 
@@ -270,7 +270,7 @@ ENVFILE
 
   # Generate user-type openclaw.json (DM-only, restricted to owning user)
   # NOTE: Static config structure (model, heartbeat, pruning, etc.) is canonically defined in
-  # cli/internal/common/openclaw-defaults.json — keep this heredoc in sync when updating.
+  # pkg/common/openclaw-defaults.json — keep this heredoc in sync when updating.
   cat > /opt/conga/config/$AGENT_NAME-config.json << OCCONFIG
 {
   "agents": {
@@ -360,7 +360,7 @@ ENVFILE
 
   # Generate team-type openclaw.json (channel-based, anyone in channel)
   # NOTE: Static config structure (model, heartbeat, pruning, etc.) is canonically defined in
-  # cli/internal/common/openclaw-defaults.json — keep this heredoc in sync when updating.
+  # pkg/common/openclaw-defaults.json — keep this heredoc in sync when updating.
   cat > /opt/conga/config/$AGENT_NAME-config.json << OCCONFIG
 {
   "agents": {
@@ -429,7 +429,7 @@ OCCONFIG
 # all traffic through the proxy to prevent bypass (e.g. tools ignoring HTTP_PROXY).
 generate_egress_conf() {
   # NOTE: This function generates the same Envoy config format as the template
-  # in cli/internal/policy/templates/envoy-config.yaml.tmpl — keep both in sync.
+  # in pkg/policy/templates/envoy-config.yaml.tmpl — keep both in sync.
   local AGENT_NAME="$1"
   local POLICY_FILE="/opt/conga/conga-policy.yaml"
   local CONF_OUT="/opt/conga/config/egress-$AGENT_NAME.yaml"
@@ -822,7 +822,7 @@ PROXYDF
     # Proxy is on the same Docker network — Docker DNS resolves the container name.
     EGRESS_DOCKER_ARGS="-e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1"
     # Write proxy bootstrap JS (patches Node.js fetch/https to route through proxy)
-    # NOTE: This must match cli/internal/policy/templates/proxy-bootstrap.js — keep both in sync.
+    # NOTE: This must match pkg/policy/templates/proxy-bootstrap.js — keep both in sync.
     BOOTSTRAP_PATH="/opt/conga/config/proxy-bootstrap.js"
     if [ ! -f "$BOOTSTRAP_PATH" ]; then
       cat > "$BOOTSTRAP_PATH" << 'BOOTSTRAPJS'

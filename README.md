@@ -581,7 +581,8 @@ go build -o conga ./cmd/conga
 │   ├── provider/               # Provider interface & registry
 │   │   ├── awsprovider/        # AWS implementation (EC2, SSM, Secrets Manager)
 │   │   ├── remoteprovider/     # Remote SSH implementation
-│   │   └── localprovider/      # Local Docker implementation
+│   │   ├── localprovider/      # Local Docker implementation
+│   │   └── iptables/           # iptables rule generation for egress enforcement
 │   ├── policy/                 # Portable policy schema, validation, enforcement
 │   ├── channels/               # Channel abstraction & platform integrations
 │   │   └── slack/              # Slack channel implementation

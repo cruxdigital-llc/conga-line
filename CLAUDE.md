@@ -17,7 +17,7 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 
 ## Provider System
 
-- **Provider interface**: `pkg/provider/provider.go` — 17 methods covering identity, agent lifecycle, container ops, secrets, connectivity, environment management, and teardown
+- **Provider interface**: `pkg/provider/provider.go` — 26 methods covering identity, agent lifecycle, container ops, secrets, channels, connectivity, environment management, and teardown
 - **Provider registry**: `pkg/provider/registry.go` — `Register(name, factory)` / `Get(name, cfg)`
 - **AWS provider**: `pkg/provider/awsprovider/provider.go` — wraps existing `aws`, `discovery`, `tunnel` packages
 - **Local provider**: `pkg/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
