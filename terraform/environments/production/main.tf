@@ -45,7 +45,6 @@ module "infrastructure" {
   instance_type                 = var.instance_type
   config_check_interval_minutes = var.config_check_interval_minutes
   alert_email                   = var.alert_email
-  setup_manifest                = var.setup_manifest
 }
 
 # Layer 2: CongaLine Agent Lifecycle
@@ -55,12 +54,10 @@ module "congaline" {
 
   image = var.image
 
-  agents                 = var.agents
-  anthropic_api_key      = var.anthropic_api_key
-  slack_bot_token        = var.slack_bot_token
-  slack_signing_secret   = var.slack_signing_secret
-  slack_app_token        = var.slack_app_token
-  extra_secrets          = var.extra_secrets
+  agents          = var.agents
+  global_secrets  = var.global_secrets
+  channel_secrets = var.channel_secrets
+  agent_secrets   = var.agent_secrets
   egress_allowed_domains = var.egress_allowed_domains
   agent_egress_overrides = var.agent_egress_overrides
 }

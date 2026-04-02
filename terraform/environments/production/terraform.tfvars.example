@@ -14,33 +14,32 @@ alert_email   = ""
 # Define your fleet. Key is the agent name.
 # Ports auto-assigned alphabetically from 18789 if omitted.
 agents = {
-  aaron = {
+  myagent = {
     type       = "user"
-    binding_id = "UA13HEGTS"     # Slack member ID
+    binding_id = "USLACKMEMBERID"  # Slack member ID
   }
-  zach = {
-    type       = "user"
-    binding_id = "U01UNLBCWNR"
-  }
-  nathan = {
-    type       = "user"
-    binding_id = "U05926LNP37"
-  }
-  nextgen-delivery = {
+  myteam = {
     type       = "team"
-    binding_id = "C0AFBSMHQ15"  # Slack channel ID
+    binding_id = "CSLACKCHANNELID" # Slack channel ID
   }
 }
 
 # --- Secrets ---
-anthropic_api_key    = ""
-slack_bot_token      = ""
-slack_signing_secret = ""
-slack_app_token      = ""
+# Applied to every agent
+global_secrets = {
+  "anthropic-api-key" = ""
+}
 
-# Optional: extra per-agent secrets
-# extra_secrets = {
-#   aaron = {
+# Shared channel secrets (omit to skip Slack setup)
+channel_secrets = {
+  "slack-bot-token"      = ""
+  "slack-signing-secret" = ""
+  "slack-app-token"      = ""
+}
+
+# Optional: per-agent secrets
+# agent_secrets = {
+#   myagent = {
 #     "trello-api-key" = "..."
 #     "trello-token"   = "..."
 #   }
@@ -51,5 +50,5 @@ egress_allowed_domains = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com"
 
 # Optional: per-agent egress overrides
 # agent_egress_overrides = {
-#   aaron = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com", "*.trello.com"]
+#   myagent = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com", "*.trello.com"]
 # }

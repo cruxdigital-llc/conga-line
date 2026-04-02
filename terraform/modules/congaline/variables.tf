@@ -7,38 +7,28 @@ variable "image" {
 variable "agents" {
   description = "Map of agents to provision. Key is agent name. Ports auto-assigned alphabetically from 18789 if omitted."
   type = map(object({
-    type         = string         # "user" or "team"
+    type         = string           # "user" or "team"
     gateway_port = optional(number) # auto-assigned if null
-    binding_id   = string         # Slack member ID (user) or channel ID (team)
+    binding_id   = string           # Slack member ID (user) or channel ID (team)
   }))
 }
 
-variable "anthropic_api_key" {
-  description = "Anthropic API key (shared across all agents)"
-  type        = string
+variable "global_secrets" {
+  description = "Secrets applied to every agent (e.g. anthropic-api-key)"
+  type        = map(string)
   sensitive   = true
+  default     = {}
 }
 
-variable "slack_bot_token" {
-  description = "Slack bot token"
-  type        = string
+variable "channel_secrets" {
+  description = "Shared secrets for the messaging channel (e.g. slack-bot-token, slack-signing-secret, slack-app-token)"
+  type        = map(string)
   sensitive   = true
+  default     = {}
 }
 
-variable "slack_signing_secret" {
-  description = "Slack signing secret"
-  type        = string
-  sensitive   = true
-}
-
-variable "slack_app_token" {
-  description = "Slack app token for Socket Mode"
-  type        = string
-  sensitive   = true
-}
-
-variable "extra_secrets" {
-  description = "Additional per-agent secrets. Map of agent_name => map of secret_name => value."
+variable "agent_secrets" {
+  description = "Per-agent secrets. Map of agent_name => map of secret_name => value."
   type        = map(map(string))
   sensitive   = true
   default     = {}

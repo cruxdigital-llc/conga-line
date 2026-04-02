@@ -37,29 +37,6 @@ variable "alert_email" {
   default = ""
 }
 
-variable "setup_manifest" {
-  type = object({
-    config   = map(string)
-    defaults = optional(map(string), {})
-    secrets  = map(string)
-  })
-  default = {
-    config = {
-      "image" = "Docker image for OpenClaw (ECR, GHCR, or Docker Hub)"
-    }
-    defaults = {
-      "image" = "ghcr.io/openclaw/openclaw:2026.3.11"
-    }
-    secrets = {
-      "conga/shared/slack-bot-token"      = "Slack bot token (xoxb-)"
-      "conga/shared/slack-app-token"      = "Slack app token (xapp-)"
-      "conga/shared/slack-signing-secret" = "Slack signing secret"
-      "conga/shared/google-client-id"     = "Google OAuth client ID"
-      "conga/shared/google-client-secret" = "Google OAuth client secret"
-    }
-  }
-}
-
 # --- CongaLine ---
 
 variable "image" {
@@ -77,38 +54,35 @@ variable "agents" {
   }))
 }
 
-variable "anthropic_api_key" {
-  type      = string
+variable "global_secrets" {
+  description = "Secrets applied to every agent (e.g. anthropic-api-key)"
+  type      = map(string)
   sensitive = true
+  default   = {}
 }
 
-variable "slack_bot_token" {
-  type      = string
+variable "channel_secrets" {
+  description = "Shared secrets for the messaging channel (e.g. slack-bot-token, slack-signing-secret, slack-app-token)"
+  type      = map(string)
   sensitive = true
+  default   = {}
 }
 
-variable "slack_signing_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "slack_app_token" {
-  type      = string
-  sensitive = true
-}
-
-variable "extra_secrets" {
+variable "agent_secrets" {
+  description = "Per-agent secrets. Map of agent_name => map of secret_name => value."
   type      = map(map(string))
   sensitive = true
   default   = {}
 }
 
 variable "egress_allowed_domains" {
-  type    = list(string)
-  default = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com"]
+  description = "Global egress allowed domains. Supports wildcards (e.g. *.slack.com)."
+  type        = list(string)
+  default     = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com"]
 }
 
 variable "agent_egress_overrides" {
-  type    = map(list(string))
-  default = {}
+  description = "Per-agent egress domain overrides. Replaces the global allowlist for that agent."
+  type        = map(list(string))
+  default     = {}
 }

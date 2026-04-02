@@ -31,19 +31,28 @@ resource "conga_agent" "this" {
   depends_on   = [conga_environment.this]
 }
 
-# Per-agent API key
-resource "conga_secret" "anthropic_api_key" {
-  for_each = var.agents
-  agent    = each.key
-  name     = "anthropic-api-key"
-  value    = var.anthropic_api_key
+# Global secrets applied to every agent (e.g. anthropic-api-key)
+resource "conga_secret" "global" {
+  for_each = merge([
+    for agent in keys(var.agents) : {
+      for name, value in var.global_secrets : "${agent}/${name}" => {
+        agent = agent
+        name  = name
+        value = value
+      }
+    }
+  ]...)
+
+  agent      = each.value.agent
+  name       = each.value.name
+  value      = each.value.value
   depends_on = [conga_agent.this]
 }
 
-# Extra per-agent secrets
-resource "conga_secret" "extra" {
+# Per-agent secrets (e.g. aaron's trello keys)
+resource "conga_secret" "agent" {
   for_each = merge([
-    for agent, secrets in var.extra_secrets : {
+    for agent, secrets in var.agent_secrets : {
       for name, value in secrets : "${agent}/${name}" => {
         agent = agent
         name  = name
@@ -58,20 +67,21 @@ resource "conga_secret" "extra" {
   depends_on = [conga_agent.this]
 }
 
-# Slack channel
+# Messaging channel — created only when channel_secrets are provided
 resource "conga_channel" "slack" {
+  count          = length(var.channel_secrets) > 0 ? 1 : 0
   platform       = "slack"
-  bot_token      = var.slack_bot_token
-  signing_secret = var.slack_signing_secret
-  app_token      = var.slack_app_token
+  bot_token      = lookup(var.channel_secrets, "slack-bot-token", "")
+  signing_secret = lookup(var.channel_secrets, "slack-signing-secret", "")
+  app_token      = lookup(var.channel_secrets, "slack-app-token", "")
   depends_on     = [conga_environment.this]
 }
 
-# Channel bindings — one per agent that has a binding_id
+# Channel bindings — one per agent that has a binding_id (only when channel exists)
 resource "conga_channel_binding" "slack" {
-  for_each   = { for k, v in var.agents : k => v if v.binding_id != "" }
+  for_each   = length(var.channel_secrets) > 0 ? { for k, v in var.agents : k => v if v.binding_id != "" } : {}
   agent      = each.key
-  platform   = conga_channel.slack.platform
+  platform   = conga_channel.slack[0].platform
   binding_id = each.value.binding_id
   depends_on = [conga_agent.this]
 }
