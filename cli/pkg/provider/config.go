@@ -17,10 +17,10 @@ const (
 
 // Config holds provider-agnostic configuration.
 type Config struct {
-	Provider ProviderName `json:"provider"` // "aws", "local", or "remote"
-	DataDir  string `json:"data_dir,omitempty"` // override for ~/.conga/
-	Region   string `json:"region,omitempty"`   // AWS region (aws provider)
-	Profile  string `json:"profile,omitempty"`  // AWS profile (aws provider)
+	Provider ProviderName `json:"provider"`           // "aws", "local", or "remote"
+	DataDir  string       `json:"data_dir,omitempty"` // override for ~/.conga/
+	Region   string       `json:"region,omitempty"`   // AWS region (aws provider)
+	Profile  string       `json:"profile,omitempty"`  // AWS profile (aws provider)
 	// Remote provider (SSH)
 	SSHHost    string `json:"ssh_host,omitempty"`     // Remote hostname or IP
 	SSHPort    int    `json:"ssh_port,omitempty"`     // SSH port (default 22)
