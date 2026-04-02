@@ -26,11 +26,11 @@ type channelBindingResource struct {
 }
 
 type channelBindingResourceModel struct {
-	ID       types.String `tfsdk:"id"`
-	Agent    types.String `tfsdk:"agent"`
-	Platform types.String `tfsdk:"platform"`
+	ID        types.String `tfsdk:"id"`
+	Agent     types.String `tfsdk:"agent"`
+	Platform  types.String `tfsdk:"platform"`
 	BindingID types.String `tfsdk:"binding_id"`
-	Label    types.String `tfsdk:"label"`
+	Label     types.String `tfsdk:"label"`
 }
 
 func NewChannelBindingResource() resource.Resource {

@@ -18,7 +18,7 @@ type channelsDataSource struct {
 }
 
 type channelsDataSourceModel struct {
-	ID       types.String               `tfsdk:"id"`
+	ID       types.String             `tfsdk:"id"`
 	Channels []channelDataSourceEntry `tfsdk:"channels"`
 }
 

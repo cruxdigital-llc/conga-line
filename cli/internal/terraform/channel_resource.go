@@ -23,13 +23,13 @@ type channelResource struct {
 }
 
 type channelResourceModel struct {
-	ID             types.String `tfsdk:"id"`
-	Platform       types.String `tfsdk:"platform"`
-	BotToken       types.String `tfsdk:"bot_token"`
-	SigningSecret   types.String `tfsdk:"signing_secret"`
-	AppToken       types.String `tfsdk:"app_token"`
-	Configured     types.Bool   `tfsdk:"configured"`
-	RouterRunning  types.Bool   `tfsdk:"router_running"`
+	ID            types.String `tfsdk:"id"`
+	Platform      types.String `tfsdk:"platform"`
+	BotToken      types.String `tfsdk:"bot_token"`
+	SigningSecret types.String `tfsdk:"signing_secret"`
+	AppToken      types.String `tfsdk:"app_token"`
+	Configured    types.Bool   `tfsdk:"configured"`
+	RouterRunning types.Bool   `tfsdk:"router_running"`
 }
 
 func NewChannelResource() resource.Resource {

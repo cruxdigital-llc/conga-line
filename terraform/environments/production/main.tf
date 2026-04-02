@@ -54,10 +54,10 @@ module "congaline" {
 
   image = var.image
 
-  agents          = var.agents
-  global_secrets  = var.global_secrets
-  channel_secrets = var.channel_secrets
-  agent_secrets   = var.agent_secrets
+  agents                 = var.agents
+  global_secrets         = var.global_secrets
+  channel_secrets        = var.channel_secrets
+  agent_secrets          = var.agent_secrets
   egress_allowed_domains = var.egress_allowed_domains
   agent_egress_overrides = var.agent_egress_overrides
 }

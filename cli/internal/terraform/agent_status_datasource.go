@@ -18,16 +18,16 @@ type agentStatusDataSource struct {
 }
 
 type agentStatusDataSourceModel struct {
-	Name         types.String `tfsdk:"name"`
-	Type         types.String `tfsdk:"type"`
-	ServiceState types.String `tfsdk:"service_state"`
-	ReadyPhase   types.String `tfsdk:"ready_phase"`
+	Name           types.String `tfsdk:"name"`
+	Type           types.String `tfsdk:"type"`
+	ServiceState   types.String `tfsdk:"service_state"`
+	ReadyPhase     types.String `tfsdk:"ready_phase"`
 	ContainerState types.String `tfsdk:"container_state"`
-	MemoryUsage  types.String `tfsdk:"memory_usage"`
-	CPUPercent   types.String `tfsdk:"cpu_percent"`
-	RestartCount types.Int64  `tfsdk:"restart_count"`
-	GatewayPort  types.Int64  `tfsdk:"gateway_port"`
-	Paused       types.Bool   `tfsdk:"paused"`
+	MemoryUsage    types.String `tfsdk:"memory_usage"`
+	CPUPercent     types.String `tfsdk:"cpu_percent"`
+	RestartCount   types.Int64  `tfsdk:"restart_count"`
+	GatewayPort    types.Int64  `tfsdk:"gateway_port"`
+	Paused         types.Bool   `tfsdk:"paused"`
 }
 
 func NewAgentStatusDataSource() datasource.DataSource {

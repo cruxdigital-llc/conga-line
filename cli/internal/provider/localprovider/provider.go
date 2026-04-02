@@ -1175,7 +1175,7 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 
 	// Stop and remove existing proxy if any
 	if containerExists(ctx, proxyName) {
-		stopContainer(ctx, proxyName)  //nolint:errcheck // best-effort, may already be stopped
+		stopContainer(ctx, proxyName) //nolint:errcheck // best-effort, may already be stopped
 		if err := removeContainer(ctx, proxyName); err != nil {
 			return fmt.Errorf("removing existing egress proxy %s: %w", proxyName, err)
 		}

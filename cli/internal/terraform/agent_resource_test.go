@@ -23,10 +23,10 @@ func TestAccAgentResource_lifecycle(t *testing.T) {
 			},
 			// Import
 			{
-				ResourceName:            "conga_agent.test",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateId:           "testagent",
+				ResourceName:      "conga_agent.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateId:     "testagent",
 			},
 			// Type change forces recreate
 			{
