@@ -278,7 +278,10 @@ func (p *RemoteProvider) regenerateAgentConfig(ctx context.Context, cfg provider
 	if err := p.ssh.Upload(posixpath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
 		return err
 	}
-	if err := p.ssh.Upload(posixpath.Join(p.remoteConfigDir(), cfg.Name+".env"), envContent, 0400); err != nil {
+	envPath := posixpath.Join(p.remoteConfigDir(), cfg.Name+".env")
+	// Remove old env file first — it's mode 0400 and can't be overwritten in place
+	p.ssh.Run(ctx, fmt.Sprintf("rm -f %s", shellQuote(envPath)))
+	if err := p.ssh.Upload(envPath, envContent, 0400); err != nil {
 		return err
 	}
 

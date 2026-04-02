@@ -283,14 +283,16 @@ func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.
 	if err := os.WriteFile(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(p.configDir(), cfg.Name+".env"), envContent, 0400); err != nil {
+	envPath := filepath.Join(p.configDir(), cfg.Name+".env")
+	if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old env file %s: %w", envPath, err)
+	}
+	if err := os.WriteFile(envPath, envContent, 0400); err != nil {
 		return err
 	}
 
-	// Re-chown data dir for container user (node, uid 1000)
-	if err := exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run(); err != nil {
-		return fmt.Errorf("failed to set ownership on %s: %w", dataDir, err)
-	}
+	// Best-effort: chown fails on macOS where uid 1000 doesn't exist (Docker Desktop remaps).
+	exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run() //nolint:errcheck
 	return nil
 }
 
@@ -302,5 +304,8 @@ func (p *LocalProvider) writeRouterEnv() error {
 	}
 
 	routerEnvPath := filepath.Join(p.configDir(), "router.env")
+	if err := os.Remove(routerEnvPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old router.env: %w", err)
+	}
 	return os.WriteFile(routerEnvPath, []byte(common.BuildRouterEnvContent(shared)), 0400)
 }
