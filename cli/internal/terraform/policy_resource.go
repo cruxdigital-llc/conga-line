@@ -184,14 +184,7 @@ func (r *policyResource) Configure(_ context.Context, req resource.ConfigureRequ
 		return
 	}
 	r.prov = p.prov
-
-	// Determine the data directory for policy file path.
-	cfg, err := congaprovider.LoadConfig(congaprovider.DefaultConfigPath())
-	if err == nil && cfg.DataDir != "" {
-		r.dataDir = cfg.DataDir
-	} else {
-		r.dataDir = congaprovider.DefaultDataDir()
-	}
+	r.dataDir = p.dataDir
 }
 
 func (r *policyResource) policyPath() string {
@@ -285,7 +278,12 @@ func (r *policyResource) Delete(ctx context.Context, _ resource.DeleteRequest, r
 
 	// Best-effort refresh to clear policy enforcement.
 	// During terraform destroy, agents may already be gone — that's expected.
-	_ = r.prov.RefreshAll(ctx)
+	if err := r.prov.RefreshAll(ctx); err != nil && !isNotFoundErr(err) {
+		resp.Diagnostics.AddWarning(
+			"Policy file deleted but agent refresh failed",
+			fmt.Sprintf("Agents may still be running with the old policy. Error: %s", err),
+		)
+	}
 }
 
 func (r *policyResource) ImportState(ctx context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {

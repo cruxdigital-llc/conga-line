@@ -3,6 +3,8 @@ package terraform
 import (
 	"fmt"
 	"testing"
+
+	"github.com/cruxdigital-llc/conga-line/cli/internal/provider"
 )
 
 func TestSplitImportID(t *testing.T) {
@@ -47,24 +49,21 @@ func TestSplitImportID(t *testing.T) {
 
 func TestIsNotFoundErr(t *testing.T) {
 	tests := []struct {
+		name     string
 		err      error
 		expected bool
 	}{
-		{nil, false},
-		{fmt.Errorf("agent not found"), true},
-		{fmt.Errorf("No such container: conga-test"), true},
-		{fmt.Errorf("resource does not exist"), true},
-		{fmt.Errorf("connection timeout"), false},
-		{fmt.Errorf("access denied"), false},
-		{fmt.Errorf("Agent Not Found in store"), true},
+		{"nil", nil, false},
+		{"wrapped ErrNotFound", fmt.Errorf("agent %q not found: %w", "test", provider.ErrNotFound), true},
+		{"bare ErrNotFound", provider.ErrNotFound, true},
+		{"double-wrapped ErrNotFound", fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", provider.ErrNotFound)), true},
+		{"connection timeout", fmt.Errorf("connection timeout"), false},
+		{"access denied", fmt.Errorf("access denied"), false},
+		{"not found without sentinel", fmt.Errorf("agent not found"), false},
 	}
 
 	for _, tt := range tests {
-		name := "nil"
-		if tt.err != nil {
-			name = tt.err.Error()
-		}
-		t.Run(name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			result := isNotFoundErr(tt.err)
 			if result != tt.expected {
 				t.Errorf("isNotFoundErr(%v) = %v, want %v", tt.err, result, tt.expected)

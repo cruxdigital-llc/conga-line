@@ -28,6 +28,7 @@ var _ provider.Provider = &congaProvider{}
 type congaProvider struct {
 	version string
 	prov    congaprovider.Provider
+	dataDir string
 }
 
 type congaProviderModel struct {
@@ -154,6 +155,11 @@ func (p *congaProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	}
 
 	p.prov = prov
+	if !config.DataDir.IsNull() && config.DataDir.ValueString() != "" {
+		p.dataDir = config.DataDir.ValueString()
+	} else {
+		p.dataDir = congaprovider.DefaultDataDir()
+	}
 	resp.DataSourceData = p
 	resp.ResourceData = p
 }

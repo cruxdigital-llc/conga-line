@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -96,6 +95,7 @@ func (p *AWSProvider) RemoveChannel(ctx context.Context, platform string) error 
 	if err != nil {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
+	var warnings []string
 	for _, a := range agents {
 		if a.ChannelBinding(platform) != nil {
 			a.Channels = channels.FilterBindings(a.Channels, platform)
@@ -104,7 +104,7 @@ func (p *AWSProvider) RemoveChannel(ctx context.Context, platform string) error 
 			}
 			if !a.Paused {
 				if err := p.regenerateAgentConfigOnInstance(ctx, instanceID, convertAgent(a)); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to regenerate config for %s: %v\n", a.Name, err)
+					warnings = append(warnings, fmt.Sprintf("failed to regenerate config for %s: %v", a.Name, err))
 				}
 			}
 		}
@@ -112,22 +112,25 @@ func (p *AWSProvider) RemoveChannel(ctx context.Context, platform string) error 
 
 	// 3. Regenerate routing.json (now without the removed channel's entries)
 	if err := p.regenerateRoutingOnInstance(ctx, instanceID); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to regenerate routing: %v\n", err)
+		warnings = append(warnings, fmt.Sprintf("failed to regenerate routing: %v", err))
 	}
 
 	// 4. Delete shared secrets for this platform
 	for _, def := range ch.SharedSecrets() {
 		secretPath := fmt.Sprintf("conga/shared/%s", def.Name)
 		if err := awsutil.DeleteSecret(ctx, p.clients.SecretsManager, secretPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to delete secret %s: %v\n", def.Name, err)
+			warnings = append(warnings, fmt.Sprintf("failed to delete secret %s: %v", def.Name, err))
 		}
 	}
 
 	// 5. Remove router.env
 	if _, err := p.runOnInstance(ctx, instanceID, "rm -f /opt/conga/config/router.env", 15*time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to remove router.env: %v\n", err)
+		warnings = append(warnings, fmt.Sprintf("failed to remove router.env: %v", err))
 	}
 
+	if len(warnings) > 0 {
+		return fmt.Errorf("channel removed but cleanup incomplete: %s", strings.Join(warnings, "; "))
+	}
 	return nil
 }
 
@@ -182,8 +185,8 @@ func (p *AWSProvider) BindChannel(ctx context.Context, agentName string, binding
 
 	// Check for duplicate binding
 	if a.ChannelBinding(binding.Platform) != nil {
-		return fmt.Errorf("agent %q already has a %s binding; use 'conga channels unbind %s %s' first",
-			agentName, binding.Platform, agentName, binding.Platform)
+		return fmt.Errorf("agent %q already has a %s binding: %w",
+			agentName, binding.Platform, provider.ErrBindingExists)
 	}
 
 	// Validate binding
@@ -220,13 +223,13 @@ func (p *AWSProvider) BindChannel(ctx context.Context, agentName string, binding
 	}
 
 	if err := p.restartRouterOnInstance(ctx, instanceID); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to restart router: %v\n", err)
+		return fmt.Errorf("binding saved but router restart failed: %w", err)
 	}
 
 	// Refresh agent to restart container with new config
 	if !a.Paused {
 		if err := p.RefreshAgent(ctx, agentName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to refresh agent %s: %v (config updated, restart manually)\n", agentName, err)
+			return fmt.Errorf("binding saved but agent refresh failed (restart manually): %w", err)
 		}
 	}
 
@@ -273,13 +276,13 @@ func (p *AWSProvider) UnbindChannel(ctx context.Context, agentName string, platf
 
 	// Restart router
 	if err := p.restartRouterOnInstance(ctx, instanceID); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to restart router: %v\n", err)
+		return fmt.Errorf("unbind saved but router restart failed: %w", err)
 	}
 
 	// Refresh agent
 	if !a.Paused {
 		if err := p.RefreshAgent(ctx, agentName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to refresh agent %s: %v (config updated, restart manually)\n", agentName, err)
+			return fmt.Errorf("unbind saved but agent refresh failed (restart manually): %w", err)
 		}
 	}
 
@@ -305,17 +308,17 @@ func (p *AWSProvider) readSharedSecrets(ctx context.Context) (common.SharedSecre
 		}
 	}
 
-	// Google OAuth secrets are read separately because they are not part of any
-	// channel's SharedSecrets() manifest but are needed for gateway authentication.
-	if id, err := awsutil.GetSecretValue(ctx, p.clients.SecretsManager, "conga/shared/google-client-id"); err != nil {
-		return secrets, fmt.Errorf("failed to read google-client-id: %w", err)
-	} else if id != "" && id != "REPLACE_ME" {
-		secrets.GoogleClientID = id
+	// Google OAuth secrets are optional (gateway authentication only) and independent
+	// of channel functionality. Errors reading them should not block channel operations.
+	if id, err := awsutil.GetSecretValue(ctx, p.clients.SecretsManager, "conga/shared/google-client-id"); err == nil {
+		if id != "" && id != "REPLACE_ME" {
+			secrets.GoogleClientID = id
+		}
 	}
-	if secret, err := awsutil.GetSecretValue(ctx, p.clients.SecretsManager, "conga/shared/google-client-secret"); err != nil {
-		return secrets, fmt.Errorf("failed to read google-client-secret: %w", err)
-	} else if secret != "" && secret != "REPLACE_ME" {
-		secrets.GoogleClientSecret = secret
+	if secret, err := awsutil.GetSecretValue(ctx, p.clients.SecretsManager, "conga/shared/google-client-secret"); err == nil {
+		if secret != "" && secret != "REPLACE_ME" {
+			secrets.GoogleClientSecret = secret
+		}
 	}
 
 	return secrets, nil
@@ -433,6 +436,7 @@ fi
 # Start router
 docker run -d \
   --name conga-router \
+  --restart unless-stopped \
   --env-file /opt/conga/config/router.env \
   --cap-drop ALL \
   --security-opt no-new-privileges \

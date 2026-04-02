@@ -10,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/cruxdigital-llc/conga-line/cli/internal/policy"
-	congaprovider "github.com/cruxdigital-llc/conga-line/cli/internal/provider"
 )
 
 var _ datasource.DataSource = &policyDataSource{}
@@ -69,18 +68,12 @@ func (d *policyDataSource) Configure(_ context.Context, req datasource.Configure
 	if req.ProviderData == nil {
 		return
 	}
-	_, ok := req.ProviderData.(*congaProvider)
+	p, ok := req.ProviderData.(*congaProvider)
 	if !ok {
 		resp.Diagnostics.AddError("Unexpected DataSource Configure Type", fmt.Sprintf("Expected *congaProvider, got %T", req.ProviderData))
 		return
 	}
-
-	cfg, err := congaprovider.LoadConfig(congaprovider.DefaultConfigPath())
-	if err == nil && cfg.DataDir != "" {
-		d.dataDir = cfg.DataDir
-	} else {
-		d.dataDir = congaprovider.DefaultDataDir()
-	}
+	d.dataDir = p.dataDir
 }
 
 func (d *policyDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {

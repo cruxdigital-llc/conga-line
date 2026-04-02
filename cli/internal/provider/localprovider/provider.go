@@ -102,7 +102,7 @@ func (p *LocalProvider) GetAgent(ctx context.Context, name string) (*provider.Ag
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("agent %q not found. Use `conga admin add-user` or `add-team` to provision", name)
+			return nil, fmt.Errorf("agent %q not found: %w", name, provider.ErrNotFound)
 		}
 		return nil, err
 	}

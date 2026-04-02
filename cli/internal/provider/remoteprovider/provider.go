@@ -154,7 +154,7 @@ func (p *RemoteProvider) GetAgent(ctx context.Context, name string) (*provider.A
 	path := posixpath.Join(p.remoteAgentsDir(), name+".json")
 	data, err := p.ssh.Download(path)
 	if err != nil {
-		return nil, fmt.Errorf("agent %q not found. Use `conga admin add-user` or `add-team` to provision", name)
+		return nil, fmt.Errorf("agent %q not found: %w", name, provider.ErrNotFound)
 	}
 	var cfg provider.AgentConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {

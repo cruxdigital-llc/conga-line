@@ -2,8 +2,8 @@ package terraform
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -79,6 +79,7 @@ func (r *channelBindingResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Description: "Human-readable label for the binding.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
 		},
@@ -106,7 +107,7 @@ func (r *channelBindingResource) Create(ctx context.Context, req resource.Create
 
 	agentName := plan.Agent.ValueString()
 	if err := r.prov.BindChannel(ctx, agentName, binding); err != nil {
-		if strings.Contains(err.Error(), "already has a") {
+		if errors.Is(err, congaprovider.ErrBindingExists) {
 			// Binding already exists — verify it matches the plan.
 			agent, getErr := r.prov.GetAgent(ctx, agentName)
 			if getErr != nil {

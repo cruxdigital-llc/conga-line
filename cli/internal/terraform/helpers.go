@@ -1,6 +1,7 @@
 package terraform
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -16,16 +17,10 @@ var agentNameRegex = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 // secretNameRegex matches valid secret names: kebab-case.
 var secretNameRegex = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
-// isNotFoundErr returns true if the error indicates a resource was not found.
+// isNotFoundErr returns true if the error wraps provider.ErrNotFound.
 // Used by Read methods to distinguish "deleted externally" from transient failures.
 func isNotFoundErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "no such") ||
-		strings.Contains(msg, "does not exist")
+	return errors.Is(err, congaprovider.ErrNotFound)
 }
 
 // splitImportID splits an import ID by "/" into exactly n parts.

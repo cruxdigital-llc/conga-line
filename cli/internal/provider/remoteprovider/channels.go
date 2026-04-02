@@ -165,8 +165,8 @@ func (p *RemoteProvider) BindChannel(ctx context.Context, agentName string, bind
 
 	// Check for duplicate binding
 	if a.ChannelBinding(binding.Platform) != nil {
-		return fmt.Errorf("agent %q already has a %s binding; use 'conga channels unbind %s %s' first",
-			agentName, binding.Platform, agentName, binding.Platform)
+		return fmt.Errorf("agent %q already has a %s binding: %w",
+			agentName, binding.Platform, provider.ErrBindingExists)
 	}
 
 	// Validate binding

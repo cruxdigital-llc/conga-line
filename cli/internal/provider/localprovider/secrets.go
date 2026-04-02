@@ -172,7 +172,7 @@ func (p *LocalProvider) DeleteSecret(ctx context.Context, agentName, secretName 
 	path := filepath.Join(p.agentSecretsDir(agentName), secretName)
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
-		return fmt.Errorf("secret %q not found for agent %s", secretName, agentName)
+		return fmt.Errorf("secret %q not found for agent %s: %w", secretName, agentName, provider.ErrNotFound)
 	}
 	return err
 }

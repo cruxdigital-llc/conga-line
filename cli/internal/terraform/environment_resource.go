@@ -144,4 +144,8 @@ func (r *environmentResource) Delete(ctx context.Context, _ resource.DeleteReque
 
 func (r *environmentResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resp.Diagnostics.AddWarning(
+		"Image not imported",
+		"The image attribute cannot be read from the provider. Set the correct image in your Terraform configuration and run `terraform apply` to reconcile state.",
+	)
 }

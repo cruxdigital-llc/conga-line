@@ -127,7 +127,7 @@ func (p *RemoteProvider) DeleteSecret(ctx context.Context, agentName, secretName
 	path := posixpath.Join(p.agentSecretsDir(agentName), secretName)
 	_, err := p.ssh.Run(ctx, fmt.Sprintf("rm %s", shellQuote(path)))
 	if err != nil {
-		return fmt.Errorf("secret %q not found for agent %s", secretName, agentName)
+		return fmt.Errorf("secret %q not found for agent %s: %w", secretName, agentName, provider.ErrNotFound)
 	}
 	return nil
 }

@@ -191,9 +191,7 @@ func (r *channelResource) readComputedState(ctx context.Context, platform string
 	model.ID = types.StringValue(platform)
 	chList, err := r.prov.ListChannels(ctx)
 	if err != nil {
-		diags.AddWarning("Failed to read channel status", err.Error())
-		model.Configured = types.BoolValue(false)
-		model.RouterRunning = types.BoolValue(false)
+		diags.AddError("Failed to read channel status after operation", err.Error())
 		return
 	}
 	for _, ch := range chList {

@@ -99,6 +99,9 @@ func (p *AWSProvider) ListAgents(ctx context.Context) ([]provider.AgentConfig, e
 func (p *AWSProvider) GetAgent(ctx context.Context, name string) (*provider.AgentConfig, error) {
 	a, err := discovery.ResolveAgent(ctx, p.clients.SSM, name)
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, fmt.Errorf("agent %q not found: %w", name, provider.ErrNotFound)
+		}
 		return nil, err
 	}
 	result := convertAgent(*a)
