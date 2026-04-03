@@ -107,9 +107,10 @@ resource "conga_policy" "this" {
   egress_allowed_domains = var.egress_allowed_domains
 
   dynamic "agent_override" {
-    for_each = { for name, cfg in var.agents : name => cfg if cfg.egress_allowed_domains != null }
+    for_each = { for name, cfg in var.agents : name => cfg if cfg.egress_allowed_domains != null || cfg.egress_mode != null }
     content {
       name                   = agent_override.key
+      egress_mode            = agent_override.value.egress_mode != null ? agent_override.value.egress_mode : var.egress_mode
       egress_allowed_domains = agent_override.value.egress_allowed_domains
     }
   }

@@ -26,7 +26,8 @@ global_secrets = {
 agents = {
   myagent = {
     type = "user"
-    # Optional: per-agent egress override (inherits global if omitted)
+    # Optional: per-agent egress overrides (inherit global if omitted)
+    # egress_mode            = "validate"  # "enforce" or "validate"
     # egress_allowed_domains = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com", "*.trello.com"]
     # Optional: per-agent secrets
     # secrets = {
