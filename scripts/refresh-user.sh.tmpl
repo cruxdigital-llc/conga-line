@@ -41,10 +41,13 @@ while IFS="=" read -r key value; do
   [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
 done < /opt/conga/config/$AGENT_NAME.env
 
-# Extract existing port mapping from current systemd unit
-PORT_FLAG=$(grep -oE '\-p 127\.0\.0\.1:[0-9]+:18789' /etc/systemd/system/conga-$AGENT_NAME.service || echo "")
+# Get gateway port from SSM agent config
+GATEWAY_PORT=$(aws ssm get-parameter --name "/conga/agents/$AGENT_NAME" \
+  --query "Parameter.Value" --output text --region "$AWS_REGION" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['gateway_port'])")
+PORT_FLAG="-p 127.0.0.1:$GATEWAY_PORT:18789"
 
-# Detect and preserve egress proxy configuration from the current unit
+# Detect and preserve egress proxy configuration
 EGRESS_DOCKER_ARGS=""
 NODE_OPTS="--max-old-space-size=1536"
 EGRESS_MODE_FILE="/opt/conga/config/egress-$AGENT_NAME.mode"
@@ -58,12 +61,58 @@ if [ -f "$EGRESS_MODE_FILE" ] && [ -f "/opt/conga/config/egress-$AGENT_NAME.yaml
   fi
 fi
 
+# Build the ExecStart line
+EXEC_START="ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g --cpus 0.75 -e NODE_OPTIONS=\"$NODE_OPTS\" --pids-limit 256 --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $EGRESS_DOCKER_ARGS $ENV_FLAGS $CONGA_IMAGE"
+
 UNIT_FILE="/etc/systemd/system/conga-$AGENT_NAME.service"
-sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME $PORT_FLAG --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS=\"$NODE_OPTS\" --pids-limit 256 --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $EGRESS_DOCKER_ARGS $ENV_FLAGS $CONGA_IMAGE|" "$UNIT_FILE"
-if ! grep -q "$CONGA_IMAGE" "$UNIT_FILE"; then
-  echo "ERROR: Failed to update ExecStart in $UNIT_FILE — sed pattern 'ExecStart=' not found"
-  exit 1
+
+if [ -f "$UNIT_FILE" ]; then
+  # Update existing unit — write to temp file first to avoid corruption
+  cp "$UNIT_FILE" "$UNIT_FILE.tmp"
+  sed -i "s|^ExecStart=.*|$EXEC_START|" "$UNIT_FILE.tmp"
+  if grep -q "$CONGA_IMAGE" "$UNIT_FILE.tmp"; then
+    mv "$UNIT_FILE.tmp" "$UNIT_FILE"
+  else
+    rm -f "$UNIT_FILE.tmp"
+    echo "ERROR: sed pattern failed on $UNIT_FILE — recreating unit from scratch"
+    # Fall through to recreate
+    rm -f "$UNIT_FILE"
+  fi
 fi
+
+if [ ! -f "$UNIT_FILE" ]; then
+  # Create unit from scratch (first provision or recovery from missing unit)
+  echo "Creating systemd unit for $AGENT_NAME (port $GATEWAY_PORT)"
+  cat > "$UNIT_FILE" << UNIT
+[Unit]
+Description=Conga Gateway ($AGENT_NAME)
+After=docker.service conga-router.service conga-image-refresh.service
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/conga/config/$AGENT_NAME.env
+ExecStartPre=/bin/bash -c 'aws s3 sync s3://\$(aws ssm get-parameter --name /conga/config/state-bucket --query Parameter.Value --output text --region $AWS_REGION)/conga/behavior/ /opt/conga/behavior/ --region $AWS_REGION 2>/dev/null || true; /opt/conga/bin/deploy-behavior.sh $AGENT_NAME \$(cat /opt/conga/config/$AGENT_NAME.type 2>/dev/null || echo user) 2>/dev/null || true; chown -R 1000:1000 /opt/conga/data/$AGENT_NAME/data/workspace 2>/dev/null || true'
+ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
+$EXEC_START
+ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
+ExecStartPost=-/bin/bash -c 'AGENT_IP=""; for i in \$(seq 1 10); do AGENT_IP=\$(docker inspect -f "{{`{{(index .NetworkSettings.Networks "`}}conga-$AGENT_NAME{{`").IPAddress}}`}}" conga-$AGENT_NAME 2>/dev/null); [ -n "\$AGENT_IP" ] && break; sleep 1; done; NET_CIDR=\$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' conga-$AGENT_NAME 2>/dev/null); if [ -n "\$AGENT_IP" ] && [ -n "\$NET_CIDR" ]; then iptables -C DOCKER-USER -s \$AGENT_IP -j DROP 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -j DROP; iptables -C DOCKER-USER -s \$AGENT_IP -d \$NET_CIDR -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -d \$NET_CIDR -j RETURN; iptables -C DOCKER-USER -s \$AGENT_IP -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN; iptables -C DOCKER-USER -s \$AGENT_IP -p udp --dport 53 -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -p udp --dport 53 -j RETURN; iptables -C DOCKER-USER -s \$AGENT_IP -p tcp --dport 53 -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -p tcp --dport 53 -j RETURN; echo "Egress iptables applied for conga-$AGENT_NAME (\$AGENT_IP)"; else echo "ERROR: egress iptables failed for conga-$AGENT_NAME — IP or subnet not found" >&2; fi'
+ExecStopPost=-/bin/bash -c 'AGENT_IP=\$(docker inspect -f "{{`{{(index .NetworkSettings.Networks "`}}conga-$AGENT_NAME{{`").IPAddress}}`}}" conga-$AGENT_NAME 2>/dev/null); NET_CIDR=\$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' conga-$AGENT_NAME 2>/dev/null); if [ -n "\$AGENT_IP" ] && [ -n "\$NET_CIDR" ]; then iptables -D DOCKER-USER -s \$AGENT_IP -p tcp --dport 53 -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -p udp --dport 53 -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -d \$NET_CIDR -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -j DROP 2>/dev/null || true; fi'
+ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
+StandardOutput=append:/var/log/conga-$AGENT_NAME.log
+StandardError=append:/var/log/conga-$AGENT_NAME.log
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+fi
+
+# Ensure Docker network exists
+docker network create --driver bridge "conga-$AGENT_NAME" 2>/dev/null || true
 
 systemctl daemon-reload
 systemctl restart conga-$AGENT_NAME
@@ -104,7 +153,7 @@ fi
 # Reconnect router to agent network (lost on container restart) — after iptables to minimize enforcement gap
 if docker inspect conga-router >/dev/null 2>&1; then
   if ! docker network connect "conga-$AGENT_NAME" conga-router 2>/dev/null; then
-    # Not fatal ��� may already be connected (ExecStartPost races with this script)
+    # Not fatal — may already be connected (ExecStartPost races with this script)
     echo "WARNING: Could not reconnect conga-router to conga-$AGENT_NAME — may already be connected or router stopped"
   fi
 fi
