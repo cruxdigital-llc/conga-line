@@ -124,7 +124,7 @@ func (p *AWSProvider) RemoveChannel(ctx context.Context, platform string) error 
 	}
 
 	// 5. Remove router.env
-	if _, err := p.runOnInstance(ctx, instanceID, "rm -f /opt/conga/config/router.env", 15*time.Second); err != nil {
+	if _, err := p.runOnInstance(ctx, instanceID, "rm -f /opt/conga/config/router.env", 30*time.Second); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to remove router.env: %v", err))
 	}
 
@@ -147,7 +147,7 @@ func (p *AWSProvider) ListChannels(ctx context.Context) ([]provider.ChannelStatu
 	if findErr == nil {
 		result, err := p.runOnInstance(ctx, instanceID,
 			`docker inspect conga-router --format '{{.State.Running}}' 2>/dev/null || echo "false"`,
-			15*time.Second)
+			30*time.Second)
 		if err == nil && result != nil && result.Status == "Success" {
 			routerRunning = strings.TrimSpace(result.Stdout) == "true"
 		}
@@ -218,7 +218,7 @@ func (p *AWSProvider) BindChannel(ctx context.Context, agentName string, binding
 	// Connect router to agent network and restart
 	if _, err := p.runOnInstance(ctx, instanceID,
 		fmt.Sprintf("docker network connect conga-%s conga-router 2>/dev/null || true", agentName),
-		15*time.Second); err != nil {
+		30*time.Second); err != nil {
 		return fmt.Errorf("failed to connect router to agent network: %w", err)
 	}
 
@@ -402,7 +402,7 @@ func (p *AWSProvider) regenerateAgentConfigOnInstance(ctx context.Context, insta
 	}
 
 	// Fix ownership for container user (SFTP uploads create root-owned files)
-	if _, err := p.runOnInstance(ctx, instanceID, fmt.Sprintf("chown -R 1000:1000 '%s'", dataDir), 15*time.Second); err != nil {
+	if _, err := p.runOnInstance(ctx, instanceID, fmt.Sprintf("chown -R 1000:1000 '%s'", dataDir), 30*time.Second); err != nil {
 		return fmt.Errorf("failed to fix ownership on %s: %w", dataDir, err)
 	}
 
@@ -488,7 +488,7 @@ func (p *AWSProvider) uploadFile(ctx context.Context, instanceID, path string, c
 		path, encoded, path, mode, path,
 	)
 
-	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, script, 30*time.Second)
+	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, script, 60*time.Second)
 	if err != nil {
 		return err
 	}
