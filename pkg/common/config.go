@@ -86,7 +86,10 @@ func GenerateOpenClawConfig(agent provider.AgentConfig, secrets SharedSecrets, g
 		return nil, fmt.Errorf("failed to parse openclaw-defaults.json: %w", err)
 	}
 
-	config["gateway"] = buildGatewayConfig(agent.GatewayPort, gatewayToken)
+	// Container-internal port is always BaseGatewayPort (18789).
+	// Host-side port (agent.GatewayPort) is needed for allowedOrigins since
+	// users connect via the host port through SSM/SSH tunnels.
+	config["gateway"] = buildGatewayConfig(BaseGatewayPort, agent.GatewayPort, gatewayToken)
 
 	channelsCfg := map[string]any{}
 	pluginsCfg := map[string]any{}
@@ -163,19 +166,30 @@ func GenerateEnvFile(agent provider.AgentConfig, secrets SharedSecrets, perAgent
 // "remote" mode (binds 0.0.0.0) with remote.url pointing to localhost inside
 // the container. Host-side access restriction (localhost-only) is enforced by
 // Docker's -p 127.0.0.1:PORT:PORT flag in each provider.
-func buildGatewayConfig(port int, token string) map[string]any {
+func buildGatewayConfig(containerPort, hostPort int, token string) map[string]any {
+	// allowedOrigins must include both the container-internal port (for CLI
+	// tools running inside the container) and the host port (for browser
+	// access via SSM/SSH tunnels). Deduplicate when they're the same.
+	origins := []string{
+		fmt.Sprintf("http://localhost:%d", containerPort),
+		fmt.Sprintf("http://127.0.0.1:%d", containerPort),
+	}
+	if hostPort != containerPort {
+		origins = append(origins,
+			fmt.Sprintf("http://localhost:%d", hostPort),
+			fmt.Sprintf("http://127.0.0.1:%d", hostPort),
+		)
+	}
+
 	gw := map[string]any{
-		"port": port,
+		"port": containerPort,
 		"mode": "remote",
 		"bind": "lan",
 		"remote": map[string]any{
-			"url": fmt.Sprintf("http://localhost:%d", port),
+			"url": fmt.Sprintf("http://localhost:%d", containerPort),
 		},
 		"controlUi": map[string]any{
-			"allowedOrigins": []string{
-				fmt.Sprintf("http://localhost:%d", port),
-				fmt.Sprintf("http://127.0.0.1:%d", port),
-			},
+			"allowedOrigins": origins,
 		},
 	}
 
