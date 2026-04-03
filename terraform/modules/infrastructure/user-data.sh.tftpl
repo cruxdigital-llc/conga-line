@@ -358,7 +358,7 @@ ENVFILE
       "nativeStreaming": true
     }
   },
-  "gateway": { "port": 18789, "mode": "remote", "bind": "lan", "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
+  "gateway": { "port": 18789, "mode": "remote", "bind": "lan", "remote": { "url": "http://localhost:$GATEWAY_PORT" }, "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
   "skills": { "install": { "nodeManager": "pnpm" } },
   "plugins": { "entries": { "slack": { "enabled": true } } }
 }
@@ -447,7 +447,7 @@ ENVFILE
       "channels": { "$SLACK_CHANNEL": { "allow": true, "requireMention": false } }
     }
   },
-  "gateway": { "port": 18789, "mode": "remote", "bind": "lan", "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
+  "gateway": { "port": 18789, "mode": "remote", "bind": "lan", "remote": { "url": "http://localhost:$GATEWAY_PORT" }, "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
   "skills": { "install": { "nodeManager": "pnpm" } },
   "plugins": { "entries": { "slack": { "enabled": true } } }
 }

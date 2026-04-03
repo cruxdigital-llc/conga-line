@@ -144,7 +144,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return fmt.Errorf("failed to read agent secrets: %w", err)
 	}
 
-	openClawJSON, err := common.GenerateOpenClawConfig(cfg, shared, "", "local")
+	openClawJSON, err := common.GenerateOpenClawConfig(cfg, shared, "")
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -561,7 +561,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	}
 
 	// Regenerate openclaw.json with current config format
-	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken, "local")
+	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken)
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}

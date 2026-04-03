@@ -384,7 +384,7 @@ func (p *AWSProvider) regenerateAgentConfigOnInstance(ctx context.Context, insta
 		return err
 	}
 
-	openClawJSON, envContent, err := common.GenerateAgentFiles(cfg, shared, perAgent, "remote")
+	openClawJSON, envContent, err := common.GenerateAgentFiles(cfg, shared, perAgent)
 	if err != nil {
 		return err
 	}

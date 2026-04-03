@@ -67,8 +67,8 @@ func BuildRouterEnvContent(shared SharedSecrets) string {
 
 // GenerateAgentFiles produces the openclaw.json and .env file content for an agent.
 // Returns the raw bytes for each file, leaving I/O to the caller.
-func GenerateAgentFiles(cfg provider.AgentConfig, shared SharedSecrets, perAgent map[string]string, gatewayMode string) (openclawJSON []byte, envContent []byte, err error) {
-	openclawJSON, err = GenerateOpenClawConfig(cfg, shared, "", gatewayMode)
+func GenerateAgentFiles(cfg provider.AgentConfig, shared SharedSecrets, perAgent map[string]string) (openclawJSON []byte, envContent []byte, err error) {
+	openclawJSON, err = GenerateOpenClawConfig(cfg, shared, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -80,16 +80,13 @@ func GenerateAgentFiles(cfg provider.AgentConfig, shared SharedSecrets, perAgent
 // Static settings (model, heartbeat, pruning, etc.) are loaded from the embedded
 // openclaw-defaults.json — the single source of truth for OpenClaw config structure.
 // Dynamic fields (gateway, channels, plugins) are overlaid per-agent.
-func GenerateOpenClawConfig(agent provider.AgentConfig, secrets SharedSecrets, gatewayToken string, gatewayMode string) ([]byte, error) {
+func GenerateOpenClawConfig(agent provider.AgentConfig, secrets SharedSecrets, gatewayToken string) ([]byte, error) {
 	var config map[string]any
 	if err := json.Unmarshal(openclawDefaults, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse openclaw-defaults.json: %w", err)
 	}
 
-	if gatewayMode == "" {
-		gatewayMode = "local"
-	}
-	config["gateway"] = buildGatewayConfig(agent.GatewayPort, gatewayToken, gatewayMode)
+	config["gateway"] = buildGatewayConfig(agent.GatewayPort, gatewayToken)
 
 	channelsCfg := map[string]any{}
 	pluginsCfg := map[string]any{}
@@ -161,11 +158,19 @@ func GenerateEnvFile(agent provider.AgentConfig, secrets SharedSecrets, perAgent
 	return buf
 }
 
-func buildGatewayConfig(port int, token string, mode string) map[string]any {
+// buildGatewayConfig produces the gateway section of openclaw.json.
+// All providers run agents in Docker containers, so the gateway always uses
+// "remote" mode (binds 0.0.0.0) with remote.url pointing to localhost inside
+// the container. Host-side access restriction (localhost-only) is enforced by
+// Docker's -p 127.0.0.1:PORT:PORT flag in each provider.
+func buildGatewayConfig(port int, token string) map[string]any {
 	gw := map[string]any{
 		"port": port,
-		"mode": mode,
+		"mode": "remote",
 		"bind": "lan",
+		"remote": map[string]any{
+			"url": fmt.Sprintf("http://localhost:%d", port),
+		},
 		"controlUi": map[string]any{
 			"allowedOrigins": []string{
 				fmt.Sprintf("http://localhost:%d", port),

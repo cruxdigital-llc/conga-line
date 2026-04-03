@@ -192,7 +192,7 @@ func (p *RemoteProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentC
 		return fmt.Errorf("failed to read agent secrets: %w", err)
 	}
 
-	openClawJSON, err := common.GenerateOpenClawConfig(cfg, shared, "", "remote")
+	openClawJSON, err := common.GenerateOpenClawConfig(cfg, shared, "")
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -559,7 +559,7 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		existingToken = p.readExistingGatewayToken(posixpath.Join(dataDir, "openclaw.json"))
 	}
 
-	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken, "remote")
+	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken)
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}

@@ -274,7 +274,7 @@ func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.
 		return err
 	}
 
-	openClawJSON, envContent, err := common.GenerateAgentFiles(cfg, shared, perAgent, "local")
+	openClawJSON, envContent, err := common.GenerateAgentFiles(cfg, shared, perAgent)
 	if err != nil {
 		return err
 	}
