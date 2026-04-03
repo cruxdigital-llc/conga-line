@@ -7,10 +7,10 @@ variable "image" {
 variable "agents" {
   description = "Map of agents to provision. Key is agent name. Ports auto-assigned alphabetically from 18789 if omitted."
   type = map(object({
-    type                   = string                      # "user" or "team"
-    gateway_port           = optional(number)            # auto-assigned if null
-    egress_allowed_domains = optional(list(string))      # per-agent override; null = inherit global
-    secrets                = optional(map(string), {})   # per-agent secrets
+    type                   = string                    # "user" or "team"
+    gateway_port           = optional(number)          # auto-assigned if null
+    egress_allowed_domains = optional(list(string))    # per-agent override; null = inherit global
+    secrets                = optional(map(string), {}) # per-agent secrets
   }))
 }
 

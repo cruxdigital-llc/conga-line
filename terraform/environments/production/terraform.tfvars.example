@@ -11,6 +11,7 @@ instance_type = "r6g.medium"
 alert_email   = ""
 
 # --- Global Egress Policy ---
+egress_mode            = "enforce"  # "enforce" or "validate"
 egress_allowed_domains = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com"]
 
 # --- Global Secrets ---
