@@ -2,7 +2,7 @@ terraform {
   required_providers {
     conga = {
       source  = "registry.terraform.io/cruxdigital-llc/conga"
-      version = "0.1.3"
+      version = "0.1.4"
     }
   }
 }
