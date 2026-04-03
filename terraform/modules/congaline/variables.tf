@@ -9,7 +9,7 @@ variable "agents" {
   type = map(object({
     type                   = string                    # "user" or "team"
     gateway_port           = optional(number)          # auto-assigned if null
-    egress_mode            = optional(string)           # per-agent override; null = inherit global ("enforce" or "validate")
+    egress_mode            = optional(string)          # per-agent override; null = inherit global ("enforce" or "validate")
     egress_allowed_domains = optional(list(string))    # per-agent override; null = inherit global
     secrets                = optional(map(string), {}) # per-agent secrets
   }))
