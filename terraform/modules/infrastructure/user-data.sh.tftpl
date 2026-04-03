@@ -11,6 +11,8 @@ AWS_REGION="${aws_region}"
 PROJECT_NAME="${project_name}"
 umask 077
 
+log() { echo "[conga] $*"; }
+
 # ============================================================
 # 1. OS HARDENING
 # ============================================================
@@ -142,6 +144,9 @@ aws s3 cp s3://${state_bucket}/conga/conga-policy.yaml /opt/conga/conga-policy.y
 cd /opt/conga/router && npm install --production
 cd /
 
+# Router container runs as 1000:1000 — make source readable
+chown -R 1000:1000 /opt/conga/router
+
 # --- Boot-time image refresh service ---
 # Runs on every boot to pull the latest image from SSM before agents start
 cat > /opt/conga/bin/refresh-image.sh << 'IMGREFRESH'
@@ -216,6 +221,7 @@ Requires=docker.service
 Type=simple
 EnvironmentFile=/opt/conga/config/router.env
 ExecStartPre=-/usr/bin/docker rm -f conga-router
+ExecStartPre=/bin/chown -R 1000:1000 /opt/conga/router /opt/conga/config/routing.json
 ExecStart=/usr/bin/docker run --name conga-router --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --read-only --user 1000:1000 --tmpfs /tmp:rw,noexec,nosuid -v /opt/conga/router:/app:ro -v /opt/conga/config/routing.json:/opt/conga/config/routing.json:ro -e SLACK_APP_TOKEN -e SLACK_BOT_TOKEN -e SLACK_SIGNING_SECRET -e ROUTER_CONFIG=/opt/conga/config/routing.json node:22-alpine node /app/src/index.js
 ExecStop=/usr/bin/docker stop conga-router
 StandardOutput=append:/var/log/conga-router.log
@@ -227,6 +233,24 @@ TimeoutStartSec=60
 [Install]
 WantedBy=multi-user.target
 ROUTERUNIT
+
+# Companion service: connects the router to agent networks after it starts.
+# Fires on every router (re)start so network links survive container recreation.
+cat > /etc/systemd/system/conga-router-networks.service << 'ROUTERNETS'
+[Unit]
+Description=Connect Conga router to agent networks
+After=conga-router.service
+BindsTo=conga-router.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/conga/bin/connect-router-networks.sh
+RemainAfterExit=true
+
+[Install]
+WantedBy=conga-router.service
+ROUTERNETS
+systemctl enable conga-router-networks.service
 
 echo "Router configured"
 
@@ -320,7 +344,7 @@ ENVFILE
       "nativeStreaming": true
     }
   },
-  "gateway": { "port": 18789, "mode": "local", "bind": "lan", "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
+  "gateway": { "port": 18789, "mode": "remote", "bind": "lan", "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
   "skills": { "install": { "nodeManager": "pnpm" } },
   "plugins": { "entries": { "slack": { "enabled": true } } }
 }
@@ -409,7 +433,7 @@ ENVFILE
       "channels": { "$SLACK_CHANNEL": { "allow": true, "requireMention": false } }
     }
   },
-  "gateway": { "port": 18789, "mode": "local", "bind": "lan", "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
+  "gateway": { "port": 18789, "mode": "remote", "bind": "lan", "controlUi": { "allowedOrigins": ["http://localhost:$GATEWAY_PORT"] } },
   "skills": { "install": { "nodeManager": "pnpm" } },
   "plugins": { "entries": { "slack": { "enabled": true } } }
 }
@@ -715,6 +739,7 @@ $DENY_ACTION
           dns_lookup_family: V4_ONLY
 ENVOY_CONF
 
+  chown 101:101 "$CONF_OUT"
   chmod 0400 "$CONF_OUT"
 
   # Write mode marker so systemd hooks know whether to apply iptables
@@ -971,20 +996,27 @@ for PARAM in $(echo "$AGENT_PARAMS" | jq -r '.[] | @base64'); do
 
   echo "=== Setting up agent: $AGENT_NAME (type: $AGENT_TYPE) ==="
 
+  # Extract Slack binding ID from channels array (new format) or legacy fields
+  SLACK_ID=$(echo "$PARAM_VALUE" | jq -r '(.channels[] | select(.platform == "slack") | .id) // empty')
+
   if [ "$AGENT_TYPE" = "user" ]; then
-    SLACK_MEMBER_ID=$(echo "$PARAM_VALUE" | jq -r '.slack_member_id')
+    SLACK_MEMBER_ID="$${SLACK_ID:-$(echo "$PARAM_VALUE" | jq -r '.slack_member_id // empty')}"
     setup_user_agent "$AGENT_NAME" "$SLACK_MEMBER_ID" "$GATEWAY_PORT"
-    ROUTING_MEMBERS=$(echo "$ROUTING_MEMBERS" | jq \
-      --arg k "$SLACK_MEMBER_ID" \
-      --arg v "http://conga-$AGENT_NAME:18789/slack/events" \
-      '. + {($k): $v}')
+    if [ -n "$SLACK_MEMBER_ID" ]; then
+      ROUTING_MEMBERS=$(echo "$ROUTING_MEMBERS" | jq \
+        --arg k "$SLACK_MEMBER_ID" \
+        --arg v "http://conga-$AGENT_NAME:18789/slack/events" \
+        '. + {($k): $v}')
+    fi
   elif [ "$AGENT_TYPE" = "team" ]; then
-    SLACK_CHANNEL=$(echo "$PARAM_VALUE" | jq -r '.slack_channel')
+    SLACK_CHANNEL="$${SLACK_ID:-$(echo "$PARAM_VALUE" | jq -r '.slack_channel // empty')}"
     setup_team_agent "$AGENT_NAME" "$SLACK_CHANNEL" "$GATEWAY_PORT"
-    ROUTING_CHANNELS=$(echo "$ROUTING_CHANNELS" | jq \
-      --arg k "$SLACK_CHANNEL" \
-      --arg v "http://conga-$AGENT_NAME:18789/slack/events" \
-      '. + {($k): $v}')
+    if [ -n "$SLACK_CHANNEL" ]; then
+      ROUTING_CHANNELS=$(echo "$ROUTING_CHANNELS" | jq \
+        --arg k "$SLACK_CHANNEL" \
+        --arg v "http://conga-$AGENT_NAME:18789/slack/events" \
+        '. + {($k): $v}')
+    fi
   else
     echo "WARNING: Unknown agent type '$AGENT_TYPE' for $AGENT_NAME, skipping"
     continue
@@ -996,6 +1028,7 @@ done
 # Write routing.json
 jq -n --argjson channels "$ROUTING_CHANNELS" --argjson members "$ROUTING_MEMBERS" \
   '{"channels": $channels, "members": $members}' > /opt/conga/config/routing.json
+chown 1000:1000 /opt/conga/config/routing.json
 
 if [ -z "$(echo "$ALL_AGENT_NAMES" | tr -d ' ')" ]; then
   echo "WARNING: No agents found in SSM. Router will start with empty routing config."
@@ -1207,14 +1240,23 @@ systemctl enable --now conga-session-metrics.timer
 # CloudWatch agent
 systemctl enable --now amazon-cloudwatch-agent
 
+# Router network-connect helper — called at boot and by the router systemd unit
+cat > /opt/conga/bin/connect-router-networks.sh << 'CONNECTSCRIPT'
+#!/bin/bash
+# Connect the conga-router container to every agent's Docker network.
+# Idempotent — safe to call repeatedly (already-connected is a no-op).
+sleep 2  # give the container a moment to start
+for f in /opt/conga/agents/*.json; do
+  [ -f "$f" ] || continue
+  AGENT=$(basename "$f" .json)
+  docker network connect "conga-$AGENT" conga-router 2>/dev/null || true
+done
+CONNECTSCRIPT
+chmod +x /opt/conga/bin/connect-router-networks.sh
+
 # Start router FIRST — it connects to Slack
 systemctl enable --now conga-router.service
-sleep 5
-
-# Connect router to all agent networks
-for AGENT_NAME in $ALL_AGENT_NAMES; do
-  docker network connect "conga-$AGENT_NAME" conga-router 2>/dev/null || true
-done
+/opt/conga/bin/connect-router-networks.sh
 
 echo "Router connected to all agent networks"
 
@@ -1226,6 +1268,7 @@ for AGENT_NAME in $ALL_AGENT_NAMES; do
   sleep 30
 done
 
+touch /opt/conga/.bootstrap-complete
 echo "=== Conga Bootstrap Complete: $(date -u) ==="
 echo "Router: conga-router (Socket Mode → HTTP forwarding)"
 for AGENT_NAME in $ALL_AGENT_NAMES; do

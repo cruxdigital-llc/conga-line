@@ -25,7 +25,8 @@ output "instance_profile_arn" {
 }
 
 output "instance_id" {
-  value = aws_instance.conga.id
+  value      = aws_instance.conga.id
+  depends_on = [terraform_data.bootstrap_ready]
 }
 
 output "ssm_connect_command" {
