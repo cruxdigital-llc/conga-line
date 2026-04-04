@@ -66,24 +66,11 @@ EXEC_START="ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network con
 
 UNIT_FILE="/etc/systemd/system/conga-$AGENT_NAME.service"
 
-if [ -f "$UNIT_FILE" ]; then
-  # Update existing unit — write to temp file first to avoid corruption
-  cp "$UNIT_FILE" "$UNIT_FILE.tmp"
-  sed -i "s|^ExecStart=.*|$EXEC_START|" "$UNIT_FILE.tmp"
-  if grep -q "$CONGA_IMAGE" "$UNIT_FILE.tmp"; then
-    mv "$UNIT_FILE.tmp" "$UNIT_FILE"
-  else
-    rm -f "$UNIT_FILE.tmp"
-    echo "ERROR: sed pattern failed on $UNIT_FILE — recreating unit from scratch"
-    # Fall through to recreate
-    rm -f "$UNIT_FILE"
-  fi
-fi
-
-if [ ! -f "$UNIT_FILE" ]; then
-  # Create unit from scratch (first provision or recovery from missing unit)
-  echo "Creating systemd unit for $AGENT_NAME (port $GATEWAY_PORT)"
-  cat > "$UNIT_FILE" << UNIT
+# Always write the full unit file — never patch with sed.
+# We have all the values (image, port, env, egress) so there's no reason to
+# modify in place, and sed-based patching was the source of unit corruption.
+echo "Writing systemd unit for $AGENT_NAME (port $GATEWAY_PORT)"
+cat > "$UNIT_FILE" << UNIT
 [Unit]
 Description=Conga Gateway ($AGENT_NAME)
 After=docker.service conga-router.service conga-image-refresh.service
