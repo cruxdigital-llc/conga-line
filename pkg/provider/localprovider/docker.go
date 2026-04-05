@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"time"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/provider/iptables"
+	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
 
 // dockerRun executes a docker command and returns stdout.
@@ -81,8 +82,9 @@ func disconnectNetwork(ctx context.Context, network, container string) {
 }
 
 // runAgentContainer starts an agent container with full isolation.
-// Matches the AWS bootstrap: data mounted to /home/node/.openclaw, gateway on port 18789.
+// Container parameters come from the runtime's ContainerSpec.
 func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
+	spec := opts.Spec
 	args := []string{
 		"run", "-d",
 		"--name", opts.Name,
@@ -90,16 +92,21 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		"--env-file", opts.EnvFile,
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges",
-		"--memory", "2g",
-		"--cpus", "0.75",
-		"--pids-limit", "256",
-		"--user", "1000:1000",
-		"-v", fmt.Sprintf("%s:/home/node/.openclaw:rw", opts.DataDir),
+		"--memory", spec.Memory,
+		"--cpus", spec.CPUs,
+		"--pids-limit", spec.PIDsLimit,
+		"--user", spec.User,
+		"-v", fmt.Sprintf("%s:%s:rw", opts.DataDir, opts.ContainerDataPath),
 	}
 
-	args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, opts.GatewayPort))
+	args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", opts.GatewayPort, spec.ContainerPort))
 
-	nodeOpts := "--max-old-space-size=1536"
+	// Copy env vars from spec so we can modify them for proxy injection
+	envVars := make(map[string]string, len(spec.EnvVars))
+	for k, v := range spec.EnvVars {
+		envVars[k] = v
+	}
+
 	if opts.EgressProxyName != "" {
 		// Proxy is on the same Docker network — Docker DNS resolves the container name.
 		args = append(args,
@@ -111,12 +118,25 @@ func runAgentContainer(ctx context.Context, opts agentContainerOpts) error {
 		// routes all HTTP(S) traffic through the CONNECT tunnel proxy.
 		if opts.ProxyBootstrapPath != "" {
 			args = append(args, "-v", fmt.Sprintf("%s:/opt/proxy-bootstrap.js:ro", opts.ProxyBootstrapPath))
-			nodeOpts += " --require /opt/proxy-bootstrap.js"
+			if nodeOpts, ok := envVars["NODE_OPTIONS"]; ok {
+				envVars["NODE_OPTIONS"] = nodeOpts + " --require /opt/proxy-bootstrap.js"
+			}
 		}
 	}
-	args = append(args, "-e", "NODE_OPTIONS="+nodeOpts)
 
-	args = append(args, opts.Image)
+	// Runtime-specific env vars
+	for k, v := range envVars {
+		args = append(args, "-e", k+"="+v)
+	}
+
+	// Entrypoint override (if specified by runtime)
+	if len(spec.Entrypoint) > 0 {
+		args = append(args, "--entrypoint", spec.Entrypoint[0])
+		args = append(args, opts.Image)
+		args = append(args, spec.Entrypoint[1:]...)
+	} else {
+		args = append(args, opts.Image)
+	}
 
 	_, err := dockerRun(ctx, args...)
 	return err
@@ -128,10 +148,12 @@ type agentContainerOpts struct {
 	Network            string
 	EnvFile            string
 	DataDir            string
+	ContainerDataPath  string // Path inside container where data is mounted
 	GatewayPort        int
 	Image              string
 	EgressProxyName    string
-	ProxyBootstrapPath string // Host path to proxy-bootstrap.js (mounted read-only)
+	ProxyBootstrapPath string                // Host path to proxy-bootstrap.js (mounted read-only)
+	Spec               runtime.ContainerSpec // Runtime-provided container parameters
 }
 
 // runRouterContainer starts the router container.
@@ -309,7 +331,7 @@ func networkSubnetCIDR(ctx context.Context, network string) (string, error) {
 // On macOS (Docker Desktop), iptables runs inside the LinuxKit VM via nsenter.
 // On Linux, it runs directly via sh.
 func iptablesRun(ctx context.Context, iptablesCmd string) error {
-	if runtime.GOOS == "darwin" {
+	if goruntime.GOOS == "darwin" {
 		_, err := dockerRun(ctx, "run", "--rm",
 			"--cap-add", "NET_ADMIN", "--cap-add", "NET_RAW",
 			"--pid=host", "--network=host",

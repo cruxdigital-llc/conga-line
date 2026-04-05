@@ -40,7 +40,7 @@ func init() {
 		Long: `Print the JSON schema for a command's --json input and --output json response.
 
 The --json flag accepts inline JSON or a file reference (@file.json):
-  conga admin setup --json '{"image":"ghcr.io/openclaw/openclaw:2026.3.11"}'
+  conga admin setup --json '{"runtime":"openclaw","image":"ghcr.io/openclaw/openclaw:2026.3.11"}'
   conga admin setup --json @setup.json
 
 Examples:

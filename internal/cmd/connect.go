@@ -19,7 +19,7 @@ var connectNoPairing bool
 func init() {
 	connectCmd := &cobra.Command{
 		Use:   "connect",
-		Short: "Connect to OpenClaw web UI",
+		Short: "Connect to the agent's web UI",
 		RunE:  connectRun,
 	}
 	connectCmd.Flags().BoolVar(&connectNoPairing, "no-pairing", false, "Skip device pairing poll")

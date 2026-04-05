@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 
@@ -18,7 +19,12 @@ import (
 	"github.com/cruxdigital-llc/conga-line/pkg/common"
 	"github.com/cruxdigital-llc/conga-line/pkg/policy"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 	"github.com/cruxdigital-llc/conga-line/pkg/ui"
+
+	// Import runtime implementations so they register via init().
+	_ "github.com/cruxdigital-llc/conga-line/pkg/runtime/hermes"
+	_ "github.com/cruxdigital-llc/conga-line/pkg/runtime/openclaw"
 )
 
 const (
@@ -42,6 +48,12 @@ func NewLocalProvider(cfg *provider.Config) (provider.Provider, error) {
 
 func init() {
 	provider.Register(provider.ProviderLocal, NewLocalProvider)
+}
+
+// runtimeForAgent resolves the Runtime for the given agent config.
+func (p *LocalProvider) runtimeForAgent(agent provider.AgentConfig) (runtime.Runtime, error) {
+	name := runtime.ResolveRuntime(agent.Runtime, p.getConfigValue("runtime"))
+	return runtime.Get(name)
 }
 
 func (p *LocalProvider) Name() string { return "local" }
@@ -134,7 +146,13 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return err
 	}
 
-	// 2. Read secrets and generate config files
+	// 2. Resolve runtime
+	rt, err := p.runtimeForAgent(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to resolve runtime: %w", err)
+	}
+
+	// 3. Read secrets and generate config files
 	shared, err := p.readSharedSecrets()
 	if err != nil {
 		return fmt.Errorf("failed to read shared secrets: %w", err)
@@ -144,27 +162,27 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return fmt.Errorf("failed to read agent secrets: %w", err)
 	}
 
-	openClawJSON, err := common.GenerateOpenClawConfig(cfg, shared, "")
+	configBytes, err := rt.GenerateConfig(runtime.ConfigParams{
+		Agent:   cfg,
+		Secrets: shared,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
 
 	dataDir := p.dataSubDir(cfg.Name)
-	// Pre-create the full directory structure that OpenClaw expects
-	// (matches AWS bootstrap: mkdir -p {workspace,memory,logs,agents,canvas,cron,devices,identity,media})
-	for _, sub := range []string{"data/workspace", "memory", "logs", "agents", "canvas", "cron", "devices", "identity", "media"} {
-		os.MkdirAll(filepath.Join(dataDir, sub), 0755)
+	if err := rt.CreateDirectories(dataDir); err != nil {
+		return fmt.Errorf("failed to create data directories: %w", err)
 	}
-	// Create empty MEMORY.md so OpenClaw doesn't error on first read
-	memoryPath := filepath.Join(dataDir, "data", "workspace", "MEMORY.md")
-	if _, err := os.Stat(memoryPath); os.IsNotExist(err) {
-		os.WriteFile(memoryPath, []byte("# Memory\n"), 0644)
-	}
-	if err := os.WriteFile(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dataDir, rt.ConfigFileName()), configBytes, 0644); err != nil {
 		return err
 	}
 
-	envContent := common.GenerateEnvFile(cfg, shared, perAgent)
+	envContent := rt.GenerateEnvFile(runtime.EnvParams{
+		Agent:    cfg,
+		Secrets:  shared,
+		PerAgent: perAgent,
+	})
 	if err := os.MkdirAll(p.configDir(), 0700); err != nil {
 		return err
 	}
@@ -176,16 +194,28 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		return err
 	}
 
-	// 3. Deploy behavior files
+	// Also write .env into the data directory — some runtimes (Hermes) read
+	// secrets from their own .env file inside the data volume rather than
+	// relying solely on Docker --env-file injection.
+	dataEnvPath := filepath.Join(dataDir, ".env")
+	os.Remove(dataEnvPath)                        //nolint:errcheck
+	os.WriteFile(dataEnvPath, envContent, 0400)   //nolint:errcheck
+
+	// 4. Deploy behavior files
 	if err := p.deployBehavior(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: behavior file deployment failed: %v\n", err)
 	}
 
-	// 4. Read image
+	// 5. Read image
 	image := p.getConfigValue("image")
 	if image == "" {
-		image = "ghcr.io/openclaw/openclaw:latest"
+		image = rt.DefaultImage()
 	}
+	if image == "" {
+		return fmt.Errorf("no Docker image configured for runtime %q — set via 'conga admin setup' or --image flag", rt.Name())
+	}
+
+	spec := rt.ContainerSpec(cfg)
 
 	// 5. Load egress policy — proxy always deployed (deny-all when no policy)
 	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, cfg.Name)
@@ -198,7 +228,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		fmt.Fprintf(os.Stderr, "No egress policy configured — proxy will deny all outbound traffic. Use 'conga policy set-egress' to allow domains.\n")
 	}
 
-	// 6. Create Docker network
+	// 7. Create Docker network
 	netName := networkName(cfg.Name)
 	if !networkExists(ctx, netName) {
 		fmt.Printf("Creating network %s...\n", netName)
@@ -207,7 +237,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		}
 	}
 
-	// 7. Start per-agent egress proxy (always — deny-all when no policy)
+	// 8. Start per-agent egress proxy (always — deny-all when no policy)
 	if err := p.startAgentEgressProxy(ctx, cfg.Name, egressPolicy); err != nil {
 		return fmt.Errorf("failed to start egress proxy: %w", err)
 	}
@@ -228,13 +258,16 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	// handles ownership mapping transparently via its VM layer.
 	exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run() //nolint:errcheck
 
-	// Write proxy bootstrap script for Node.js CONNECT tunneling
-	bootstrapPath := filepath.Join(p.configDir(), "proxy-bootstrap.js")
-	if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove old proxy bootstrap %s: %w", bootstrapPath, err)
-	}
-	if err := os.WriteFile(bootstrapPath, []byte(policy.ProxyBootstrapJS()), 0444); err != nil {
-		return fmt.Errorf("failed to write proxy bootstrap: %w", err)
+	// Write proxy bootstrap script for Node.js CONNECT tunneling (if runtime needs it)
+	var bootstrapPath string
+	if rt.SupportsNodeProxy() {
+		bootstrapPath = filepath.Join(p.configDir(), "proxy-bootstrap.js")
+		if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove old proxy bootstrap %s: %w", bootstrapPath, err)
+		}
+		if err := os.WriteFile(bootstrapPath, []byte(policy.ProxyBootstrapJS()), 0444); err != nil {
+			return fmt.Errorf("failed to write proxy bootstrap: %w", err)
+		}
 	}
 
 	// Ensure no stale container exists before starting.
@@ -248,10 +281,12 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		Network:            netName,
 		EnvFile:            envPath,
 		DataDir:            dataDir,
+		ContainerDataPath:  rt.ContainerDataPath(),
 		GatewayPort:        cfg.GatewayPort,
 		Image:              image,
 		EgressProxyName:    egressProxyName,
 		ProxyBootstrapPath: bootstrapPath,
+		Spec:               spec,
 	}); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
@@ -390,7 +425,28 @@ func (p *LocalProvider) GetStatus(ctx context.Context, agentName string) (*provi
 			status.Container.MemoryUsage = stats.MemoryUsage
 		}
 		logs, _ := containerLogs(ctx, cName, 50)
-		status.ReadyPhase = detectReadyPhase(logs)
+		if agentCfg, agentErr := p.GetAgent(ctx, agentName); agentErr == nil {
+			if rt, rtErr := p.runtimeForAgent(*agentCfg); rtErr == nil {
+				// Some runtimes (Hermes) log to files instead of stdout.
+				// If docker logs are empty, try reading the log file inside the container.
+				if strings.TrimSpace(logs) == "" {
+					logFile := rt.ContainerDataPath() + "/logs/gateway.log"
+					if output, err := dockerRun(ctx, "exec", cName, "tail", "-50", logFile); err == nil {
+						logs = output
+					}
+				}
+				hasSlack := agentCfg.ChannelBinding("slack") != nil
+				phase := rt.DetectReady(logs, hasSlack)
+				status.ReadyPhase = phase.Phase
+				if phase.HasError {
+					status.Errors = append(status.Errors, phase.Message)
+				}
+			} else {
+				status.ReadyPhase = detectReadyPhase(logs)
+			}
+		} else {
+			status.ReadyPhase = detectReadyPhase(logs)
+		}
 
 		// Re-apply iptables egress rules if they were lost (e.g., after reboot or IP change).
 		p.ensureEgressIptables(ctx, agentName)
@@ -426,7 +482,12 @@ func (p *LocalProvider) ensureEgressIptables(ctx context.Context, agentName stri
 
 	if !checkEgressIptablesRules(ctx, ip, cidr) {
 		if err := addEgressIptablesRules(ctx, ip, cidr); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to re-apply egress iptables rules for %s: %v\n", agentName, err)
+			// Silence on macOS — iptables runs inside Docker Desktop's VM via nsenter,
+			// which fails without CAP_SYS_ADMIN (we drop all capabilities). This is
+			// expected and harmless: Docker Desktop networking already isolates containers.
+			if goruntime.GOOS != "darwin" {
+				fmt.Fprintf(os.Stderr, "Warning: failed to re-apply egress iptables rules for %s: %v\n", agentName, err)
+			}
 		}
 	}
 }
@@ -546,6 +607,11 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		return fmt.Errorf("agent %s is paused. Use `conga admin unpause %s` first", agentName, agentName)
 	}
 
+	rt, err := p.runtimeForAgent(*cfg)
+	if err != nil {
+		return fmt.Errorf("failed to resolve runtime: %w", err)
+	}
+
 	shared, _ := p.readSharedSecrets()
 	perAgent, _ := p.readAgentSecrets(agentName)
 
@@ -557,18 +623,25 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		fmt.Fprintf(os.Stderr, "Generating fresh gateway token instead of preserving existing one.\n")
 		existingToken, _ = generateToken()
 	} else {
-		existingToken = readExistingGatewayToken(filepath.Join(dataDir, "openclaw.json"))
+		configPath := filepath.Join(dataDir, rt.ConfigFileName())
+		if data, readErr := os.ReadFile(configPath); readErr == nil {
+			existingToken = rt.ReadGatewayToken(data)
+		}
 	}
 
-	// Regenerate openclaw.json with current config format
-	openClawJSON, err := common.GenerateOpenClawConfig(*cfg, shared, existingToken)
+	// Regenerate config with current config format
+	configBytes, err := rt.GenerateConfig(runtime.ConfigParams{
+		Agent:        *cfg,
+		Secrets:      shared,
+		GatewayToken: existingToken,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("failed to create data directory %s: %w", dataDir, err)
 	}
-	if err := os.WriteFile(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dataDir, rt.ConfigFileName()), configBytes, 0644); err != nil {
 		return err
 	}
 
@@ -576,7 +649,11 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	p.saveConfigBaseline(agentName)
 
 	// Regenerate env file
-	envContent := common.GenerateEnvFile(*cfg, shared, perAgent)
+	envContent := rt.GenerateEnvFile(runtime.EnvParams{
+		Agent:    *cfg,
+		Secrets:  shared,
+		PerAgent: perAgent,
+	})
 	envPath := filepath.Join(p.configDir(), agentName+".env")
 	if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove old env file %s: %w", envPath, err)
@@ -584,6 +661,11 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	if err := os.WriteFile(envPath, envContent, 0400); err != nil {
 		return err
 	}
+
+	// Also write .env into the data directory for runtimes that read it there.
+	dataEnvPath := filepath.Join(dataDir, ".env")
+	os.Remove(dataEnvPath)                          //nolint:errcheck
+	os.WriteFile(dataEnvPath, envContent, 0400)     //nolint:errcheck
 
 	// Load egress policy — proxy always deployed (deny-all when no policy)
 	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, agentName)
@@ -621,8 +703,13 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 
 	image := p.getConfigValue("image")
 	if image == "" {
-		image = "ghcr.io/openclaw/openclaw:latest"
+		image = rt.DefaultImage()
 	}
+	if image == "" {
+		return fmt.Errorf("no Docker image configured for runtime %q", rt.Name())
+	}
+
+	spec := rt.ContainerSpec(*cfg)
 
 	// Recreate network. TODO: consider keeping the network if egress policy
 	// hasn't changed — currently we always recreate for a clean slate, which
@@ -644,13 +731,16 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		return fmt.Errorf("failed to start egress proxy: %w", err)
 	}
 
-	// Write proxy bootstrap script for Node.js CONNECT tunneling
-	bootstrapPath := filepath.Join(p.configDir(), "proxy-bootstrap.js")
-	if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove old proxy bootstrap %s: %w", bootstrapPath, err)
-	}
-	if err := os.WriteFile(bootstrapPath, []byte(policy.ProxyBootstrapJS()), 0444); err != nil {
-		return fmt.Errorf("failed to write proxy bootstrap: %w", err)
+	// Write proxy bootstrap script for Node.js CONNECT tunneling (if runtime needs it)
+	var bootstrapPath string
+	if rt.SupportsNodeProxy() {
+		bootstrapPath = filepath.Join(p.configDir(), "proxy-bootstrap.js")
+		if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove old proxy bootstrap %s: %w", bootstrapPath, err)
+		}
+		if err := os.WriteFile(bootstrapPath, []byte(policy.ProxyBootstrapJS()), 0444); err != nil {
+			return fmt.Errorf("failed to write proxy bootstrap: %w", err)
+		}
 	}
 
 	// Ensure all files are owned by the container user before starting.
@@ -667,10 +757,12 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		Network:            netName,
 		EnvFile:            envPath,
 		DataDir:            dataDir,
+		ContainerDataPath:  rt.ContainerDataPath(),
 		GatewayPort:        cfg.GatewayPort,
 		Image:              image,
 		EgressProxyName:    refreshEgressProxyName,
 		ProxyBootstrapPath: bootstrapPath,
+		Spec:               spec,
 	}); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
@@ -734,34 +826,26 @@ func (p *LocalProvider) Connect(ctx context.Context, agentName string, localPort
 	}
 
 	// Try to extract the gateway token from the running container's config.
-	// OpenClaw auto-generates the token at first boot and writes it back.
+	rt, rtErr := p.runtimeForAgent(*cfg)
 	cName := containerName(agentName)
 	token := ""
 
-	// Read from the data dir (OpenClaw writes token back to config on disk)
-	configPath := filepath.Join(p.dataSubDir(agentName), "openclaw.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		var config map[string]interface{}
-		if err := json.Unmarshal(data, &config); err == nil {
-			if gw, ok := config["gateway"].(map[string]interface{}); ok {
-				if t, ok := gw["token"].(string); ok && t != "" {
-					token = t
-				}
-				if auth, ok := gw["auth"].(map[string]interface{}); ok {
-					if t, ok := auth["token"].(string); ok && t != "" {
-						token = t
-					}
-				}
-			}
+	// Read from the data dir (runtime writes token back to config on disk)
+	if rtErr == nil {
+		configPath := filepath.Join(p.dataSubDir(agentName), rt.ConfigFileName())
+		if data, err := os.ReadFile(configPath); err == nil {
+			token = rt.ReadGatewayToken(data)
 		}
 	}
 
 	// Fallback: try docker exec to read it from inside the container
-	if token == "" && containerExists(ctx, cName) {
-		output, err := dockerRun(ctx, "exec", cName, "node", "-e",
-			`try{const c=require('/home/node/.openclaw/openclaw.json');console.log(c.gateway?.token||c.gateway?.auth?.token||'')}catch(e){console.log('')}`)
-		if err == nil {
-			token = strings.TrimSpace(output)
+	if token == "" && containerExists(ctx, cName) && rtErr == nil {
+		if execCmd := rt.GatewayTokenDockerExec(); execCmd != nil {
+			args := append([]string{"exec", cName}, execCmd...)
+			output, err := dockerRun(ctx, args...)
+			if err == nil {
+				token = strings.TrimSpace(output)
+			}
 		}
 	}
 
@@ -842,26 +926,67 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 		changed++
 	}
 
+	// --- Runtime ---
+	rtName := p.getConfigValue("runtime")
+	if cfg != nil && cfg.Runtime != "" {
+		rtName = cfg.Runtime
+	}
+	rtStatus := "set"
+	if rtName == "" {
+		rtStatus = "not set (default: openclaw)"
+	}
+	fmt.Printf("\n[config] runtime — Agent runtime (%s)\n", rtStatus)
+	if cfg != nil {
+		if rtName == "" {
+			rtName = "openclaw"
+		}
+	} else if rtName == "" || ui.Confirm("  Update this value?") {
+		defaultRT := "openclaw"
+		if rtName != "" {
+			defaultRT = rtName
+		}
+		newRT, err := ui.TextPromptWithDefault("  Runtime (openclaw, hermes)", defaultRT)
+		if err != nil {
+			return err
+		}
+		if newRT != "" {
+			rtName = newRT
+		}
+	}
+	if rtName != "" {
+		// Validate the runtime name
+		if _, err := runtime.Get(runtime.RuntimeName(rtName)); err != nil {
+			return fmt.Errorf("invalid runtime %q: %w", rtName, err)
+		}
+		p.setConfigValue("runtime", rtName)
+		changed++
+	}
+
 	// --- Docker image ---
 	image := p.getConfigValue("image")
 	if cfg != nil && cfg.Image != "" {
 		image = cfg.Image
 	}
+	// Resolve default image from runtime if not explicitly set
+	if image == "" {
+		if rt, rtErr := runtime.Get(runtime.RuntimeName(rtName)); rtErr == nil && rt.DefaultImage() != "" {
+			image = rt.DefaultImage()
+		}
+	}
 	imageStatus := "set"
 	if image == "" {
 		imageStatus = "not set"
 	}
-	fmt.Printf("\n[config] image — OpenClaw Docker image (%s)\n", imageStatus)
+	fmt.Printf("\n[config] image — Agent Docker image (%s)\n", imageStatus)
 	if cfg != nil {
-		if image == "" {
-			image = "ghcr.io/openclaw/openclaw:2026.3.11"
-		}
+		// Non-interactive: image already resolved from config + runtime default above
 	} else if image == "" || ui.Confirm("  Update this value?") {
-		defaultImage := "ghcr.io/openclaw/openclaw:2026.3.11"
-		if image != "" {
-			defaultImage = image
+		defaultImage := image
+		prompt := "  Docker image"
+		if defaultImage == "" {
+			prompt = fmt.Sprintf("  Docker image for %s runtime (required)", rtName)
 		}
-		newImage, err := ui.TextPromptWithDefault("  Docker image", defaultImage)
+		newImage, err := ui.TextPromptWithDefault(prompt, defaultImage)
 		if err != nil {
 			return err
 		}
@@ -957,9 +1082,16 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 
 	// --- Pull images ---
 	if image != "" {
-		fmt.Printf("\nPulling OpenClaw image %s...\n", image)
+		fmt.Printf("\nPulling agent image %s...\n", image)
 		spin := ui.NewSpinner("Pulling Docker image...")
 		err := pullImage(ctx, image)
+		if err != nil {
+			// Retry with --platform linux/amd64 (handles images without native arm64 support)
+			spin.Stop()
+			fmt.Println("  Retrying with --platform linux/amd64...")
+			spin = ui.NewSpinner("Pulling Docker image (amd64)...")
+			_, err = dockerRun(ctx, "pull", "--platform", "linux/amd64", image)
+		}
 		spin.Stop()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to pull image: %v\nYou can pull it manually: docker pull %s\n", err, image)
@@ -1333,7 +1465,12 @@ func (p *LocalProvider) deployBehavior(cfg provider.AgentConfig) error {
 		return err
 	}
 
-	targetDir := filepath.Join(p.dataSubDir(cfg.Name), "data", "workspace")
+	// Use the runtime's workspace path for behavior file deployment.
+	workspaceSub := "data/workspace" // default (OpenClaw)
+	if rt, rtErr := p.runtimeForAgent(cfg); rtErr == nil {
+		workspaceSub = rt.WorkspacePath()
+	}
+	targetDir := filepath.Join(p.dataSubDir(cfg.Name), workspaceSub)
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return err
 	}

@@ -14,7 +14,7 @@ var secretForce bool
 func init() {
 	secretsCmd := &cobra.Command{
 		Use:   "secrets",
-		Short: "Manage your OpenClaw secrets",
+		Short: "Manage agent secrets",
 	}
 
 	setCmd := &cobra.Command{
@@ -23,7 +23,7 @@ func init() {
 		Long: `Create or update a secret for your agent.
 
 The secret name is transformed into an environment variable and injected into
-your OpenClaw container in SCREAMING_SNAKE_CASE format. For example:
+your agent container in SCREAMING_SNAKE_CASE format. For example:
 
   anthropic-api-key  →  ANTHROPIC_API_KEY
   google-client-id   →  GOOGLE_CLIENT_ID

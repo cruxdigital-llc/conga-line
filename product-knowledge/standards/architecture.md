@@ -32,13 +32,13 @@ Agent data (memory, workspace, logs, canvas, identity) is the most valuable arti
 | Remote | `/opt/conga/data/<name>/` | Remote host disk | Operator-managed backups |
 | Local | `~/.conga/data/<name>/` | Local disk | Operator-managed backups |
 
-All three mount into the container at `/home/node/.openclaw:rw`.
+All three mount into the container at the runtime's data path (e.g., `/home/node/.openclaw:rw` for OpenClaw, `/opt/data:rw` for Hermes). The mount path is provided by `runtime.ContainerDataPath()`.
 
 ### Rules
 
 1. **Never delete, overwrite, or recreate agent data directories** during provisioning, refresh, teardown-and-rebuild, or upgrade operations. Data directories are created once during `ProvisionAgent` and persist through all subsequent operations.
 
-2. **Container lifecycle must not affect data.** Container stop, start, remove, and recreate operations must preserve the volume mount. The `-v /path/to/data:/home/node/.openclaw:rw` mount is the contract — data lives on the host, not in the container.
+2. **Container lifecycle must not affect data.** Container stop, start, remove, and recreate operations must preserve the volume mount. The `-v /path/to/data:{runtime.ContainerDataPath()}:rw` mount is the contract — data lives on the host, not in the container.
 
 3. **Refresh operations rebuild config, not data.** `RefreshAgent`, `RefreshAll`, and `CycleHost` may regenerate `openclaw.json`, env files, systemd units, and proxy containers. They must never touch the data directory contents.
 

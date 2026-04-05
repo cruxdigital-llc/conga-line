@@ -10,6 +10,7 @@ import (
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/common"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
 
 // AddChannel configures a messaging channel platform by storing its shared
@@ -263,8 +264,13 @@ func (p *LocalProvider) UnbindChannel(ctx context.Context, agentName string, pla
 
 // --- helpers ---
 
-// regenerateAgentConfig regenerates an agent's openclaw.json and .env file.
+// regenerateAgentConfig regenerates an agent's config and .env file.
 func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.AgentConfig) error {
+	rt, err := p.runtimeForAgent(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to resolve runtime: %w", err)
+	}
+
 	shared, err := p.readSharedSecrets()
 	if err != nil {
 		return err
@@ -274,13 +280,15 @@ func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.
 		return err
 	}
 
-	openClawJSON, envContent, err := common.GenerateAgentFiles(cfg, shared, perAgent)
+	rtName := runtime.ResolveRuntime(cfg.Runtime, p.getConfigValue("runtime"))
+	configBytes, envContent, err := common.RuntimeGenerateAgentFiles(rtName, cfg, shared, perAgent)
 	if err != nil {
 		return err
 	}
+	_ = rt // used for rtName resolution above
 
 	dataDir := p.dataSubDir(cfg.Name)
-	if err := os.WriteFile(filepath.Join(dataDir, "openclaw.json"), openClawJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dataDir, rt.ConfigFileName()), configBytes, 0644); err != nil {
 		return err
 	}
 	envPath := filepath.Join(p.configDir(), cfg.Name+".env")

@@ -56,9 +56,18 @@ func adminAddUserRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Runtime: flag > JSON > empty (uses environment default from setup)
+	agentRuntime := flagRuntime
+	if agentRuntime == "" {
+		if s, ok := ui.GetString("runtime"); ok {
+			agentRuntime = s
+		}
+	}
+
 	cfg := provider.AgentConfig{
 		Name:        agentName,
 		Type:        provider.AgentTypeUser,
+		Runtime:     agentRuntime,
 		Channels:    bindings,
 		GatewayPort: gatewayPort,
 		IAMIdentity: iamIdentity,
@@ -117,9 +126,18 @@ func adminAddTeamRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Runtime: flag > JSON > empty (uses environment default from setup)
+	teamRuntime := flagRuntime
+	if teamRuntime == "" {
+		if s, ok := ui.GetString("runtime"); ok {
+			teamRuntime = s
+		}
+	}
+
 	cfg := provider.AgentConfig{
 		Name:        agentName,
 		Type:        provider.AgentTypeTeam,
+		Runtime:     teamRuntime,
 		Channels:    bindings,
 		GatewayPort: gatewayPort,
 	}

@@ -17,6 +17,7 @@ type SetupConfig struct {
 	SSHKeyPath string `json:"ssh_key_path,omitempty"`
 
 	// Config values
+	Runtime  string `json:"runtime,omitempty"` // "openclaw", "hermes"
 	RepoPath string `json:"repo_path,omitempty"`
 	Image    string `json:"image,omitempty"`
 

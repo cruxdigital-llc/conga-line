@@ -31,6 +31,7 @@ var (
 	flagDataDir  string
 	flagJSON     string
 	flagOutput   string
+	flagRuntime  string
 
 	// prov is the active provider, initialized in PersistentPreRunE.
 	prov provider.Provider
@@ -43,8 +44,8 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "conga",
-	Short: "Conga Line — manage your OpenClaw deployment",
-	Long:  "Cross-platform CLI for managing OpenClaw containers via pluggable providers (AWS, local Docker, remote SSH).",
+	Short: "Conga Line — deploy and manage AI agents",
+	Long:  "Cross-platform CLI for deploying AI agent containers (OpenClaw, Hermes, etc.) via pluggable providers (AWS, local Docker, remote SSH).",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize JSON mode early so errors can be emitted as JSON.
 		// Set OutputJSON before parsing so that even parse failures are JSON-formatted.
@@ -114,6 +115,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagDataDir, "data-dir", "", "Data directory for local provider (default: ~/.conga/)")
 	rootCmd.PersistentFlags().StringVar(&flagJSON, "json", "", "JSON input (inline or @file.json); implies --output json")
 	rootCmd.PersistentFlags().StringVar(&flagOutput, "output", "text", "Output format: text, json")
+	rootCmd.PersistentFlags().StringVar(&flagRuntime, "runtime", "", "Agent runtime: openclaw, hermes (default: openclaw)")
 }
 
 // commandContext returns a context with the global timeout applied.

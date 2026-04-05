@@ -109,6 +109,10 @@ var statusCmd = &cobra.Command{
 			return nil
 		}
 
+		// Show runtime if set
+		if cfg, err := prov.GetAgent(ctx, agentName); err == nil && cfg.Runtime != "" {
+			fmt.Printf("Runtime:    %s\n", cfg.Runtime)
+		}
 		fmt.Printf("Container:  %s\n", status.Container.State)
 		fmt.Printf("Service:    %s\n", status.ServiceState)
 		fmt.Printf("Readiness:  %s\n", status.ReadyPhase)

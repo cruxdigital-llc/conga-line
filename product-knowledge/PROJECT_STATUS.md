@@ -146,6 +146,23 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [ ] Spec (deferred — requires Bifrost integration design)
 - [ ] Implementation (model selection logic, sidecar proxy, cost limits enforcement)
 
+### 23. Agent Portability — Verified (Local Provider Complete)
+*Lead: Architect + QA + PM*
+*See `specs/2026-04-05_feature_agent-portability/` for full trace*
+- [x] Requirements, plan, spec, persona review, standards gate
+- [x] Phase 1-5: Runtime interface, OpenClaw extraction, local provider wiring, Hermes runtime, CLI changes
+- [x] Phase 6: 38 runtime tests, all 16 test suites pass, go vet clean, gofmt clean
+- [x] Verification: automated + persona + standards gate (post-impl) + spec retrospection
+- [ ] Phase 6 (remaining): Remote & AWS provider integration
+- [ ] Phase 6 (remaining): Routing webhook path parameterization for mixed-runtime Slack delivery
+- [ ] Phase 1: Runtime interface & registry (`pkg/runtime/`)
+- [ ] Phase 2: Extract OpenClaw runtime (`pkg/runtime/openclaw/`)
+- [ ] Phase 3: Wire local provider to Runtime interface
+- [ ] Phase 4: Hermes runtime implementation (`pkg/runtime/hermes/`)
+- [ ] Phase 5: CLI & data model changes (`--runtime` flag)
+- [ ] Phase 6: Remote & AWS provider integration
+- [ ] Phase 7: Testing & verification
+
 ### Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
@@ -159,6 +176,7 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - Behavior files (`behavior/base/SOUL.md`, `AGENTS.md`) are manually maintained copies of OpenClaw's defaults — will drift on image upgrades and need periodic reconciliation
 
 ## Recent Changes
+- 2026-04-05: Agent Portability — new `Runtime` interface (`pkg/runtime/`) making the agent runtime pluggable alongside the existing `Provider` interface. OpenClaw runtime extracted from `pkg/common/` into `pkg/runtime/openclaw/` (zero behavioral change). Hermes Agent runtime implemented in `pkg/runtime/hermes/` (YAML config, port 8642, Python health detection). Local provider fully wired to Runtime interface. `--runtime openclaw|hermes` flag, runtime choice persisted during `conga admin setup`, inherited by `add-user`/`add-team`. Data model: `Runtime` field on `AgentConfig`, `Config`, `SetupConfig`, `Manifest`. 20 new files, 13 modified, 38 runtime tests, all 16 test suites pass. Remote/AWS provider wiring deferred. See `specs/2026-04-05_feature_agent-portability/`.
 - 2026-03-30: Manifest Bootstrap — new `conga bootstrap <manifest.yaml>` command for one-shot environment provisioning. Declarative YAML manifest describes provider, setup, agents, secrets, channels, bindings, and initial egress policy. Optimized 6-step pipeline, each step idempotent. Secrets referenced via `$VAR` env var expansion from `--env` file, never stored in YAML. Existing `conga-policy.yaml` takes precedence over manifest policy section. New `pkg/manifest/` package (2 files, ~350 lines), CLI command, 25 unit tests. All 17 test packages pass. See `specs/2026-03-30_feature_manifest-apply/`.
 - 2026-03-30: Bugfix — BindChannel/UnbindChannel router restart. Router was not restarted after `channels bind`/`unbind`, causing Slack messages to be silently dropped ("No route"). Added `restartRouter()`/`ensureRouter(ctx, true)` calls in both remote and local providers. Also made `connectNetwork` idempotent (ignore "already exists" errors). 4 files, all tests pass. See `specs/2026-03-30_bugfix_bind-channel-router-restart/`.
 - 2026-03-29: Non-Root Container Enforcement — added explicit `--user 1000:1000` to all agent and router `docker run` commands across all 3 providers (local, remote, AWS). Router was running as root (`node:22-alpine` default); agent containers relied on fragile image `USER` directive. Also aligned AWS router with local/remote by adding missing `--tmpfs /tmp:rw,noexec,nosuid`. 7 files modified, 17 test packages pass. See `specs/2026-03-29_feature_non-root-containers/`.

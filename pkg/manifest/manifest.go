@@ -22,6 +22,7 @@ type Manifest struct {
 	APIVersion string            `yaml:"apiVersion"`
 	Kind       string            `yaml:"kind"`
 	Provider   string            `yaml:"provider,omitempty"`
+	Runtime    string            `yaml:"runtime,omitempty"` // default runtime: "openclaw", "hermes"
 	Setup      *ManifestSetup    `yaml:"setup,omitempty"`
 	Agents     []ManifestAgent   `yaml:"agents,omitempty"`
 	Channels   []ManifestChannel `yaml:"channels,omitempty"`
@@ -43,6 +44,7 @@ type ManifestSetup struct {
 type ManifestAgent struct {
 	Name        string            `yaml:"name"`
 	Type        string            `yaml:"type"`
+	Runtime     string            `yaml:"runtime,omitempty"` // per-agent runtime override
 	IAMIdentity string            `yaml:"iam_identity,omitempty"`
 	Secrets     map[string]string `yaml:"secrets,omitempty"`
 }

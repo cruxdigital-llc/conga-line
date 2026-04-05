@@ -18,6 +18,7 @@ const (
 // Config holds provider-agnostic configuration.
 type Config struct {
 	Provider ProviderName `json:"provider"`           // "aws", "local", or "remote"
+	Runtime  string       `json:"runtime,omitempty"`  // default runtime: "openclaw", "hermes"
 	DataDir  string       `json:"data_dir,omitempty"` // override for ~/.conga/
 	Region   string       `json:"region,omitempty"`   // AWS region (aws provider)
 	Profile  string       `json:"profile,omitempty"`  // AWS profile (aws provider)
