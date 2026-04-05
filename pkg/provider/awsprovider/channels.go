@@ -142,14 +142,14 @@ func (p *AWSProvider) ListChannels(ctx context.Context) ([]provider.ChannelStatu
 	}
 
 	// Check router status on instance
-	routerRunning := false
+	routerStates := map[string]bool{}
 	instanceID, findErr := p.findInstance(ctx)
 	if findErr == nil {
 		result, err := p.runOnInstance(ctx, instanceID,
 			`docker inspect conga-router --format '{{.State.Running}}' 2>/dev/null || echo "false"`,
 			30*time.Second)
 		if err == nil && result != nil && result.Status == "Success" {
-			routerRunning = strings.TrimSpace(result.Stdout) == "true"
+			routerStates["slack"] = strings.TrimSpace(result.Stdout) == "true"
 		}
 	}
 
@@ -158,7 +158,7 @@ func (p *AWSProvider) ListChannels(ctx context.Context) ([]provider.ChannelStatu
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	return common.BuildChannelStatuses(agents, shared, routerRunning), nil
+	return common.BuildChannelStatuses(agents, shared, routerStates), nil
 }
 
 // BindChannel adds a channel binding to an existing agent.

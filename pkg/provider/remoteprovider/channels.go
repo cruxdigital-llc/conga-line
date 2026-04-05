@@ -124,11 +124,10 @@ func (p *RemoteProvider) ListChannels(ctx context.Context) ([]provider.ChannelSt
 		return nil, fmt.Errorf("failed to read shared secrets: %w", err)
 	}
 
-	routerRunning := false
+	routerStates := map[string]bool{}
 	if p.containerExists(ctx, routerContainer) {
-		state, err := p.inspectState(ctx, routerContainer)
-		if err == nil && state.Running {
-			routerRunning = true
+		if state, err := p.inspectState(ctx, routerContainer); err == nil && state.Running {
+			routerStates["slack"] = true
 		}
 	}
 
@@ -137,7 +136,7 @@ func (p *RemoteProvider) ListChannels(ctx context.Context) ([]provider.ChannelSt
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	return common.BuildChannelStatuses(agents, shared, routerRunning), nil
+	return common.BuildChannelStatuses(agents, shared, routerStates), nil
 }
 
 // BindChannel adds a channel binding to an existing agent on the remote host.

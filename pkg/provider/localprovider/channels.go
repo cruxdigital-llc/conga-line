@@ -13,6 +13,16 @@ import (
 	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
 
+// routerContainerForPlatform returns the Docker container name for a platform's router.
+func routerContainerForPlatform(platform string) string {
+	switch platform {
+	case "telegram":
+		return telegramRouterContainer
+	default:
+		return routerContainer
+	}
+}
+
 // AddChannel configures a messaging channel platform by storing its shared
 // secrets and starting (or restarting) the router.
 func (p *LocalProvider) AddChannel(ctx context.Context, platform string, secrets map[string]string) error {
@@ -47,9 +57,16 @@ func (p *LocalProvider) AddChannel(ctx context.Context, platform string, secrets
 		return fmt.Errorf("failed to write router env: %w", err)
 	}
 
-	// Start (or restart) the router to pick up the new config
-	if err := p.ensureRouter(ctx, true); err != nil {
-		return fmt.Errorf("failed to start router: %w", err)
+	// Start (or restart) the appropriate router for this platform
+	switch platform {
+	case "telegram":
+		if err := p.ensureTelegramRouter(ctx, true); err != nil {
+			return fmt.Errorf("failed to start telegram router: %w", err)
+		}
+	default:
+		if err := p.ensureRouter(ctx, true); err != nil {
+			return fmt.Errorf("failed to start router: %w", err)
+		}
 	}
 
 	return nil
@@ -72,10 +89,11 @@ func (p *LocalProvider) RemoveChannel(ctx context.Context, platform string) erro
 		return nil // not configured, no-op
 	}
 
-	// 1. Stop and remove router
-	if containerExists(ctx, routerContainer) {
-		if err := removeContainer(ctx, routerContainer); err != nil {
-			return fmt.Errorf("failed to remove router container: %w", err)
+	// 1. Stop and remove the router for this platform
+	rc := routerContainerForPlatform(platform)
+	if containerExists(ctx, rc) {
+		if err := removeContainer(ctx, rc); err != nil {
+			return fmt.Errorf("failed to remove %s router container: %w", platform, err)
 		}
 	}
 
@@ -127,11 +145,12 @@ func (p *LocalProvider) ListChannels(ctx context.Context) ([]provider.ChannelSta
 		return nil, fmt.Errorf("failed to read shared secrets: %w", err)
 	}
 
-	routerRunning := false
-	if containerExists(ctx, routerContainer) {
-		state, err := inspectState(ctx, routerContainer)
-		if err == nil && state.Running {
-			routerRunning = true
+	routerStates := map[string]bool{}
+	for platform, rc := range map[string]string{"slack": routerContainer, "telegram": telegramRouterContainer} {
+		if containerExists(ctx, rc) {
+			if state, err := inspectState(ctx, rc); err == nil && state.Running {
+				routerStates[platform] = true
+			}
 		}
 	}
 
@@ -140,7 +159,7 @@ func (p *LocalProvider) ListChannels(ctx context.Context) ([]provider.ChannelSta
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	return common.BuildChannelStatuses(agents, shared, routerRunning), nil
+	return common.BuildChannelStatuses(agents, shared, routerStates), nil
 }
 
 // BindChannel adds a channel binding to an existing agent.
@@ -192,17 +211,14 @@ func (p *LocalProvider) BindChannel(ctx context.Context, agentName string, bindi
 		return fmt.Errorf("failed to regenerate routing: %w", err)
 	}
 
-	// Ensure router is connected to this agent's network
-	if containerExists(ctx, routerContainer) {
-		if err := connectNetwork(ctx, networkName(agentName), routerContainer); err != nil {
-			return fmt.Errorf("failed to connect router to agent network %s: %w", agentName, err)
-		}
-	}
+	// Ensure routers are connected to this agent's network
+	connectRoutersToNetwork(ctx, networkName(agentName))
 
-	// Restart router to pick up updated routing.json
+	// Restart the appropriate router to pick up updated routing.json
 	if err := p.ensureRouter(ctx, true); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to restart router: %v\n", err)
 	}
+	p.ensureTelegramRouter(ctx, true)
 
 	// Restart agent to pick up new config
 	if !a.Paused {

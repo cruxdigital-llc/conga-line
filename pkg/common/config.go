@@ -30,14 +30,14 @@ func HasAnyChannel(shared SharedSecrets) bool {
 // BuildChannelStatuses builds the channel status list from the given agents,
 // shared secrets, and router state. This is the shared logic used by both
 // local and remote providers' ListChannels implementations.
-func BuildChannelStatuses(agents []provider.AgentConfig, shared SharedSecrets, routerRunning bool) []provider.ChannelStatus {
+func BuildChannelStatuses(agents []provider.AgentConfig, shared SharedSecrets, routerStates map[string]bool) []provider.ChannelStatus {
 	var result []provider.ChannelStatus
 	for _, ch := range channels.All() {
 		status := provider.ChannelStatus{
 			Platform:   ch.Name(),
 			Configured: ch.HasCredentials(shared.Values),
 		}
-		status.RouterRunning = routerRunning && status.Configured
+		status.RouterRunning = routerStates[ch.Name()] && status.Configured
 		for _, a := range agents {
 			if a.ChannelBinding(ch.Name()) != nil {
 				status.BoundAgents = append(status.BoundAgents, a.Name)

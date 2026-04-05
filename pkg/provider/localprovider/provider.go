@@ -30,9 +30,15 @@ import (
 )
 
 const (
-	egressProxyImage = "conga-egress-proxy"
-	routerContainer  = "conga-router"
+	egressProxyImage        = "conga-egress-proxy"
+	routerContainer         = "conga-router"
+	telegramRouterContainer = "conga-telegram-router"
 )
+
+// allRouterContainers returns the names of all router containers.
+func allRouterContainers() []string {
+	return []string{routerContainer, telegramRouterContainer}
+}
 
 // LocalProvider implements provider.Provider using local Docker.
 type LocalProvider struct {
@@ -334,16 +340,13 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		fmt.Fprintf(os.Stderr, "Warning: failed to update routing: %v\n", err)
 	}
 
-	// 10. Ensure router is running and connected (only if any channel has credentials)
+	// 10. Ensure routers are running and connected (only if any channel has credentials)
 	if common.HasAnyChannel(shared) {
 		if err := p.ensureRouter(ctx, false); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: router not started: %v\n", err)
 		}
-		if containerExists(ctx, routerContainer) {
-			if err := connectNetwork(ctx, netName, routerContainer); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to connect router to agent network: %v\n", err)
-			}
-		}
+		p.ensureTelegramRouter(ctx, false)
+		connectRoutersToNetwork(ctx, netName)
 	}
 
 	// 11. Save config hash baseline
@@ -377,9 +380,7 @@ func (p *LocalProvider) RemoveAgent(ctx context.Context, name string, deleteSecr
 
 	p.stopAgentEgressProxy(ctx, name)
 
-	if containerExists(ctx, routerContainer) {
-		disconnectNetwork(ctx, netName, routerContainer)
-	}
+	disconnectRoutersFromNetwork(ctx, netName)
 
 	if networkExists(ctx, netName) {
 		if err := removeNetwork(ctx, netName); err != nil {
@@ -588,9 +589,7 @@ func (p *LocalProvider) PauseAgent(ctx context.Context, name string) error {
 
 	p.stopAgentEgressProxy(ctx, name)
 
-	if containerExists(ctx, routerContainer) {
-		disconnectNetwork(ctx, netName, routerContainer)
-	}
+	disconnectRoutersFromNetwork(ctx, netName)
 
 	// Regenerate routing (excludes paused agents)
 	if err := p.regenerateRouting(ctx); err != nil {
@@ -763,9 +762,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	// hasn't changed — currently we always recreate for a clean slate, which
 	// causes brief connectivity loss during refresh.
 	if networkExists(ctx, netName) {
-		if containerExists(ctx, routerContainer) {
-			disconnectNetwork(ctx, netName, routerContainer)
-		}
+		disconnectRoutersFromNetwork(ctx, netName)
 		if err := removeNetwork(ctx, netName); err != nil {
 			return fmt.Errorf("failed to remove network %s: %w", netName, err)
 		}
@@ -829,12 +826,8 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		fmt.Printf("  Egress iptables: DROP rules applied for %s (%s)\n", cName, agentIP)
 	}
 
-	// Reconnect router
-	if containerExists(ctx, routerContainer) {
-		if err := connectNetwork(ctx, netName, routerContainer); err != nil {
-			return fmt.Errorf("failed to reconnect router to network %s: %w", netName, err)
-		}
-	}
+	// Reconnect routers
+	connectRoutersToNetwork(ctx, netName)
 	return nil
 }
 
@@ -1265,7 +1258,9 @@ func (p *LocalProvider) CycleHost(ctx context.Context) error {
 			stopContainer(ctx, containerName(a.Name))
 		}
 	}
-	stopContainer(ctx, routerContainer)
+	for _, rc := range allRouterContainers() {
+		stopContainer(ctx, rc)
+	}
 
 	fmt.Println("Restarting...")
 
@@ -1366,6 +1361,26 @@ func (p *LocalProvider) cleanupDockerByPrefix(ctx context.Context) {
 
 // --- infrastructure helpers ---
 
+// connectRoutersToNetwork connects all running router containers to a network.
+func connectRoutersToNetwork(ctx context.Context, netName string) {
+	for _, rc := range allRouterContainers() {
+		if containerExists(ctx, rc) {
+			if err := connectNetwork(ctx, netName, rc); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to connect %s to %s network: %v\n", rc, netName, err)
+			}
+		}
+	}
+}
+
+// disconnectRoutersFromNetwork disconnects all router containers from a network.
+func disconnectRoutersFromNetwork(ctx context.Context, netName string) {
+	for _, rc := range allRouterContainers() {
+		if containerExists(ctx, rc) {
+			disconnectNetwork(ctx, netName, rc)
+		}
+	}
+}
+
 // ensureRouter starts or restarts the router container.
 // If restart is true and the router is already running, it is replaced to pick up config changes.
 func (p *LocalProvider) ensureRouter(ctx context.Context, restart bool) error {
@@ -1412,6 +1427,89 @@ func (p *LocalProvider) ensureRouter(ctx context.Context, restart bool) error {
 	}
 
 	fmt.Println("  Router started.")
+	return nil
+}
+
+// ensureTelegramRouter starts or restarts the Telegram router container.
+// Only starts if Telegram credentials are configured.
+func (p *LocalProvider) ensureTelegramRouter(ctx context.Context, restart bool) error {
+	// Check if Telegram is configured
+	shared, err := p.readSharedSecrets()
+	if err != nil {
+		return nil // no secrets = no Telegram
+	}
+	ch, ok := channels.Get("telegram")
+	if !ok || !ch.HasCredentials(shared.Values) {
+		return nil // Telegram not configured
+	}
+
+	if containerExists(ctx, telegramRouterContainer) {
+		state, err := inspectState(ctx, telegramRouterContainer)
+		if err == nil && state.Running && !restart {
+			return nil
+		}
+		if err := removeContainer(ctx, telegramRouterContainer); err != nil {
+			return fmt.Errorf("failed to remove existing telegram router container: %w", err)
+		}
+	}
+
+	// Write Telegram router env file
+	telegramEnvPath := filepath.Join(p.configDir(), "telegram-router.env")
+	envContent := ""
+	for k, v := range ch.RouterEnvVars(shared.Values) {
+		envContent += fmt.Sprintf("%s=%s\n", k, v)
+	}
+	// Also include signing secret for HMAC verification on forwarded events
+	if v := shared.Values["slack-signing-secret"]; v != "" {
+		envContent += fmt.Sprintf("SLACK_SIGNING_SECRET=%s\n", v)
+	}
+	if err := os.Remove(telegramEnvPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.WriteFile(telegramEnvPath, []byte(envContent), 0400); err != nil {
+		return err
+	}
+
+	// Check router source exists
+	telegramRouterDir := filepath.Join(p.routerDir(), "telegram")
+	if _, err := os.Stat(filepath.Join(telegramRouterDir, "src", "index.js")); err != nil {
+		return fmt.Errorf("telegram router source not found at %s — run 'conga admin setup' first", telegramRouterDir)
+	}
+
+	routingPath := filepath.Join(p.configDir(), "routing.json")
+
+	fmt.Println("Starting Telegram router...")
+	args := []string{
+		"run", "-d",
+		"--name", telegramRouterContainer,
+		"--env-file", telegramEnvPath,
+		"--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges",
+		"--memory", "128m",
+		"--read-only",
+		"--tmpfs", "/tmp:rw,noexec,nosuid",
+		"--user", "1000:1000",
+		"-v", fmt.Sprintf("%s:/app:ro", telegramRouterDir),
+		"-v", fmt.Sprintf("%s:/opt/conga/config/telegram-routing.json:ro", routingPath),
+	}
+	args = append(args, "node:22-alpine", "node", "/app/src/index.js")
+
+	if _, err := dockerRun(ctx, args...); err != nil {
+		return fmt.Errorf("failed to start telegram router: %w", err)
+	}
+
+	// Connect to all agent networks
+	agents, err := p.ListAgents(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not list agents for telegram router network connections: %v\n", err)
+	}
+	for _, a := range agents {
+		if err := connectNetwork(ctx, networkName(a.Name), telegramRouterContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to connect telegram router to %s network: %v\n", a.Name, err)
+		}
+	}
+
+	fmt.Println("  Telegram router started.")
 	return nil
 }
 
