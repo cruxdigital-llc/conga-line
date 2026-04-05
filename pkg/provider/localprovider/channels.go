@@ -211,21 +211,22 @@ func (p *LocalProvider) BindChannel(ctx context.Context, agentName string, bindi
 		return fmt.Errorf("failed to regenerate routing: %w", err)
 	}
 
-	// Ensure routers are connected to this agent's network
-	connectRoutersToNetwork(ctx, networkName(agentName))
-
-	// Restart the appropriate router to pick up updated routing.json
-	if err := p.ensureRouter(ctx, true); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to restart router: %v\n", err)
-	}
-	p.ensureTelegramRouter(ctx, true)
-
-	// Restart agent to pick up new config
+	// Restart agent FIRST to pick up new config (may regenerate gateway token)
 	if !a.Paused {
 		if err := p.RefreshAgent(ctx, agentName); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to refresh agent %s: %v (config updated, restart manually)\n", agentName, err)
 		}
 	}
+
+	// Ensure routers are connected to this agent's network
+	connectRoutersToNetwork(ctx, networkName(agentName))
+
+	// Restart routers AFTER agent refresh so they pick up the latest
+	// gateway token and routing config.
+	if err := p.ensureRouter(ctx, true); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to restart router: %v\n", err)
+	}
+	p.ensureTelegramRouter(ctx, true)
 
 	return nil
 }
