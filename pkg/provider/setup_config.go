@@ -17,8 +17,8 @@ type SetupConfig struct {
 	SSHKeyPath string `json:"ssh_key_path,omitempty"`
 
 	// Config values
-	Runtime         string `json:"runtime,omitempty"`          // "openclaw", "hermes"
-	RuntimeOverride string `json:"-"`                          // Set by --runtime flag; not serialized
+	Runtime         string `json:"runtime,omitempty"` // "openclaw", "hermes"
+	RuntimeOverride string `json:"-"`                 // Set by --runtime flag; not serialized
 	RepoPath        string `json:"repo_path,omitempty"`
 	Image           string `json:"image,omitempty"`
 
