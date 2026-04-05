@@ -31,16 +31,15 @@ func (r *Runtime) GenerateConfig(params runtime.ConfigParams) ([]byte, error) {
 		},
 	}
 
-	// Enable webhook adapter if any channels are configured
-	for _, binding := range params.Agent.Channels {
-		if binding.Platform == "slack" {
-			platforms["webhook"] = map[string]any{
-				"enabled": true,
-				"extra": map[string]any{
-					"host": "0.0.0.0",
-					"port": 8644,
-				},
-			}
+	// Enable webhook adapter if any channels are bound.
+	// All channel events (Slack, Telegram, etc.) arrive via the webhook adapter.
+	if len(params.Agent.Channels) > 0 {
+		platforms["webhook"] = map[string]any{
+			"enabled": true,
+			"extra": map[string]any{
+				"host": "0.0.0.0",
+				"port": 8644,
+			},
 		}
 	}
 

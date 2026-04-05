@@ -1463,6 +1463,22 @@ func (p *LocalProvider) ensureTelegramRouter(ctx context.Context, restart bool) 
 	if v := shared.Values["slack-signing-secret"]; v != "" {
 		envContent += fmt.Sprintf("SLACK_SIGNING_SECRET=%s\n", v)
 	}
+	// Pass the first Telegram-bound agent's gateway token so the router
+	// can authenticate with the agent's API server.
+	agents, _ := p.ListAgents(ctx)
+	for _, a := range agents {
+		if a.ChannelBinding("telegram") != nil {
+			if rt, rtErr := p.runtimeForAgent(a); rtErr == nil {
+				configPath := filepath.Join(p.dataSubDir(a.Name), rt.ConfigFileName())
+				if data, readErr := os.ReadFile(configPath); readErr == nil {
+					if token := rt.ReadGatewayToken(data); token != "" {
+						envContent += fmt.Sprintf("AGENT_API_KEY=%s\n", token)
+						break
+					}
+				}
+			}
+		}
+	}
 	if err := os.Remove(telegramEnvPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -1499,7 +1515,7 @@ func (p *LocalProvider) ensureTelegramRouter(ctx context.Context, restart bool) 
 	}
 
 	// Connect to all agent networks
-	agents, err := p.ListAgents(ctx)
+	agents, err = p.ListAgents(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not list agents for telegram router network connections: %v\n", err)
 	}
