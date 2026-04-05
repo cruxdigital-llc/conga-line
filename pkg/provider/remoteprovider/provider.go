@@ -1024,7 +1024,7 @@ func (p *RemoteProvider) regenerateRouting(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	data, err := common.GenerateRoutingJSON(agents)
+	data, err := common.GenerateRoutingJSON(agents, nil)
 	if err != nil {
 		return err
 	}

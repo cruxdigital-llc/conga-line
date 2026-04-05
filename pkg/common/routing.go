@@ -2,6 +2,7 @@ package common
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
@@ -13,9 +14,16 @@ type RoutingConfig struct {
 	Members  map[string]string `json:"members"`
 }
 
+// WebhookPathResolver returns the webhook path for a given agent runtime and
+// channel platform. Used by GenerateRoutingJSON to construct per-runtime URLs.
+// When nil, the channel's default WebhookPath() is used.
+type WebhookPathResolver func(agentRuntime, platform string) string
+
 // GenerateRoutingJSON builds routing.json from a list of agents.
-// Delegates to each agent's channel implementations for routing entries.
-func GenerateRoutingJSON(agents []provider.AgentConfig) ([]byte, error) {
+// The resolver maps (runtime, platform) → webhook path so that different
+// runtimes receive events at their expected endpoints.
+// Pass nil for resolver to use each channel's default webhook path.
+func GenerateRoutingJSON(agents []provider.AgentConfig, resolver WebhookPathResolver) ([]byte, error) {
 	cfg := RoutingConfig{
 		Channels: make(map[string]string),
 		Members:  make(map[string]string),
@@ -30,12 +38,24 @@ func GenerateRoutingJSON(agents []provider.AgentConfig) ([]byte, error) {
 			if !ok {
 				continue
 			}
-			for _, entry := range ch.RoutingEntries(string(a.Type), binding, a.Name, a.GatewayPort) {
-				switch entry.Section {
-				case "channels":
-					cfg.Channels[entry.Key] = entry.URL
-				case "members":
-					cfg.Members[entry.Key] = entry.URL
+
+			// Resolve the webhook path: runtime-specific if resolver provided,
+			// otherwise fall back to the channel's default.
+			webhookPath := ch.WebhookPath()
+			if resolver != nil {
+				webhookPath = resolver(a.Runtime, binding.Platform)
+			}
+
+			url := fmt.Sprintf("http://conga-%s:%d%s", a.Name, a.GatewayPort, webhookPath)
+
+			switch string(a.Type) {
+			case "user":
+				if binding.ID != "" {
+					cfg.Members[binding.ID] = url
+				}
+			case "team":
+				if binding.ID != "" {
+					cfg.Channels[binding.ID] = url
 				}
 			}
 		}

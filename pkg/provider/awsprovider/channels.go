@@ -417,7 +417,7 @@ func (p *AWSProvider) regenerateRoutingOnInstance(ctx context.Context, instanceI
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	routingJSON, err := common.GenerateRoutingJSON(agents)
+	routingJSON, err := common.GenerateRoutingJSON(agents, nil)
 	if err != nil {
 		return fmt.Errorf("failed to generate routing: %w", err)
 	}

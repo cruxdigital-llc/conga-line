@@ -58,6 +58,22 @@ func (p *LocalProvider) runtimeForAgent(agent provider.AgentConfig) (runtime.Run
 	return runtime.Get(name)
 }
 
+// webhookPathResolver returns a function that resolves webhook paths per-runtime.
+func (p *LocalProvider) webhookPathResolver() common.WebhookPathResolver {
+	globalDefault := p.getConfigValue("runtime")
+	return func(agentRuntime, platform string) string {
+		name := runtime.ResolveRuntime(agentRuntime, globalDefault)
+		if rt, err := runtime.Get(name); err == nil {
+			return rt.WebhookPath(platform)
+		}
+		// Fallback to channel's default
+		if ch, ok := channels.Get(platform); ok {
+			return ch.WebhookPath()
+		}
+		return "/" + platform + "/events"
+	}
+}
+
 func (p *LocalProvider) Name() string { return "local" }
 
 // --- paths ---
@@ -1488,7 +1504,7 @@ func (p *LocalProvider) regenerateRouting(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	data, err := common.GenerateRoutingJSON(agents)
+	data, err := common.GenerateRoutingJSON(agents, p.webhookPathResolver())
 	if err != nil {
 		return err
 	}
