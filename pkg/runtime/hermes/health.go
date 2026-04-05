@@ -6,6 +6,8 @@ import (
 	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
 
+func (r *Runtime) HealthEndpoint() string { return "/health" }
+
 func (r *Runtime) DetectReady(logOutput string, hasSlack bool) runtime.ReadyPhase {
 	phase := runtime.ReadyPhase{Phase: "starting", Message: "Container starting"}
 

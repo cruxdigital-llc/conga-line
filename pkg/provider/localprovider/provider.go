@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -14,6 +15,7 @@ import (
 	goruntime "runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/common"
@@ -165,6 +167,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	configBytes, err := rt.GenerateConfig(runtime.ConfigParams{
 		Agent:   cfg,
 		Secrets: shared,
+		Model:   p.getConfigValue("model"),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
@@ -197,9 +200,11 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	// Also write .env into the data directory — some runtimes (Hermes) read
 	// secrets from their own .env file inside the data volume rather than
 	// relying solely on Docker --env-file injection.
+	// Note: This is written BEFORE the container starts, so no race with
+	// the Hermes entrypoint (which only copies .env.example if .env is missing).
 	dataEnvPath := filepath.Join(dataDir, ".env")
-	os.Remove(dataEnvPath)                        //nolint:errcheck
-	os.WriteFile(dataEnvPath, envContent, 0400)   //nolint:errcheck
+	os.Remove(dataEnvPath)                      //nolint:errcheck
+	os.WriteFile(dataEnvPath, envContent, 0400) //nolint:errcheck
 
 	// 4. Deploy behavior files
 	if err := p.deployBehavior(cfg); err != nil {
@@ -217,7 +222,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 
 	spec := rt.ContainerSpec(cfg)
 
-	// 5. Load egress policy — proxy always deployed (deny-all when no policy)
+	// 6. Load egress policy — proxy always deployed (deny-all when no policy)
 	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, cfg.Name)
 	if policyErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load egress policy: %v\n", policyErr)
@@ -237,12 +242,12 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 		}
 	}
 
-	// 8. Start per-agent egress proxy (always — deny-all when no policy)
+	// 7. Start per-agent egress proxy (always — deny-all when no policy)
 	if err := p.startAgentEgressProxy(ctx, cfg.Name, egressPolicy); err != nil {
 		return fmt.Errorf("failed to start egress proxy: %w", err)
 	}
 
-	// 8. Start container
+	// 8. Start container and apply iptables
 	cName := containerName(cfg.Name)
 	if containerExists(ctx, cName) {
 		if err := stopContainer(ctx, cName); err != nil {
@@ -323,7 +328,7 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	}
 
 	// 11. Save config hash baseline
-	p.saveConfigBaseline(cfg.Name)
+	p.saveConfigBaseline(ctx, cfg.Name)
 
 	return nil
 }
@@ -427,16 +432,17 @@ func (p *LocalProvider) GetStatus(ctx context.Context, agentName string) (*provi
 		logs, _ := containerLogs(ctx, cName, 50)
 		if agentCfg, agentErr := p.GetAgent(ctx, agentName); agentErr == nil {
 			if rt, rtErr := p.runtimeForAgent(*agentCfg); rtErr == nil {
-				// Some runtimes (Hermes) log to files instead of stdout.
-				// If docker logs are empty, try reading the log file inside the container.
-				if strings.TrimSpace(logs) == "" {
-					logFile := rt.ContainerDataPath() + "/logs/gateway.log"
-					if output, err := dockerRun(ctx, "exec", cName, "tail", "-50", logFile); err == nil {
-						logs = output
-					}
-				}
 				hasSlack := agentCfg.ChannelBinding("slack") != nil
 				phase := rt.DetectReady(logs, hasSlack)
+
+				// If log-based detection is inconclusive (e.g., runtime logs to
+				// files not stdout), try the HTTP health endpoint instead.
+				if !phase.IsReady && rt.HealthEndpoint() != "" {
+					if checkHealthEndpoint(agentCfg.GatewayPort, rt.HealthEndpoint()) {
+						phase = runtime.ReadyPhase{Phase: "ready", Message: "Ready", IsReady: true}
+					}
+				}
+
 				status.ReadyPhase = phase.Phase
 				if phase.HasError {
 					status.Errors = append(status.Errors, phase.Message)
@@ -618,7 +624,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	// Check config integrity before trusting the existing token
 	dataDir := p.dataSubDir(agentName)
 	existingToken := ""
-	if err := p.checkConfigIntegrity(agentName); err != nil {
+	if err := p.checkConfigIntegrity(ctx, agentName); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Generating fresh gateway token instead of preserving existing one.\n")
 		existingToken, _ = generateToken()
@@ -634,6 +640,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		Agent:        *cfg,
 		Secrets:      shared,
 		GatewayToken: existingToken,
+		Model:        p.getConfigValue("model"),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
@@ -646,7 +653,7 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	}
 
 	// Update baseline hash after writing new config
-	p.saveConfigBaseline(agentName)
+	p.saveConfigBaseline(ctx, agentName)
 
 	// Regenerate env file
 	envContent := rt.GenerateEnvFile(runtime.EnvParams{
@@ -663,9 +670,10 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	}
 
 	// Also write .env into the data directory for runtimes that read it there.
+	// Written before container restart, so no race with entrypoint scripts.
 	dataEnvPath := filepath.Join(dataDir, ".env")
-	os.Remove(dataEnvPath)                          //nolint:errcheck
-	os.WriteFile(dataEnvPath, envContent, 0400)     //nolint:errcheck
+	os.Remove(dataEnvPath)                      //nolint:errcheck
+	os.WriteFile(dataEnvPath, envContent, 0400) //nolint:errcheck
 
 	// Load egress policy — proxy always deployed (deny-all when no policy)
 	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, agentName)
@@ -927,8 +935,11 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 	}
 
 	// --- Runtime ---
+	// Resolution: --runtime flag (RuntimeOverride) > JSON/config Runtime > persisted > prompt
 	rtName := p.getConfigValue("runtime")
-	if cfg != nil && cfg.Runtime != "" {
+	if cfg != nil && cfg.RuntimeOverride != "" {
+		rtName = cfg.RuntimeOverride
+	} else if cfg != nil && cfg.Runtime != "" {
 		rtName = cfg.Runtime
 	}
 	rtStatus := "set"
@@ -936,15 +947,12 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 		rtStatus = "not set (default: openclaw)"
 	}
 	fmt.Printf("\n[config] runtime — Agent runtime (%s)\n", rtStatus)
-	if cfg != nil {
-		if rtName == "" {
-			rtName = "openclaw"
-		}
-	} else if rtName == "" || ui.Confirm("  Update this value?") {
+	if rtName != "" {
+		// Already resolved from flag, config, or persisted value — skip prompt
+	} else if cfg != nil {
+		rtName = "openclaw"
+	} else {
 		defaultRT := "openclaw"
-		if rtName != "" {
-			defaultRT = rtName
-		}
 		newRT, err := ui.TextPromptWithDefault("  Runtime (openclaw, hermes)", defaultRT)
 		if err != nil {
 			return err
@@ -960,6 +968,42 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 		}
 		p.setConfigValue("runtime", rtName)
 		changed++
+	}
+
+	// --- Model (non-OpenClaw runtimes only) ---
+	// OpenClaw has its model baked into openclaw-defaults.json.
+	// Other runtimes need the user to specify which LLM to use.
+	if rtName != "" && rtName != "openclaw" {
+		model := p.getConfigValue("model")
+		if cfg != nil && cfg.Image != "" {
+			// cfg doesn't have a model field yet; skip for non-interactive
+		}
+		modelStatus := "set"
+		if model == "" {
+			modelStatus = "not set"
+		}
+		fmt.Printf("\n[config] model — LLM model for %s runtime (%s)\n", rtName, modelStatus)
+		if cfg != nil {
+			if model == "" {
+				model = "anthropic/claude-sonnet-4-20250514"
+			}
+		} else if model == "" || ui.Confirm("  Update this value?") {
+			defaultModel := "anthropic/claude-sonnet-4-20250514"
+			if model != "" {
+				defaultModel = model
+			}
+			newModel, err := ui.TextPromptWithDefault("  Model (provider/name)", defaultModel)
+			if err != nil {
+				return err
+			}
+			if newModel != "" {
+				model = newModel
+			}
+		}
+		if model != "" {
+			p.setConfigValue("model", model)
+			changed++
+		}
 	}
 
 	// --- Docker image ---
@@ -1514,6 +1558,18 @@ func (p *LocalProvider) setConfigValue(key, value string) error {
 }
 
 // --- utility functions ---
+
+// checkHealthEndpoint makes an HTTP GET to localhost:{port}{path} and returns
+// true if the response is 200. Used as a fast, reliable alternative to log parsing.
+func checkHealthEndpoint(port int, path string) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d%s", port, path))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
 
 func detectReadyPhase(logs string) string {
 	phase := "starting"

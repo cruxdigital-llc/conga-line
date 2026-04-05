@@ -2,16 +2,10 @@ package hermes
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
-
-// secretNameToEnvVar converts a kebab-case secret name to SCREAMING_SNAKE_CASE.
-func secretNameToEnvVar(name string) string {
-	return strings.NewReplacer("-", "_").Replace(strings.ToUpper(name))
-}
 
 func (r *Runtime) GenerateEnvFile(params runtime.EnvParams) []byte {
 	var buf []byte
@@ -37,18 +31,14 @@ func (r *Runtime) GenerateEnvFile(params runtime.EnvParams) []byte {
 		}
 	}
 
-	// Enable the API server platform and bind to all interfaces (required for Docker).
-	appendEnv("API_SERVER_ENABLED", "true")
-	appendEnv("API_SERVER_HOST", "0.0.0.0")
-
-
-	// Hermes gateway needs explicit user access configuration.
-	// Default to open access for the API server (secured by gateway token).
+	// Allow all users by default — access is controlled by the gateway token
+	// (API_SERVER_KEY) set in config.yaml, not user allowlists.
+	// API server enablement and host binding are in config.yaml (platforms.api_server).
 	appendEnv("GATEWAY_ALLOW_ALL_USERS", "true")
 
 	// Per-agent secrets (ANTHROPIC_API_KEY, etc.)
 	for name, value := range params.PerAgent {
-		appendEnv(secretNameToEnvVar(name), value)
+		appendEnv(runtime.SecretNameToEnvVar(name), value)
 	}
 
 	return buf

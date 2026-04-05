@@ -2,16 +2,10 @@ package openclaw
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
-
-// secretNameToEnvVar converts a kebab-case secret name to SCREAMING_SNAKE_CASE.
-func secretNameToEnvVar(name string) string {
-	return strings.NewReplacer("-", "_").Replace(strings.ToUpper(name))
-}
 
 func (r *Runtime) GenerateEnvFile(params runtime.EnvParams) []byte {
 	var buf []byte
@@ -45,7 +39,7 @@ func (r *Runtime) GenerateEnvFile(params runtime.EnvParams) []byte {
 	appendEnv("NODE_OPTIONS", "--max-old-space-size=1536")
 
 	for name, value := range params.PerAgent {
-		appendEnv(secretNameToEnvVar(name), value)
+		appendEnv(runtime.SecretNameToEnvVar(name), value)
 	}
 
 	return buf

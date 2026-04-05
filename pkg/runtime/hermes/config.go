@@ -45,8 +45,13 @@ func (r *Runtime) GenerateConfig(params runtime.ConfigParams) ([]byte, error) {
 	}
 
 	cfg := map[string]any{
-		"model": "anthropic/claude-sonnet-4-20250514",
 		"platforms": platforms,
+	}
+
+	// Set model if provided (configured during conga admin setup).
+	// If empty, Hermes will prompt the user via `hermes model` on first use.
+	if params.Model != "" {
+		cfg["model"] = params.Model
 	}
 
 	return yaml.Marshal(cfg)

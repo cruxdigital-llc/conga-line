@@ -117,6 +117,13 @@ func testRuntimeContract(t *testing.T, rt runtime.Runtime) {
 		}
 	})
 
+	t.Run("HealthEndpoint returns empty or valid path", func(t *testing.T) {
+		ep := rt.HealthEndpoint()
+		if ep != "" && ep[0] != '/' {
+			t.Fatalf("HealthEndpoint must start with / or be empty, got %q", ep)
+		}
+	})
+
 	t.Run("ReadGatewayToken round-trips with GenerateConfig", func(t *testing.T) {
 		params := runtime.ConfigParams{
 			Agent: provider.AgentConfig{
@@ -148,7 +155,7 @@ func testRuntimeContract(t *testing.T, rt runtime.Runtime) {
 	})
 }
 
-func TestOpenClawContract(t *testing.T) {
+func TestOpenClaw_RuntimeContract(t *testing.T) {
 	rt, err := runtime.Get(runtime.RuntimeOpenClaw)
 	if err != nil {
 		t.Fatalf("Get(RuntimeOpenClaw) error: %v", err)
@@ -156,7 +163,7 @@ func TestOpenClawContract(t *testing.T) {
 	testRuntimeContract(t, rt)
 }
 
-func TestHermesContract(t *testing.T) {
+func TestHermes_RuntimeContract(t *testing.T) {
 	rt, err := runtime.Get(runtime.RuntimeHermes)
 	if err != nil {
 		t.Fatalf("Get(RuntimeHermes) error: %v", err)
@@ -201,7 +208,7 @@ func TestRegistry(t *testing.T) {
 	}
 }
 
-func TestOpenClawSpecifics(t *testing.T) {
+func TestOpenClaw_Specifics(t *testing.T) {
 	rt, _ := runtime.Get(runtime.RuntimeOpenClaw)
 
 	t.Run("DefaultImage returns openclaw image", func(t *testing.T) {
@@ -266,7 +273,7 @@ func TestOpenClawSpecifics(t *testing.T) {
 	})
 }
 
-func TestHermesSpecifics(t *testing.T) {
+func TestHermes_Specifics(t *testing.T) {
 	rt, _ := runtime.Get(runtime.RuntimeHermes)
 
 	t.Run("DefaultImage is hermes-agent", func(t *testing.T) {
@@ -300,7 +307,7 @@ func TestHermesSpecifics(t *testing.T) {
 		}
 	})
 
-	t.Run("Config is valid YAML", func(t *testing.T) {
+	t.Run("Config is valid YAML with api_server", func(t *testing.T) {
 		params := runtime.ConfigParams{
 			Agent: provider.AgentConfig{
 				Name:        "test",
@@ -321,6 +328,10 @@ func TestHermesSpecifics(t *testing.T) {
 		if !strings.Contains(cfg, "test-token") {
 			t.Fatal("Config should contain the gateway token")
 		}
+		// Model should NOT be in config when not provided in params
+		if strings.Contains(cfg, "claude") {
+			t.Fatal("Config should not include a model when params.Model is empty")
+		}
 	})
 
 	t.Run("EnvFile excludes NODE_OPTIONS", func(t *testing.T) {
@@ -335,4 +346,3 @@ func TestHermesSpecifics(t *testing.T) {
 		}
 	})
 }
-

@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 	"github.com/cruxdigital-llc/conga-line/pkg/ui"
@@ -48,16 +46,13 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Pre-persist --runtime flag so Setup() sees it via getConfigValue().
-	// This mirrors how --provider is resolved before Setup is called.
+	// Pass --runtime flag through to Setup via RuntimeOverride.
+	// The provider's Setup() checks this before prompting interactively.
 	if flagRuntime != "" {
 		if cfg == nil {
-			// Interactive mode: just set the runtime, don't create a full SetupConfig
-			// (a non-nil cfg would skip interactive prompts for other fields)
-			presetRuntime(flagRuntime)
-		} else if cfg.Runtime == "" {
-			cfg.Runtime = flagRuntime
+			cfg = &provider.SetupConfig{}
 		}
+		cfg.RuntimeOverride = flagRuntime
 	}
 
 	if err := prov.Setup(ctx, cfg); err != nil {
@@ -74,26 +69,4 @@ func adminSetupRun(cmd *cobra.Command, args []string) error {
 		})
 	}
 	return nil
-}
-
-// presetRuntime writes the runtime value to the provider's local config
-// before Setup() runs, so Setup() sees it via getConfigValue("runtime")
-// and skips the interactive prompt for it.
-func presetRuntime(rt string) {
-	dataDir := flagDataDir
-	if dataDir == "" {
-		dataDir = provider.DefaultDataDir()
-	}
-	configPath := filepath.Join(dataDir, "local-config.json")
-
-	extra := make(map[string]string)
-	if data, err := os.ReadFile(configPath); err == nil {
-		json.Unmarshal(data, &extra)
-	}
-	extra["runtime"] = rt
-
-	os.MkdirAll(dataDir, 0700)
-	if data, err := json.MarshalIndent(extra, "", "  "); err == nil {
-		os.WriteFile(configPath, data, 0600)
-	}
 }

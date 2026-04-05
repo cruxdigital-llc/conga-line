@@ -19,7 +19,7 @@ func (r *Runtime) ContainerSpec(agent provider.AgentConfig) runtime.ContainerSpe
 		Memory:     "2g",
 		CPUs:       "0.75",
 		PIDsLimit:  "256",
-		EnvVars:    map[string]string{},
+		EnvVars:    map[string]string{"HERMES_HOME": "/opt/data"},
 		Entrypoint: []string{"hermes", "gateway", "run"},
 	}
 }

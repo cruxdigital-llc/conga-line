@@ -4,6 +4,8 @@
 package runtime
 
 import (
+	"strings"
+
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 )
@@ -59,6 +61,12 @@ type Runtime interface {
 	// DetectReady parses container log output and returns the readiness phase.
 	DetectReady(logOutput string, hasSlack bool) ReadyPhase
 
+	// HealthEndpoint returns an HTTP path for health checks (e.g., "/health").
+	// Returns "" if the runtime doesn't expose a health endpoint.
+	// The provider calls this on localhost:{hostPort} when log-based detection
+	// is inconclusive (e.g., runtime logs to files instead of stdout).
+	HealthEndpoint() string
+
 	// --- Gateway Token ---
 
 	// ReadGatewayToken extracts the gateway auth token from the config
@@ -96,6 +104,7 @@ type ConfigParams struct {
 	Agent        provider.AgentConfig
 	Secrets      provider.SharedSecrets
 	GatewayToken string
+	Model        string // LLM model identifier (e.g., "anthropic/claude-sonnet-4-20250514")
 }
 
 // EnvParams holds all inputs needed to generate an env file.
@@ -122,6 +131,12 @@ type ReadyPhase struct {
 	Message  string // Human-readable description
 	IsReady  bool   // true when the agent is fully operational
 	HasError bool   // true when errors detected in logs
+}
+
+// SecretNameToEnvVar converts a kebab-case secret name to SCREAMING_SNAKE_CASE.
+// Example: "anthropic-api-key" -> "ANTHROPIC_API_KEY"
+func SecretNameToEnvVar(name string) string {
+	return strings.NewReplacer("-", "_").Replace(strings.ToUpper(name))
 }
 
 // ResolveRuntime returns the effective runtime name for an agent.
