@@ -228,8 +228,10 @@ func (p *LocalProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentCo
 	// Note: This is written BEFORE the container starts, so no race with
 	// the Hermes entrypoint (which only copies .env.example if .env is missing).
 	dataEnvPath := filepath.Join(dataDir, ".env")
-	os.Remove(dataEnvPath)                      //nolint:errcheck
-	os.WriteFile(dataEnvPath, envContent, 0400) //nolint:errcheck
+	os.Remove(dataEnvPath) //nolint:errcheck // may not exist yet
+	if err := os.WriteFile(dataEnvPath, envContent, 0400); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write .env to data directory: %v\n", err)
+	}
 
 	// 4. Deploy behavior files
 	if err := p.deployBehavior(cfg); err != nil {
@@ -711,8 +713,10 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 	// Also write .env into the data directory for runtimes that read it there.
 	// Written before container restart, so no race with entrypoint scripts.
 	dataEnvPath := filepath.Join(dataDir, ".env")
-	os.Remove(dataEnvPath)                      //nolint:errcheck
-	os.WriteFile(dataEnvPath, envContent, 0400) //nolint:errcheck
+	os.Remove(dataEnvPath) //nolint:errcheck // may not exist yet
+	if err := os.WriteFile(dataEnvPath, envContent, 0400); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write .env to data directory: %v\n", err)
+	}
 
 	// Load egress policy — proxy always deployed (deny-all when no policy)
 	egressPolicy, policyErr := policy.LoadEgressPolicy(p.dataDir, agentName)

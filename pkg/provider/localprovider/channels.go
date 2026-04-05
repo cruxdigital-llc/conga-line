@@ -302,8 +302,6 @@ func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.
 	if err != nil {
 		return err
 	}
-	_ = rt // used for rtName resolution above
-
 	dataDir := p.dataSubDir(cfg.Name)
 	if err := os.WriteFile(filepath.Join(dataDir, rt.ConfigFileName()), configBytes, 0644); err != nil {
 		return err
@@ -318,8 +316,10 @@ func (p *LocalProvider) regenerateAgentConfig(ctx context.Context, cfg provider.
 
 	// Also write .env into the data directory for runtimes that read it there.
 	dataEnvPath := filepath.Join(dataDir, ".env")
-	os.Remove(dataEnvPath)                      //nolint:errcheck
-	os.WriteFile(dataEnvPath, envContent, 0400) //nolint:errcheck
+	os.Remove(dataEnvPath) //nolint:errcheck // may not exist yet
+	if err := os.WriteFile(dataEnvPath, envContent, 0400); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write .env to data directory: %v\n", err)
+	}
 
 	// Best-effort: chown fails on macOS where uid 1000 doesn't exist (Docker Desktop remaps).
 	exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run() //nolint:errcheck

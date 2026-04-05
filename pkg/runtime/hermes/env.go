@@ -31,9 +31,14 @@ func (r *Runtime) GenerateEnvFile(params runtime.EnvParams) []byte {
 		}
 	}
 
-	// Set WEBHOOK_SECRET to the Slack signing secret so the Hermes webhook
-	// adapter can verify HMAC signatures from the Conga router.
+	// Set WEBHOOK_SECRET for Hermes webhook adapter HMAC verification.
+	// Uses the Slack signing secret if available (shared with the Conga router
+	// which signs forwarded events). Falls back to the Telegram webhook secret
+	// if no Slack is configured. Without this, the webhook adapter cannot
+	// verify that events came from the router.
 	if v := params.Secrets.Values["slack-signing-secret"]; v != "" {
+		appendEnv("WEBHOOK_SECRET", v)
+	} else if v := params.Secrets.Values["telegram-webhook-secret"]; v != "" {
 		appendEnv("WEBHOOK_SECRET", v)
 	}
 

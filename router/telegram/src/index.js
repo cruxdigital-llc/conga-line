@@ -101,7 +101,11 @@ async function sendTelegramReply(chatId, text) {
 // Forward a Telegram update to the agent and relay the response back
 async function forwardUpdate(target, update) {
   const messageText = update?.message?.text;
-  if (!messageText) return; // skip non-text messages for now
+  if (!messageText) {
+    const type = update?.message?.photo ? 'photo' : update?.message?.sticker ? 'sticker' : 'non-text';
+    console.log(`[telegram-router] Skipping ${type} message (text-only for now)`);
+    return;
+  }
 
   const chatId = extractChatId(update);
   const url = new URL(target);
@@ -201,7 +205,10 @@ async function startPolling() {
         }
       }
     } catch (err) {
-      if (err.name !== 'TimeoutError') {
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        // Long-poll timed out normally — brief pause before retrying
+        await new Promise(r => setTimeout(r, 1000));
+      } else {
         console.error(`[telegram-router] Polling error:`, err.message);
         await new Promise(r => setTimeout(r, 5000));
       }
