@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider/iptables"
 	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
@@ -258,6 +259,40 @@ func containerStats(ctx context.Context, name string) (*DockerStats, error) {
 		stats.PIDs = strings.TrimSpace(parts[2])
 	}
 	return stats, nil
+}
+
+// containerPorts returns the port mappings for a running container.
+// Parses `docker port` output like "8642/tcp -> 127.0.0.1:18791".
+func containerPorts(ctx context.Context, name string) []provider.PortMapping {
+	output, err := dockerRun(ctx, "port", name)
+	if err != nil {
+		return nil
+	}
+	var ports []provider.PortMapping
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if line == "" {
+			continue
+		}
+		// Format: "8642/tcp -> 127.0.0.1:18791"
+		parts := strings.SplitN(line, " -> ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		var containerPort int
+		fmt.Sscanf(parts[0], "%d/", &containerPort)
+
+		hostPart := parts[1]
+		// Extract port from "127.0.0.1:18791" or "0.0.0.0:18791"
+		if idx := strings.LastIndex(hostPart, ":"); idx >= 0 {
+			var hostPort int
+			fmt.Sscanf(hostPart[idx+1:], "%d", &hostPort)
+			ports = append(ports, provider.PortMapping{
+				ContainerPort: containerPort,
+				HostPort:      hostPort,
+			})
+		}
+	}
+	return ports
 }
 
 // containerExists checks if a container exists (running or stopped).

@@ -136,6 +136,16 @@ var statusCmd = &cobra.Command{
 		if status.Container.PIDs > 0 {
 			fmt.Printf("PIDs:       %d\n", status.Container.PIDs)
 		}
+		if len(status.Container.Ports) > 0 {
+			fmt.Println("Ports:")
+			for _, p := range status.Container.Ports {
+				label := p.Service
+				if label == "" {
+					label = fmt.Sprintf("port/%d", p.ContainerPort)
+				}
+				fmt.Printf("  %d → localhost:%d  (%s)\n", p.ContainerPort, p.HostPort, label)
+			}
+		}
 		return nil
 	},
 }

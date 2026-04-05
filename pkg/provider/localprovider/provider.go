@@ -448,6 +448,27 @@ func (p *LocalProvider) GetStatus(ctx context.Context, agentName string) (*provi
 			status.Container.CPUPercent = stats.CPUPercent
 			status.Container.MemoryUsage = stats.MemoryUsage
 		}
+
+		// Collect port mappings and label with service names
+		ports := containerPorts(ctx, cName)
+		if agentCfg, labelErr := p.GetAgent(ctx, agentName); labelErr == nil {
+			if rt, rtErr := p.runtimeForAgent(*agentCfg); rtErr == nil {
+				spec := rt.ContainerSpec(*agentCfg)
+				webhookPort := rt.WebhookPort()
+				for i := range ports {
+					switch ports[i].ContainerPort {
+					case spec.ContainerPort:
+						ports[i].Service = "gateway"
+					default:
+						if webhookPort != 0 && ports[i].ContainerPort == webhookPort {
+							ports[i].Service = "webhook"
+						}
+					}
+				}
+			}
+		}
+		status.Container.Ports = ports
+
 		logs, _ := containerLogs(ctx, cName, 50)
 		if agentCfg, agentErr := p.GetAgent(ctx, agentName); agentErr == nil {
 			if rt, rtErr := p.runtimeForAgent(*agentCfg); rtErr == nil {

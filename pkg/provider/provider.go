@@ -63,6 +63,14 @@ type ContainerStatus struct {
 	MemoryUsage  string        `json:"memory_usage,omitempty"`
 	CPUPercent   string        `json:"cpu_percent,omitempty"`
 	PIDs         int           `json:"pids"`
+	Ports        []PortMapping `json:"ports,omitempty"`
+}
+
+// PortMapping describes a container port mapped to the host.
+type PortMapping struct {
+	ContainerPort int    `json:"container_port"`
+	HostPort      int    `json:"host_port"`
+	Service       string `json:"service"` // "gateway", "webhook", etc.
 }
 
 // SecretEntry represents a stored secret.
