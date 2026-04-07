@@ -96,7 +96,6 @@ TimeoutStopSec=30
 [Install]
 WantedBy=multi-user.target
 UNIT
-fi
 
 # Ensure Docker network exists
 docker network create --driver bridge "conga-$AGENT_NAME" 2>/dev/null || true
