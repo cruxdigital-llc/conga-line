@@ -4,18 +4,20 @@
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-7B42BC.svg)](terraform/)
 
 <p align="center">
-  <img src="assets/congaline.png" alt="OpenClaw agents" width="300">
+  <img src="assets/congaline.png" alt="AI agents" width="300">
 </p>
 
-Self-host a fleet of isolated [OpenClaw](https://github.com/openclaw/openclaw) AI agents — each with its own container, network, secrets, and identity — managed through a single CLI. Deploy anywhere: your laptop, a $5 VPS, a Raspberry Pi, or a hardened AWS account.
+Self-host a fleet of isolated AI agents — each with its own container, network, secrets, and identity — managed through a single CLI. Choose your runtime ([OpenClaw](https://github.com/openclaw/openclaw) or [Hermes Agent](https://github.com/NousResearch/hermes-agent)), connect them to Slack or Telegram, and deploy anywhere: your laptop, a $5 VPS, a Raspberry Pi, or a hardened AWS account.
 
 > **CongaLine** *n.* A single-file procession of spiny lobsters that travel in physical contact during seasonal migration, reducing hydrodynamic drag and offering collective protection from predators.
 ## Key Features
 
+- **Pluggable agent runtimes** — choose OpenClaw or Hermes per agent. Same Conga infrastructure, your choice of agent. Adding a third runtime is one Go package.
+- **Multi-channel support** — Slack and Telegram out of the box, each with its own central router that fans events out to per-agent containers
 - **Promotion pipeline** — develop locally, validate on a remote host, enforce in production. Same config at every tier.
 - **Per-agent isolation** — separate Docker containers, networks, secrets, and config
 - **Portable deployment policy** — define egress rules, model routing, and security posture in a single `conga-policy.yaml`. Each provider enforces what it can and reports the gap.
-- **Slack optional** — use via web UI (gateway) only, or connect to Slack for team chat
+- **Channels optional** — use via web UI (gateway) only, or connect to Slack/Telegram for messaging
 - **Two agent types** — user agents (DM-only) for individuals, team agents (channel-based) for groups
 - **CLI for everything** — operators and end users manage agents, secrets, and infrastructure through the `conga` CLI
 - **Modular provider system** — pluggable deployment targets (AWS, local, remote, future: Kubernetes, ECS)
@@ -23,31 +25,60 @@ Self-host a fleet of isolated [OpenClaw](https://github.com/openclaw/openclaw) A
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                 CLI Commands                     │
-│  (setup, add-user, policy, channels, status, ...) │
-└────────────────────┬────────────────────────────┘
-                     │ Provider interface
-         ┌───────────┼───────────┐
-         ▼           ▼           ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ AWS Provider │ │Remote Provider│ │Local Provider│
-│              │ │              │ │              │
-│ EC2 + SSM    │ │ SSH + Docker │ │ Docker CLI   │
-│ Secrets Mgr  │ │ File secrets │ │ File secrets │
-│ Zero-ingress │ │ SSH tunnel   │ │ localhost    │
-└──────────────┘ └──────────────┘ └──────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    CLI Commands                      │
+│  (setup, add-user, policy, channels, status, ...)    │
+└────────────────────┬─┬──────────────────────────────┘
+                     │ │
+        Provider     │ │ Runtime    (orthogonal)
+        (where)      │ │ (what)
+                     ▼ ▼
+       ┌─────────────────────────────┐
+       │  Any Provider × Any Runtime  │
+       └─────────────────────────────┘
+       │                             │
+   ┌───┴───────┐                 ┌───┴────┐
+   ▼           ▼                 ▼        ▼
+┌──────┐  ┌────────┐  ┌────────────┐  ┌────────┐
+│ AWS  │  │ Remote │  │  OpenClaw  │  │ Hermes │
+│      │  │  SSH   │  │  Node.js   │  │ Python │
+│ Local│  │        │  │ JSON cfg   │  │YAML cfg│
+└──────┘  └────────┘  └────────────┘  └────────┘
 ```
+
+**Provider** decides *where* an agent runs (AWS, local Docker, remote SSH host).
+**Runtime** decides *what* agent runs (OpenClaw, Hermes, future runtimes).
+The two are orthogonal — any provider works with any runtime.
 
 ### Separation of Concerns
 
 | Layer | Managed by | What it does |
 |-------|-----------|-------------|
 | **Infrastructure** | Terraform (AWS), `conga admin setup` (remote/local) | VPC/EC2, remote host, or local Docker environment |
-| **Configuration** | CLI (`conga admin setup`) | Shared secrets, Docker image, deployment settings |
+| **Configuration** | CLI (`conga admin setup`) | Runtime selection, model, shared secrets, Docker image |
 | **Agents** | CLI (`conga admin add-user/add-team`) | Per-agent containers, configs, routing, secrets |
 | **Policies** | CLI (`conga policy`) | Egress rules, security posture, routing enforcement |
-| **Channels** | CLI (`conga channels`) | Messaging platform integrations, agent-channel bindings |
+| **Channels** | CLI (`conga channels`) | Slack/Telegram routers, agent-channel bindings |
+
+## Supported Runtimes
+
+| Runtime | Language | Config | Default Image | Notes |
+|---------|----------|--------|---------------|-------|
+| **OpenClaw** | Node.js | `openclaw.json` | `ghcr.io/openclaw/openclaw:2026.3.11` | Native Slack via webhook plugin |
+| **Hermes** | Python | `config.yaml` | `nousresearch/hermes-agent:latest` | OpenAI-compatible API on port 8642 |
+
+Adding a third runtime is a single Go package under `pkg/runtime/<name>/` implementing the 22-method `Runtime` interface. No changes to providers, CLI, or core logic.
+
+> **Note:** Multi-runtime support is fully wired on the **local provider** today. The remote and AWS providers currently default to OpenClaw — Runtime interface integration on those providers is on the roadmap.
+
+## Supported Channels
+
+| Channel | Setup | Router | Notes |
+|---------|-------|--------|-------|
+| **Slack** | `conga channels add slack` | Socket Mode → HTTP fan-out | Walks you through creating a Slack app with the right scopes |
+| **Telegram** | `conga channels add telegram` | Long-polling (or webhook in production) | Walks you through @BotFather setup |
+
+Each channel runs a dedicated router container (`conga-router`, `conga-telegram-router`) that holds the single platform connection and fans events out to per-agent containers based on routing rules. One crash on Slack doesn't affect Telegram.
 
 ## Bootstrap from Manifest
 
@@ -67,9 +98,12 @@ cp demo.yaml.example demo.yaml
 ```bash
 cat > demo.env << 'EOF'
 ANTHROPIC_API_KEY=sk-ant-...
+# Slack (optional)
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_SIGNING_SECRET=...
 SLACK_APP_TOKEN=xapp-...
+# Telegram (optional)
+TELEGRAM_BOT_TOKEN=123456789:ABC...
 EOF
 ```
 
@@ -114,10 +148,10 @@ go build -o /usr/local/bin/conga ./cmd/conga
 ### 2. Setup local environment
 
 ```bash
-conga admin setup --provider local
+conga admin setup --provider local --runtime hermes   # or --runtime openclaw
 ```
 
-This will prompt for the repo path (auto-detected), Docker image, and optionally Slack tokens. Skip Slack tokens for gateway-only mode (web UI).
+This will prompt for the repo path (auto-detected), the LLM model (for Hermes), and the Docker image. Defaults are sensible — you can press Enter through most prompts. Channels are configured separately via `conga channels add`.
 
 ### 3. Add an agent
 
@@ -125,21 +159,37 @@ This will prompt for the repo path (auto-detected), Docker image, and optionally
 conga admin add-user myagent
 ```
 
-No Slack member ID needed for gateway-only mode. With Slack:
+The agent inherits the runtime selected during setup. No channel binding needed for gateway-only mode.
+
+### 4. Set your API key
 
 ```bash
-conga admin add-user myagent U0123456789
-```
-
-### 4. Set your API key and start
-
-```bash
-conga secrets set anthropic-api-key --agent myagent
+conga secrets set anthropic-api-key --agent myagent --value sk-ant-...
 conga refresh --agent myagent
 conga status --agent myagent
 ```
 
-### 5. Connect
+`conga status` shows port mappings with service labels:
+```
+Ports:
+  8642 → localhost:18789  (gateway)
+  8644 → localhost:18790  (webhook)
+```
+
+### 5. (Optional) Connect a channel
+
+```bash
+conga channels add slack         # walks you through creating a Slack app
+# or
+conga channels add telegram      # walks you through creating a bot via @BotFather
+
+conga channels bind myagent slack:U0123456789      # for Slack DMs
+conga channels bind myagent telegram:123456789     # for Telegram DMs
+```
+
+Each `channels add` command displays a step-by-step guide explaining where to obtain the credentials.
+
+### 6. Connect to the web UI
 
 ```bash
 conga connect --agent myagent
@@ -147,13 +197,13 @@ conga connect --agent myagent
 
 Open the URL in your browser. Device pairing is auto-approved.
 
-### 6. Teardown (when done)
+### 7. Teardown (when done)
 
 ```bash
-conga admin teardown
+conga admin teardown --force
 ```
 
-Removes all containers, networks, and local config.
+Removes all containers, networks, routers, and local config.
 
 ## Quick Start (Remote — VPS, Bare Metal, Any SSH Host)
 
@@ -229,8 +279,8 @@ For teams and production — hardened, zero-ingress deployment.
 - **AWS account** with [AWS SSO (Identity Center)](https://aws.amazon.com/iam/identity-center/) configured
 - **AWS CLI v2** with **session-manager-plugin** installed
 - **Terraform** >= 1.5
-- **Slack app** configured for OpenClaw (required for AWS deployment)
-- **OpenClaw Docker image** — pinned to `v2026.3.11` (see [Docker Image](#docker-image))
+- **Slack app** configured for the agent runtime (required for AWS deployment)
+- **Agent Docker image** — see [Docker Images](#docker-images)
 
 ### 1. Bootstrap Terraform state
 
@@ -394,6 +444,7 @@ Flags: `--env <file>` (env file for secret expansion), `-f <file>` (manifest pat
 | Flag | Description |
 |------|-------------|
 | `--provider` | Deployment provider: `aws`, `local`, `remote` (default: `local`) |
+| `--runtime` | Agent runtime: `openclaw`, `hermes` (default: `openclaw`) |
 | `--data-dir` | Data directory for local provider (default: `~/.conga/`) |
 | `--profile` | AWS CLI profile (default: `AWS_PROFILE` env var) |
 | `--region` | AWS region (default: from config) |
@@ -429,18 +480,18 @@ For any SSH-accessible Linux host — VPS instances (Hetzner, DigitalOcean, Lino
 - **Container operations**: Docker CLI over SSH
 - **Network isolation**: Per-agent Docker bridge networks, localhost-only port binding on remote
 - **Gateway access**: SSH tunnel (no inbound ports exposed beyond SSH)
-- **Slack routing**: Router container auto-started when Slack tokens are configured
+- **Channel routers**: One container per platform (Slack, Telegram), auto-started when credentials are configured
 - **Docker auto-install**: Setup detects the OS and installs Docker if not present
 
 ### Local Provider
 
 All state lives under `~/.conga/`:
-- **Agent config**: `~/.conga/agents/{name}.json`
+- **Agent config**: `~/.conga/agents/{name}.json` (includes runtime selection)
 - **Secrets**: `~/.conga/secrets/agents/{name}/` (file per secret, mode 0400)
-- **Container data**: `~/.conga/data/{name}/` (mounted to `/home/node/.openclaw`)
+- **Container data**: `~/.conga/data/{name}/` (mounted to runtime-specific path: `/home/node/.openclaw` for OpenClaw, `/opt/data` for Hermes)
 - **Container operations**: Docker CLI (`docker run`, `docker logs`, etc.)
 - **Network isolation**: Per-agent Docker bridge networks, localhost-only port binding
-- **Slack routing**: Router container auto-started when Slack tokens are configured
+- **Channel routers**: One container per platform (`conga-router` for Slack, `conga-telegram-router` for Telegram), auto-started when channel credentials are configured
 
 ## Deployment Policy
 
@@ -542,17 +593,31 @@ cp .mcp.json.example .mcp.json
 
 4. Restart Claude Code — the conga tools will appear automatically.
 
-## Docker Image
+## Docker Images
 
-This project uses the official OpenClaw image pinned to **v2026.3.11** (`29dc654`), the last stable release before a [Slack socket mode regression](https://github.com/openclaw/openclaw/issues/45311) was introduced in v2026.3.12.
+CongaLine supports two agent runtimes — pick the image that matches the runtime you select during setup.
+
+### OpenClaw
+
+Pinned to **v2026.3.11** (`29dc654`), the last stable release before a [Slack socket mode regression](https://github.com/openclaw/openclaw/issues/45311) was introduced in v2026.3.12.
 
 ```
 ghcr.io/openclaw/openclaw:2026.3.11
 ```
 
-Set this as the image URL when prompted by `conga admin setup`.
-
 > NOTE: Once the bug introduced in v2026.3.12 is fixed, we'll update this to reference the latest stable release.
+
+### Hermes Agent
+
+The official Nous Research image:
+
+```
+nousresearch/hermes-agent:latest
+```
+
+This image is `linux/amd64` only. On Apple Silicon Macs, Conga automatically retries the pull with `--platform linux/amd64` so it runs via Docker Desktop's Rosetta translation.
+
+Each runtime's default image is used automatically when you select it via `--runtime`. Override at any time during `conga admin setup`.
 
 ## Development
 
@@ -583,9 +648,13 @@ go build -o conga ./cmd/conga
 │   │   ├── remoteprovider/     # Remote SSH implementation
 │   │   ├── localprovider/      # Local Docker implementation
 │   │   └── iptables/           # iptables rule generation for egress enforcement
+│   ├── runtime/                # Runtime interface & registry (pluggable agent runtimes)
+│   │   ├── openclaw/           # OpenClaw runtime (Node.js, JSON config)
+│   │   └── hermes/             # Hermes Agent runtime (Python, YAML config)
 │   ├── policy/                 # Portable policy schema, validation, enforcement
 │   ├── channels/               # Channel abstraction & platform integrations
-│   │   └── slack/              # Slack channel implementation
+│   │   ├── slack/              # Slack channel (Socket Mode router)
+│   │   └── telegram/           # Telegram channel (long-poll/webhook router)
 │   ├── common/                 # Shared logic (config gen, routing, validation)
 │   ├── aws/                    # AWS SDK wrappers
 │   ├── discovery/              # Agent & identity resolution (AWS)
@@ -596,7 +665,9 @@ go build -o conga ./cmd/conga
 ├── go.mod                      # module github.com/cruxdigital-llc/conga-line
 ├── terraform/                  # AWS infrastructure (VPC, EC2, IAM, etc.)
 ├── deploy/egress-proxy/        # Envoy proxy for domain-filtered egress
-├── router/                     # Slack event router (Node.js)
+├── router/                     # Channel event routers (Node.js)
+│   ├── slack/                  # Slack router (Socket Mode → HTTP fan-out)
+│   └── telegram/               # Telegram router (long-polling → HTTP fan-out)
 └── behavior/                   # Agent personality files (SOUL.md, etc.)
 ```
 
