@@ -134,6 +134,15 @@ func syncBehaviorToDeployed(dataDir string) {
 	})
 }
 
+// validateBehaviorFileName rejects names containing path separators or
+// traversal components. Prevents path traversal via rm, show, or add --as.
+func validateBehaviorFileName(name string) error {
+	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid behavior file name %q: must not contain path separators or '..'", name)
+	}
+	return nil
+}
+
 func agentBehaviorListRun(cmd *cobra.Command, args []string) error {
 	agentName := args[0]
 	dir := filepath.Join(agentBehaviorDir(), agentName)
@@ -187,6 +196,9 @@ func agentBehaviorAddRun(cmd *cobra.Command, args []string) error {
 		targetName = behaviorAsName
 	}
 
+	if err := validateBehaviorFileName(targetName); err != nil {
+		return err
+	}
 	if !strings.HasSuffix(strings.ToLower(targetName), ".md") {
 		return fmt.Errorf("behavior files must be .md (got %q)", targetName)
 	}
@@ -228,6 +240,10 @@ func agentBehaviorRmRun(cmd *cobra.Command, args []string) error {
 	agentName := args[0]
 	name := args[1]
 
+	if err := validateBehaviorFileName(name); err != nil {
+		return err
+	}
+
 	path := filepath.Join(agentBehaviorDir(), agentName, name)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return fmt.Errorf("behavior file %s/%s not found", agentName, name)
@@ -253,6 +269,10 @@ func agentBehaviorRmRun(cmd *cobra.Command, args []string) error {
 func agentBehaviorShowRun(cmd *cobra.Command, args []string) error {
 	agentName := args[0]
 	name := args[1]
+
+	if err := validateBehaviorFileName(name); err != nil {
+		return err
+	}
 
 	path := filepath.Join(agentBehaviorDir(), agentName, name)
 	content, err := os.ReadFile(path)

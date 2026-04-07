@@ -31,6 +31,7 @@ if [ -f "$AGENT_DIR/USER.md" ]; then
   cp "$AGENT_DIR/USER.md" "$WORKSPACE/USER.md"
 elif [ -f "$DEFAULT_DIR/$AGENT_TYPE/USER.md.tmpl" ]; then
   sed -e "s|{{.AgentName}}|$AGENT_NAME|g" \
+      -e "s|{{AGENT_NAME}}|$AGENT_NAME|g" \
       -e "s|{{.SlackChannel}}|$SLACK_ID|g" \
       -e "s|{{.SlackMemberID}}|$SLACK_ID|g" \
       "$DEFAULT_DIR/$AGENT_TYPE/USER.md.tmpl" > "$WORKSPACE/USER.md"

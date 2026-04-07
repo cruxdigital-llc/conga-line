@@ -1,6 +1,7 @@
 # Upload behavior files to S3 for deployment to agent workspaces.
-# These are composed (base + type-specific) and deployed to each agent's
-# workspace directory during bootstrap and on every container restart.
+# Files under default/ provide shared defaults; files under agents/<name>/
+# override the defaults for specific agents. Deployed during bootstrap
+# and on every container restart via deploy-behavior.sh.
 
 locals {
   behavior_files = {
