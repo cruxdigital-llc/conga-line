@@ -163,6 +163,15 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [ ] Phase 6: Remote & AWS provider integration
 - [ ] Phase 7: Testing & verification
 
+### 24. CLI Integration Tests — Planning
+*Lead: QA + Architect*
+*See `specs/2026-04-07_feature_cli-integration-tests/` for full trace*
+- [x] Requirements defined
+- [x] Plan defined
+- [ ] Spec
+- [ ] Implementation (helpers, 4 test functions, CI job)
+- [ ] Verification
+
 ### Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)
