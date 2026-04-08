@@ -1,5 +1,5 @@
 FROM alpine:3.21
-RUN apk add --no-cache openssh docker-cli bash && \
+RUN apk add --no-cache openssh docker-cli bash coreutils && \
     ssh-keygen -A && \
     mkdir -p /root/.ssh && chmod 700 /root/.ssh && \
     sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \

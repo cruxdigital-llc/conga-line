@@ -142,12 +142,13 @@ func TestRemoteTeamAgentWithBehavior(t *testing.T) {
 		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
 	})
 
+	// Create agent-specific behavior dir in the repo (remote provider reads from repo_path).
+	// Cleanup registered on the parent test so the dir persists across subtests.
+	agentBehaviorDir := filepath.Join(root, "behavior", "agents", agentName)
+	os.MkdirAll(agentBehaviorDir, 0755)
+	t.Cleanup(func() { os.RemoveAll(agentBehaviorDir) })
+
 	t.Run("create-agent-behavior", func(t *testing.T) {
-		// Write to the local behavior dir that the remote provider pushes via SFTP
-		agentBehaviorDir := filepath.Join(dataDir, "behavior", "agents", agentName)
-		if err := os.MkdirAll(agentBehaviorDir, 0755); err != nil {
-			t.Fatalf("failed to create agent behavior dir: %v", err)
-		}
 		if err := os.WriteFile(filepath.Join(agentBehaviorDir, "SOUL.md"),
 			[]byte("# Remote Test Soul\n\nDeployed via SFTP."), 0644); err != nil {
 			t.Fatalf("failed to write test SOUL.md: %v", err)
@@ -180,7 +181,7 @@ func TestRemoteTeamAgentWithBehavior(t *testing.T) {
 
 	t.Run("add-agents-md-override", func(t *testing.T) {
 		content := []byte("# Custom Remote AGENTS.md\n\nOverridden via SFTP.")
-		agentDir := filepath.Join(dataDir, "behavior", "agents", agentName)
+		agentDir := agentBehaviorDir
 		if err := os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), content, 0644); err != nil {
 			t.Fatalf("failed to write AGENTS.md: %v", err)
 		}
@@ -196,7 +197,7 @@ func TestRemoteTeamAgentWithBehavior(t *testing.T) {
 	})
 
 	t.Run("remove-agents-md-override", func(t *testing.T) {
-		os.Remove(filepath.Join(dataDir, "behavior", "agents", agentName, "AGENTS.md"))
+		os.Remove(filepath.Join(agentBehaviorDir, "AGENTS.md"))
 	})
 
 	t.Run("refresh-after-rm", func(t *testing.T) {
