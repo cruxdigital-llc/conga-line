@@ -22,7 +22,8 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 - **AWS provider**: `pkg/provider/awsprovider/provider.go` — wraps existing `aws`, `discovery`, `tunnel` packages
 - **Local provider**: `pkg/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
 - **Remote provider**: `pkg/provider/remoteprovider/` — SSH-based Docker operations on any remote host, file-based secrets (mode 0400), SSH tunneling for gateway access, config integrity monitoring
-- **Common package**: `pkg/common/` — shared logic used by all providers: config generation (`GenerateOpenClawConfig`), routing (`GenerateRoutingJSON`), behavior file composition, port allocation, validation
+- **Common package**: `pkg/common/` — shared logic used by all providers: config generation, routing (`GenerateRoutingJSON`), behavior file resolution (`resolveBehaviorFiles`), manifest tracking, port allocation, validation
+- **Behavior files**: `behavior/default/` has shared defaults (SOUL.md, AGENTS.md, USER.md.tmpl); `behavior/agents/<name>/` has per-agent overrides that fully replace the defaults. CLI: `conga agent {list,add,rm,show,diff}`. See `pkg/common/behavior.go` and `pkg/common/overlay.go`
 - **Provider selection**: `--provider aws|local|remote` flag, persisted in `~/.conga/config.json` (default: `local`)
 - **Slack is optional**: When no Slack tokens are provided, openclaw.json omits the `channels` section and the agent runs in gateway-only mode. The router is only started when Slack is configured.
 

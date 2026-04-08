@@ -32,7 +32,7 @@ Pluggable provider architecture decoupled from AWS.
 - Conga Line CLI (13 commands, Go + Cobra)
 - CLI hardening (silent failure fixes, validation, 28 unit tests)
 - Agent pause/unpause (all providers)
-- Behavior management (version-controlled SOUL.md, per-type composition)
+- Behavior management (version-controlled SOUL.md, per-agent overrides via `behavior/agents/<name>/`)
 - CLI JSON input/output for LLM-driven automation
 - Remote provider (full lifecycle on VPS/bare-metal/RPi, SSH tunneling)
 - SSH auto-reconnect for MCP server
