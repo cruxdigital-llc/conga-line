@@ -15,14 +15,14 @@ import (
 // TestRemoteAgentLifecycle exercises the full user-agent lifecycle through
 // the remote provider's SSH+SFTP code paths.
 func TestRemoteAgentLifecycle(t *testing.T) {
-	dataDir, agentName, sshPort, keyPath := setupRemoteTestEnv(t)
+	dataDir, agentName, sshPort, keyPath, remoteDir := setupRemoteTestEnv(t)
 	base := remoteBaseArgs(dataDir)
 	root := repoRoot(t)
 
 	t.Run("setup", func(t *testing.T) {
 		cfg := fmt.Sprintf(
-			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q}`,
-			sshPort, keyPath, testImage, root)
+			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q,"remote_dir":%q}`,
+			sshPort, keyPath, testImage, root, remoteDir)
 		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
 
 		if _, err := os.Stat(filepath.Join(dataDir, "remote-config.json")); err != nil {
@@ -129,7 +129,7 @@ func TestRemoteAgentLifecycle(t *testing.T) {
 // TestRemoteTeamAgentWithBehavior tests per-agent behavior file deployment
 // through the remote provider's SFTP code paths.
 func TestRemoteTeamAgentWithBehavior(t *testing.T) {
-	dataDir, agentName, sshPort, keyPath := setupRemoteTestEnv(t)
+	dataDir, agentName, sshPort, keyPath, remoteDir := setupRemoteTestEnv(t)
 	base := remoteBaseArgs(dataDir)
 	root := repoRoot(t)
 
@@ -137,8 +137,8 @@ func TestRemoteTeamAgentWithBehavior(t *testing.T) {
 
 	t.Run("setup", func(t *testing.T) {
 		cfg := fmt.Sprintf(
-			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q}`,
-			sshPort, keyPath, testImage, root)
+			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q,"remote_dir":%q}`,
+			sshPort, keyPath, testImage, root, remoteDir)
 		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
 	})
 
@@ -226,14 +226,14 @@ func TestRemoteTeamAgentWithBehavior(t *testing.T) {
 // TestRemoteEgressPolicyEnforcement verifies egress proxy behavior through
 // the remote provider.
 func TestRemoteEgressPolicyEnforcement(t *testing.T) {
-	dataDir, agentName, sshPort, keyPath := setupRemoteTestEnv(t)
+	dataDir, agentName, sshPort, keyPath, remoteDir := setupRemoteTestEnv(t)
 	base := remoteBaseArgs(dataDir)
 	root := repoRoot(t)
 
 	t.Run("setup", func(t *testing.T) {
 		cfg := fmt.Sprintf(
-			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q}`,
-			sshPort, keyPath, testImage, root)
+			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q,"remote_dir":%q}`,
+			sshPort, keyPath, testImage, root, remoteDir)
 		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
 	})
 

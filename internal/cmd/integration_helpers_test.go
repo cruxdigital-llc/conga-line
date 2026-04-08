@@ -351,29 +351,26 @@ func generateSSHKey(t *testing.T) string {
 // authorized_keys mounted. Also creates a shared host directory for /opt/conga/
 // so that Docker mounts from the remote provider work (Docker Desktop resolves
 // -v paths relative to the host, not the SSH container).
-func startSSHContainer(t *testing.T, keyDir string) int {
+func startSSHContainer(t *testing.T, keyDir, hash string) (port int, remoteDir string) {
 	t.Helper()
 	// Remove any stale container
 	exec.Command("docker", "rm", "-f", sshContainerName).Run()
 
-	// The remote provider uses /opt/conga/ as its base directory. Docker -v mounts
-	// are resolved by the Docker daemon against the HOST filesystem. We need
-	// /opt/conga/ to exist on the host AND be mounted into the SSH container so
-	// both sides see the same files.
-	//
-	// On Linux (CI): /opt/conga/ is directly accessible — mkdir works.
-	// On macOS: /opt/ may need elevated permissions. If it fails, skip the test.
-	if err := os.MkdirAll("/opt/conga", 0755); err != nil {
-		t.Skipf("cannot create /opt/conga/ on host (may need elevated permissions on macOS): %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll("/opt/conga") })
+	// The remote provider uses a configurable base directory on the "remote host".
+	// Docker -v mounts resolve against the HOST filesystem (not the SSH container).
+	// We use a temp dir under /tmp/ (shared by Docker Desktop) so both the SSH
+	// container and Docker daemon see the same files. The remote_dir is passed
+	// via --json to admin setup.
+	remoteDir = filepath.Join(os.TempDir(), fmt.Sprintf("conga-rtest-%s", hash))
+	os.MkdirAll(remoteDir, 0755)
+	t.Cleanup(func() { os.RemoveAll(remoteDir) })
 
 	pubKeyPath := filepath.Join(keyDir, "id_test.pub")
 	out, err := exec.Command("docker", "run", "-d",
 		"--name", sshContainerName,
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"-v", pubKeyPath+":/root/.ssh/authorized_keys:ro",
-		"-v", "/opt/conga:/opt/conga",
+		"-v", remoteDir+":"+remoteDir,
 		"-p", "0:22",
 		sshImageName,
 	).CombinedOutput()
@@ -389,11 +386,11 @@ func startSSHContainer(t *testing.T, keyDir string) int {
 	// Output format: "0.0.0.0:12345\n" or "[::]:12345\n"
 	portStr := strings.TrimSpace(string(portOut))
 	parts := strings.Split(portStr, ":")
-	port, err := strconv.Atoi(parts[len(parts)-1])
-	if err != nil {
-		t.Fatalf("failed to parse SSH port from %q: %v", portStr, err)
+	port, parseErr := strconv.Atoi(parts[len(parts)-1])
+	if parseErr != nil {
+		t.Fatalf("failed to parse SSH port from %q: %v", portStr, parseErr)
 	}
-	return port
+	return port, remoteDir
 }
 
 // waitForSSH polls until the SSH port is accepting connections, then adds
@@ -454,20 +451,21 @@ func stopSSHContainer() {
 
 // setupRemoteTestEnv creates a remote test environment: builds SSH image,
 // generates keys, starts SSH container, creates isolated data dir.
-func setupRemoteTestEnv(t *testing.T) (dataDir, agentName string, sshPort int, keyPath string) {
+func setupRemoteTestEnv(t *testing.T) (dataDir, agentName string, sshPort int, keyPath, remoteDir string) {
 	t.Helper()
 	requireDocker(t)
 
-	buildSSHImage(t)
-	keyDir := generateSSHKey(t)
-	sshPort = startSSHContainer(t, keyDir)
-	waitForSSH(t, sshPort)
-
-	dataDir = filepath.Join(t.TempDir(), ".conga")
 	hash := fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(t.Name())))
 	if len(hash) > 8 {
 		hash = hash[:8]
 	}
+
+	buildSSHImage(t)
+	keyDir := generateSSHKey(t)
+	sshPort, remoteDir = startSSHContainer(t, keyDir, hash)
+	waitForSSH(t, sshPort)
+
+	dataDir = filepath.Join(t.TempDir(), ".conga")
 	agentName = "rtest-" + hash
 	keyPath = filepath.Join(keyDir, "id_test")
 
@@ -481,7 +479,7 @@ func setupRemoteTestEnv(t *testing.T) (dataDir, agentName string, sshPort int, k
 		}
 	})
 
-	return dataDir, agentName, sshPort, keyPath
+	return dataDir, agentName, sshPort, keyPath, remoteDir
 }
 
 // remoteBaseArgs returns the common CLI args for remote provider commands.

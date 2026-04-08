@@ -27,6 +27,7 @@ type Config struct {
 	SSHPort    int    `json:"ssh_port,omitempty"`     // SSH port (default 22)
 	SSHUser    string `json:"ssh_user,omitempty"`     // SSH user (default "root")
 	SSHKeyPath string `json:"ssh_key_path,omitempty"` // Path to SSH private key
+	RemoteDir  string `json:"remote_dir,omitempty"`  // Remote base directory (default: /opt/conga)
 }
 
 // DefaultDataDir returns ~/.conga/.

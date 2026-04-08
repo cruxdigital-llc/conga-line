@@ -39,9 +39,14 @@ func NewRemoteProvider(cfg *provider.Config) (provider.Provider, error) {
 		dataDir = provider.DefaultDataDir()
 	}
 
+	remoteDir := cfg.RemoteDir
+	if remoteDir == "" {
+		remoteDir = "/opt/conga"
+	}
+
 	p := &RemoteProvider{
 		dataDir:   dataDir,
-		remoteDir: "/opt/conga",
+		remoteDir: remoteDir,
 	}
 
 	// Allow creation without SSH connection for setup (which prompts for details)
