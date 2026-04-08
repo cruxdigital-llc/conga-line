@@ -235,12 +235,12 @@ test.
 | 4 | verify-soul-in-container | `docker exec ... cat .../SOUL.md` | `assertFileContent(t, agent, ".../SOUL.md", "test soul content")` |
 | 5 | verify-agents-default | `docker exec ... cat .../AGENTS.md` | contains default AGENTS.md content (not agent-specific) |
 | 6 | verify-memory-pristine | `docker exec ... cat .../MEMORY.md` | exactly `# Memory\n` |
-| 7 | add-behavior-file | Write TEST.md to agent behavior dir + deployed dir | file exists in both |
+| 7 | add-agents-md-override | Write custom AGENTS.md to agent behavior dir | file exists |
 | 8 | refresh | `refresh --agent <agent>` | exit 0 |
-| 9 | verify-test-md-deployed | `docker exec ... cat .../TEST.md` | content matches |
-| 10 | remove-behavior-file | `os.Remove` TEST.md from both source and deployed | file gone |
+| 9 | verify-agents-md-overridden | `docker exec ... cat .../AGENTS.md` | custom content |
+| 10 | remove-agents-md-override | `os.Remove` AGENTS.md from agent dir | file gone |
 | 11 | refresh-after-rm | `refresh --agent <agent>` | exit 0 |
-| 12 | verify-test-md-deleted | `docker exec ... cat .../TEST.md` | file not found (manifest reconciliation) |
+| 12 | verify-agents-md-reverted | `docker exec ... cat .../AGENTS.md` | default content (reverted) |
 | 13 | verify-memory-still-pristine | `docker exec ... cat .../MEMORY.md` | still `# Memory\n` |
 | 14 | teardown | `admin teardown --force` | exit 0 |
 
