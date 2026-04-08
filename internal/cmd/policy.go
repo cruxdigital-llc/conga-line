@@ -52,11 +52,14 @@ client but not logged by the proxy).`,
 }
 
 func defaultPolicyPath() (string, error) {
-	cfg, err := provpkg.LoadConfig(provpkg.DefaultConfigPath())
-	if err != nil {
-		return "", fmt.Errorf("failed to load config: %w", err)
+	dataDir := flagDataDir
+	if dataDir == "" {
+		cfg, err := provpkg.LoadConfig(provpkg.ConfigPathForDataDir(flagDataDir))
+		if err != nil {
+			return "", fmt.Errorf("failed to load config: %w", err)
+		}
+		dataDir = cfg.DataDir
 	}
-	dataDir := cfg.DataDir
 	if dataDir == "" {
 		dataDir = provpkg.DefaultDataDir()
 	}

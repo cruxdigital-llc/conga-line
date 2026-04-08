@@ -297,7 +297,7 @@ egress:
 	t.Run("validate-fails", func(t *testing.T) {
 		_, stderr, err := runCLI(t, append(base, "policy", "validate")...)
 		if err == nil {
-			t.Error("policy validate should fail for missing apiVersion")
+			t.Fatal("policy validate should fail for missing apiVersion")
 		}
 		combined := stderr + err.Error()
 		if !strings.Contains(strings.ToLower(combined), "apiversion") {

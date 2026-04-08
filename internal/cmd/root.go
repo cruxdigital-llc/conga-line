@@ -68,8 +68,9 @@ var rootCmd = &cobra.Command{
 			return nil
 		}
 
-		// Load persisted config
-		cfg, _ := provider.LoadConfig(provider.DefaultConfigPath())
+		// Load persisted config — respect --data-dir for config location
+		configPath := provider.ConfigPathForDataDir(flagDataDir)
+		cfg, _ := provider.LoadConfig(configPath)
 
 		// Override with flags
 		if flagProvider != "" {

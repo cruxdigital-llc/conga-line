@@ -1240,7 +1240,7 @@ func (p *LocalProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) er
 		Provider: provider.ProviderLocal,
 		DataDir:  p.dataDir,
 	}
-	if err := provider.SaveConfig(provider.DefaultConfigPath(), provCfg); err != nil {
+	if err := provider.SaveConfig(provider.ConfigPathForDataDir(p.dataDir), provCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

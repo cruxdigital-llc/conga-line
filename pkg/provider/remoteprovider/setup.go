@@ -364,7 +364,7 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 		SSHUser:    p.ssh.user,
 		SSHKeyPath: sshKeyPath,
 	}
-	if err := provider.SaveConfig(provider.DefaultConfigPath(), provCfg); err != nil {
+	if err := provider.SaveConfig(provider.ConfigPathForDataDir(p.dataDir), provCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

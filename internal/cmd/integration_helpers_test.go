@@ -348,17 +348,32 @@ func generateSSHKey(t *testing.T) string {
 }
 
 // startSSHContainer starts the test SSH container with Docker socket and
-// authorized_keys mounted. Returns the host port mapped to container port 22.
+// authorized_keys mounted. Also creates a shared host directory for /opt/conga/
+// so that Docker mounts from the remote provider work (Docker Desktop resolves
+// -v paths relative to the host, not the SSH container).
 func startSSHContainer(t *testing.T, keyDir string) int {
 	t.Helper()
 	// Remove any stale container
 	exec.Command("docker", "rm", "-f", sshContainerName).Run()
+
+	// The remote provider uses /opt/conga/ as its base directory. Docker -v mounts
+	// are resolved by the Docker daemon against the HOST filesystem. We need
+	// /opt/conga/ to exist on the host AND be mounted into the SSH container so
+	// both sides see the same files.
+	//
+	// On Linux (CI): /opt/conga/ is directly accessible — mkdir works.
+	// On macOS: /opt/ may need elevated permissions. If it fails, skip the test.
+	if err := os.MkdirAll("/opt/conga", 0755); err != nil {
+		t.Skipf("cannot create /opt/conga/ on host (may need elevated permissions on macOS): %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll("/opt/conga") })
 
 	pubKeyPath := filepath.Join(keyDir, "id_test.pub")
 	out, err := exec.Command("docker", "run", "-d",
 		"--name", sshContainerName,
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"-v", pubKeyPath+":/root/.ssh/authorized_keys:ro",
+		"-v", "/opt/conga:/opt/conga",
 		"-p", "0:22",
 		sshImageName,
 	).CombinedOutput()
@@ -456,19 +471,7 @@ func setupRemoteTestEnv(t *testing.T) (dataDir, agentName string, sshPort int, k
 	agentName = "rtest-" + hash
 	keyPath = filepath.Join(keyDir, "id_test")
 
-	// Back up and restore global config — the remote provider writes SSH
-	// config to ~/.conga/config.json (not the --data-dir location).
-	globalCfgPath := filepath.Join(os.Getenv("HOME"), ".conga", "config.json")
-	globalCfgBackup, _ := os.ReadFile(globalCfgPath)
-
-	// Cleanup in LIFO order: teardown first (needs SSH), then containers, then SSH, then restore config.
-	t.Cleanup(func() {
-		if len(globalCfgBackup) > 0 {
-			os.WriteFile(globalCfgPath, globalCfgBackup, 0600)
-		} else {
-			os.Remove(globalCfgPath)
-		}
-	})
+	// Cleanup in LIFO order: teardown first (needs SSH), then containers, then SSH.
 	t.Cleanup(func() { stopSSHContainer() })
 	t.Cleanup(func() { cleanupTestContainers(agentName) })
 	t.Cleanup(func() {

@@ -43,6 +43,15 @@ func DefaultConfigPath() string {
 	return filepath.Join(DefaultDataDir(), "config.json")
 }
 
+// ConfigPathForDataDir returns <dataDir>/config.json if dataDir is set,
+// otherwise falls back to DefaultConfigPath.
+func ConfigPathForDataDir(dataDir string) string {
+	if dataDir != "" {
+		return filepath.Join(dataDir, "config.json")
+	}
+	return DefaultConfigPath()
+}
+
 // LoadConfig reads provider config from disk. Returns defaults if file doesn't exist.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
