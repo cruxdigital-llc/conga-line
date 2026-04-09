@@ -21,8 +21,13 @@ func (p *RemoteProvider) Setup(ctx context.Context, cfg *provider.SetupConfig) e
 
 	// Track SSH key path for config persistence — load from existing config if available
 	var sshKeyPath string
-	if existingCfg, err := provider.LoadConfig(provider.DefaultConfigPath()); err == nil {
+	if existingCfg, err := provider.LoadConfig(provider.ConfigPathForDataDir(p.dataDir)); err == nil {
 		sshKeyPath = existingCfg.SSHKeyPath
+	}
+
+	// Override remote base directory if provided
+	if cfg != nil && cfg.RemoteDir != "" {
+		p.remoteDir = cfg.RemoteDir
 	}
 	// Config override takes precedence
 	if cfg != nil && cfg.SSHKeyPath != "" {
@@ -359,12 +364,13 @@ chmod 700 %s/secrets %s/secrets/shared %s/secrets/agents %s/config
 	provCfg := &provider.Config{
 		Provider:   provider.ProviderRemote,
 		DataDir:    p.dataDir,
+		RemoteDir:  p.remoteDir,
 		SSHHost:    p.ssh.host,
 		SSHPort:    p.ssh.port,
 		SSHUser:    p.ssh.user,
 		SSHKeyPath: sshKeyPath,
 	}
-	if err := provider.SaveConfig(provider.DefaultConfigPath(), provCfg); err != nil {
+	if err := provider.SaveConfig(provider.ConfigPathForDataDir(p.dataDir), provCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

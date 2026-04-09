@@ -445,6 +445,9 @@ func isConnectionError(err error) bool {
 
 // session creates a new SSH session, reconnecting once if the connection is stale.
 func (c *SSHClient) session() (*ssh.Session, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("SSH client is not connected")
+	}
 	session, err := c.client.NewSession()
 	if err == nil {
 		return session, nil

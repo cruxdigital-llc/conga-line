@@ -172,6 +172,15 @@ See [TECH_STACK.md](TECH_STACK.md) for full details.
 - [x] Implementation: 4 test functions (48 subtests), test helpers, CI job
 - [x] Verification: all checks pass, persona + standards gate approved
 
+### 25. Remote Provider Integration Tests — Planning
+*Lead: QA + Architect*
+*See `specs/2026-04-07_feature_remote-provider-integration-tests/` for full trace*
+- [x] Requirements defined
+- [x] Plan defined
+- [ ] Spec
+- [ ] Implementation
+- [ ] Verification
+
 ### Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)

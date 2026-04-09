@@ -12,40 +12,30 @@ import (
 	"time"
 )
 
-// skipIfPriorFailed returns true (and skips) when a prior subtest has
-// already failed, preventing noisy cascading failures in sequential tests.
-func skipIfPriorFailed(t *testing.T, parent *testing.T) {
-	t.Helper()
-	if parent.Failed() {
-		t.Skip("skipped due to prior subtest failure")
-	}
-}
-
-// TestAgentLifecycle exercises the full user-agent lifecycle: setup, provision,
-// secrets, refresh, logs, pause/unpause, removal, teardown. Each subtest
-// depends on the previous — if one fails, later ones are skipped.
-func TestAgentLifecycle(t *testing.T) {
-	dataDir, agentName := setupTestEnv(t)
-	base := baseArgs(dataDir)
-	parent := t
+// TestRemoteAgentLifecycle exercises the full user-agent lifecycle through
+// the remote provider's SSH+SFTP code paths.
+func TestRemoteAgentLifecycle(t *testing.T) {
+	dataDir, agentName, sshPort, keyPath, remoteDir := setupRemoteTestEnv(t)
+	base := remoteBaseArgs(dataDir)
+	root := repoRoot(t)
 
 	t.Run("setup", func(t *testing.T) {
-		cfg := fmt.Sprintf(`{"image":%q}`, testImage)
+		cfg := fmt.Sprintf(
+			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q,"remote_dir":%q}`,
+			sshPort, keyPath, testImage, root, remoteDir)
 		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
 
-		if _, err := os.Stat(filepath.Join(dataDir, "local-config.json")); err != nil {
-			t.Fatalf("local-config.json not created: %v", err)
+		if _, err := os.Stat(filepath.Join(dataDir, "remote-config.json")); err != nil {
+			t.Fatalf("remote-config.json not created: %v", err)
 		}
 	})
 
 	t.Run("add-user", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "admin", "add-user", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("list-agents", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		out := mustRunCLI(t, append(base, "admin", "list-agents", "--output", "json")...)
 		if !strings.Contains(out, agentName) {
 			t.Errorf("list-agents output does not contain %q:\n%s", agentName, out)
@@ -53,7 +43,6 @@ func TestAgentLifecycle(t *testing.T) {
 	})
 
 	t.Run("status", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		out := mustRunCLI(t, append(base, "status", "--agent", agentName, "--output", "json")...)
 		if !strings.Contains(out, `"running"`) {
 			t.Errorf("status does not show running:\n%s", out)
@@ -61,12 +50,10 @@ func TestAgentLifecycle(t *testing.T) {
 	})
 
 	t.Run("secrets-set", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "secrets", "set", "test-key", "--value", "dummy123", "--agent", agentName)...)
 	})
 
 	t.Run("secrets-list", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		out := mustRunCLI(t, append(base, "secrets", "list", "--agent", agentName, "--output", "json")...)
 		if !strings.Contains(out, "test-key") {
 			t.Errorf("secrets list does not contain test-key:\n%s", out)
@@ -74,23 +61,19 @@ func TestAgentLifecycle(t *testing.T) {
 	})
 
 	t.Run("secrets-not-in-env-before-refresh", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		assertNoEnvVar(t, agentName, "TEST_KEY")
 	})
 
 	t.Run("refresh", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("secrets-in-env-after-refresh", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		assertEnvVar(t, agentName, "TEST_KEY", "dummy123")
 	})
 
 	t.Run("secrets-delete", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "secrets", "delete", "test-key", "--agent", agentName, "--force")...)
 		out := mustRunCLI(t, append(base, "secrets", "list", "--agent", agentName, "--output", "json")...)
 		if strings.Contains(out, "test-key") {
@@ -99,21 +82,15 @@ func TestAgentLifecycle(t *testing.T) {
 	})
 
 	t.Run("refresh-after-delete", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("secrets-gone-from-env", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		assertNoEnvVar(t, agentName, "TEST_KEY")
 	})
 
 	t.Run("logs", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// Use docker logs directly — the CLI pipes through fmt.Print which
-		// our stdout capture handles, but the container may need a moment
-		// to produce output after restart.
 		cName := "conga-" + agentName
 		var out string
 		for i := 0; i < 5; i++ {
@@ -130,19 +107,16 @@ func TestAgentLifecycle(t *testing.T) {
 	})
 
 	t.Run("pause", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "admin", "pause", agentName)...)
 		assertContainerStopped(t, agentName)
 	})
 
 	t.Run("unpause", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "admin", "unpause", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("remove-agent", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "admin", "remove-agent", agentName, "--force", "--delete-secrets")...)
 		assertContainerNotExists(t, agentName)
 	})
@@ -152,52 +126,49 @@ func TestAgentLifecycle(t *testing.T) {
 	})
 }
 
-// TestTeamAgentWithBehavior tests per-agent behavior file deployment and
-// manifest reconciliation using a team agent with custom behavior files.
-func TestTeamAgentWithBehavior(t *testing.T) {
-	dataDir, agentName := setupTestEnv(t)
-	base := baseArgs(dataDir)
+// TestRemoteTeamAgentWithBehavior tests per-agent behavior file deployment
+// through the remote provider's SFTP code paths.
+func TestRemoteTeamAgentWithBehavior(t *testing.T) {
+	dataDir, agentName, sshPort, keyPath, remoteDir := setupRemoteTestEnv(t)
+	base := remoteBaseArgs(dataDir)
 	root := repoRoot(t)
-	parent := t
 
 	workspacePath := "/home/node/.openclaw/data/workspace"
 
 	t.Run("setup", func(t *testing.T) {
-		cfg := fmt.Sprintf(`{"image":%q,"repo_path":%q}`, testImage, root)
+		cfg := fmt.Sprintf(
+			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q,"remote_dir":%q}`,
+			sshPort, keyPath, testImage, root, remoteDir)
 		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
 	})
 
+	// Create agent-specific behavior dir in the repo (remote provider reads from repo_path).
+	// Cleanup registered on the parent test so the dir persists across subtests.
+	agentBehaviorDir := filepath.Join(root, "behavior", "agents", agentName)
+	os.MkdirAll(agentBehaviorDir, 0755)
+	t.Cleanup(func() { os.RemoveAll(agentBehaviorDir) })
+
 	t.Run("create-agent-behavior", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		agentBehaviorDir := filepath.Join(dataDir, "behavior", "agents", agentName)
-		if err := os.MkdirAll(agentBehaviorDir, 0755); err != nil {
-			t.Fatalf("failed to create agent behavior dir: %v", err)
-		}
 		if err := os.WriteFile(filepath.Join(agentBehaviorDir, "SOUL.md"),
-			[]byte("# Test Soul\n\nThis is a test-specific SOUL.md."), 0644); err != nil {
+			[]byte("# Remote Test Soul\n\nDeployed via SFTP."), 0644); err != nil {
 			t.Fatalf("failed to write test SOUL.md: %v", err)
 		}
 	})
 
 	t.Run("add-team", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "admin", "add-team", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("verify-soul-in-container", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		assertFileContent(t, agentName, workspacePath+"/SOUL.md", "Test Soul")
+		assertFileContent(t, agentName, workspacePath+"/SOUL.md", "Remote Test Soul")
 	})
 
 	t.Run("verify-agents-default", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// AGENTS.md should come from default (not agent-specific)
 		assertFileContent(t, agentName, workspacePath+"/AGENTS.md", "Your Workspace")
 	})
 
 	t.Run("verify-memory-pristine", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		cName := "conga-" + agentName
 		out, err := dockerExec(t, cName, "cat", workspacePath+"/MEMORY.md")
 		if err != nil {
@@ -209,44 +180,35 @@ func TestTeamAgentWithBehavior(t *testing.T) {
 	})
 
 	t.Run("add-agents-md-override", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// Write an agent-specific AGENTS.md (overriding the default)
-		content := []byte("# Custom AGENTS.md\n\nAdded by integration test.")
-		agentDir := filepath.Join(dataDir, "behavior", "agents", agentName)
+		content := []byte("# Custom Remote AGENTS.md\n\nOverridden via SFTP.")
+		agentDir := agentBehaviorDir
 		if err := os.WriteFile(filepath.Join(agentDir, "AGENTS.md"), content, 0644); err != nil {
 			t.Fatalf("failed to write AGENTS.md: %v", err)
 		}
 	})
 
 	t.Run("refresh-for-behavior", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("verify-agents-md-overridden", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		assertFileContent(t, agentName, workspacePath+"/AGENTS.md", "Custom AGENTS.md")
+		assertFileContent(t, agentName, workspacePath+"/AGENTS.md", "Custom Remote AGENTS.md")
 	})
 
 	t.Run("remove-agents-md-override", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		os.Remove(filepath.Join(dataDir, "behavior", "agents", agentName, "AGENTS.md"))
+		os.Remove(filepath.Join(agentBehaviorDir, "AGENTS.md"))
 	})
 
 	t.Run("refresh-after-rm", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
 	})
 
 	t.Run("verify-agents-md-reverted", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// Should revert to the default AGENTS.md
 		assertFileContent(t, agentName, workspacePath+"/AGENTS.md", "Your Workspace")
 	})
 
 	t.Run("verify-memory-still-pristine", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		cName := "conga-" + agentName
 		out, err := dockerExec(t, cName, "cat", workspacePath+"/MEMORY.md")
 		if err != nil {
@@ -262,75 +224,26 @@ func TestTeamAgentWithBehavior(t *testing.T) {
 	})
 }
 
-// TestPolicyValidate tests the policy validation command without Docker containers.
-func TestPolicyValidate(t *testing.T) {
-	dataDir := setupPolicyTestEnv(t)
-	base := baseArgs(dataDir)
+// TestRemoteEgressPolicyEnforcement verifies egress proxy behavior through
+// the remote provider.
+func TestRemoteEgressPolicyEnforcement(t *testing.T) {
+	dataDir, agentName, sshPort, keyPath, remoteDir := setupRemoteTestEnv(t)
+	base := remoteBaseArgs(dataDir)
+	root := repoRoot(t)
 
 	t.Run("setup", func(t *testing.T) {
-		cfg := fmt.Sprintf(`{"image":%q}`, testImage)
-		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
-	})
-
-	t.Run("write-valid-policy", func(t *testing.T) {
-		writePolicyFile(t, dataDir, `apiVersion: conga.dev/v1alpha1
-egress:
-  mode: enforce
-  allowed_domains:
-    - api.anthropic.com
-`)
-	})
-
-	t.Run("validate-passes", func(t *testing.T) {
-		_, _, err := runCLI(t, append(base, "policy", "validate")...)
-		if err != nil {
-			t.Errorf("policy validate failed for valid policy: %v", err)
-		}
-	})
-
-	t.Run("write-invalid-policy", func(t *testing.T) {
-		writePolicyFile(t, dataDir, `egress:
-  mode: enforce
-`)
-	})
-
-	t.Run("validate-fails", func(t *testing.T) {
-		_, stderr, err := runCLI(t, append(base, "policy", "validate")...)
-		if err == nil {
-			t.Fatal("policy validate should fail for missing apiVersion")
-		}
-		combined := stderr + err.Error()
-		if !strings.Contains(strings.ToLower(combined), "apiversion") {
-			t.Errorf("error should mention apiVersion, got: %s", combined)
-		}
-	})
-
-	t.Run("teardown", func(t *testing.T) {
-		mustRunCLI(t, append(base, "admin", "teardown", "--force")...)
-	})
-}
-
-// TestEgressPolicyEnforcement verifies that the egress proxy actually controls
-// outbound traffic from inside the container across all three policy modes.
-func TestEgressPolicyEnforcement(t *testing.T) {
-	dataDir, agentName := setupTestEnv(t)
-	base := baseArgs(dataDir)
-	parent := t
-
-	t.Run("setup", func(t *testing.T) {
-		cfg := fmt.Sprintf(`{"image":%q}`, testImage)
+		cfg := fmt.Sprintf(
+			`{"ssh_host":"127.0.0.1","ssh_port":%d,"ssh_user":"root","ssh_key_path":%q,"image":%q,"repo_path":%q,"remote_dir":%q}`,
+			sshPort, keyPath, testImage, root, remoteDir)
 		mustRunCLI(t, append(base, "admin", "setup", "--json", cfg)...)
 	})
 
 	t.Run("add-user", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "admin", "add-user", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("no-policy-blocks", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// Default: no policy file → egress proxy deny-all
 		_, err := makeHTTPRequest(t, agentName, "https://api.anthropic.com")
 		if err == nil {
 			t.Error("expected HTTP request to be blocked with no policy (deny-all)")
@@ -338,7 +251,6 @@ func TestEgressPolicyEnforcement(t *testing.T) {
 	})
 
 	t.Run("write-validate-policy", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		writePolicyFile(t, dataDir, `apiVersion: conga.dev/v1alpha1
 egress:
   mode: validate
@@ -348,14 +260,11 @@ egress:
 	})
 
 	t.Run("refresh-validate", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("validate-allows", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// Validate mode: proxy logs but allows traffic
 		code, err := makeHTTPRequest(t, agentName, "https://api.anthropic.com")
 		if err != nil {
 			t.Errorf("expected request to succeed in validate mode, got error: %v", err)
@@ -365,7 +274,6 @@ egress:
 	})
 
 	t.Run("write-enforce-policy", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		writePolicyFile(t, dataDir, `apiVersion: conga.dev/v1alpha1
 egress:
   mode: enforce
@@ -375,14 +283,11 @@ egress:
 	})
 
 	t.Run("refresh-enforce", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
 		assertContainerRunning(t, agentName)
 	})
 
 	t.Run("enforce-allowed", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// Enforce mode: allowed domain should get through
 		code, err := makeHTTPRequest(t, agentName, "https://api.anthropic.com")
 		if err != nil {
 			t.Errorf("expected request to api.anthropic.com to succeed in enforce mode, got error: %v", err)
@@ -392,8 +297,6 @@ egress:
 	})
 
 	t.Run("enforce-blocked", func(t *testing.T) {
-		skipIfPriorFailed(t, parent)
-		// Enforce mode: non-allowed domain should be blocked
 		_, err := makeHTTPRequest(t, agentName, "https://example.com")
 		if err == nil {
 			t.Error("expected request to example.com to be blocked in enforce mode")

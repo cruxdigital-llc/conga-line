@@ -27,6 +27,7 @@ type Config struct {
 	SSHPort    int    `json:"ssh_port,omitempty"`     // SSH port (default 22)
 	SSHUser    string `json:"ssh_user,omitempty"`     // SSH user (default "root")
 	SSHKeyPath string `json:"ssh_key_path,omitempty"` // Path to SSH private key
+	RemoteDir  string `json:"remote_dir,omitempty"`   // Remote base directory (default: /opt/conga)
 }
 
 // DefaultDataDir returns ~/.conga/.
@@ -41,6 +42,15 @@ func DefaultDataDir() string {
 // DefaultConfigPath returns ~/.conga/config.json.
 func DefaultConfigPath() string {
 	return filepath.Join(DefaultDataDir(), "config.json")
+}
+
+// ConfigPathForDataDir returns <dataDir>/config.json if dataDir is set,
+// otherwise falls back to DefaultConfigPath.
+func ConfigPathForDataDir(dataDir string) string {
+	if dataDir != "" {
+		return filepath.Join(dataDir, "config.json")
+	}
+	return DefaultConfigPath()
 }
 
 // LoadConfig reads provider config from disk. Returns defaults if file doesn't exist.

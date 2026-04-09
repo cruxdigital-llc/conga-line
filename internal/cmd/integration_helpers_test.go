@@ -7,11 +7,13 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -305,4 +307,182 @@ func writePolicyFile(t *testing.T, dataDir, content string) {
 	if err := os.WriteFile(filepath.Join(dataDir, "conga-policy.yaml"), []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write policy file: %v", err)
 	}
+}
+
+// --- Remote provider test helpers ---
+
+const (
+	sshContainerName = "conga-test-sshd"
+	sshImageName     = "conga-test-sshd"
+)
+
+var buildSSHImageOnce sync.Once
+
+// buildSSHImage builds the test SSH container image (once per process).
+func buildSSHImage(t *testing.T) {
+	t.Helper()
+	buildSSHImageOnce.Do(func() {
+		dockerfilePath := filepath.Join("internal", "cmd", "testdata", "sshd")
+		// Try relative to repo root if cwd is different
+		if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+			dockerfilePath = filepath.Join(repoRoot(t), "internal", "cmd", "testdata", "sshd")
+		}
+		out, err := exec.Command("docker", "build", "-t", sshImageName, dockerfilePath).CombinedOutput()
+		if err != nil {
+			t.Fatalf("failed to build SSH image: %v\n%s", err, out)
+		}
+	})
+}
+
+// generateSSHKey creates an ephemeral ed25519 key pair in a temp directory.
+// Returns the directory containing id_test (private) and id_test.pub (public).
+func generateSSHKey(t *testing.T) string {
+	t.Helper()
+	keyDir := t.TempDir()
+	keyPath := filepath.Join(keyDir, "id_test")
+	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "").CombinedOutput()
+	if err != nil {
+		t.Fatalf("ssh-keygen failed: %v\n%s", err, out)
+	}
+	return keyDir
+}
+
+// startSSHContainer starts the test SSH container with Docker socket and
+// authorized_keys mounted. Also creates a shared host directory for /opt/conga/
+// so that Docker mounts from the remote provider work (Docker Desktop resolves
+// -v paths relative to the host, not the SSH container).
+func startSSHContainer(t *testing.T, keyDir, hash string) (port int, remoteDir string) {
+	t.Helper()
+	// Remove any stale container
+	exec.Command("docker", "rm", "-f", sshContainerName).Run()
+
+	// The remote provider uses a configurable base directory on the "remote host".
+	// Docker -v mounts resolve against the HOST filesystem (not the SSH container).
+	// We use a temp dir under /tmp/ (shared by Docker Desktop) so both the SSH
+	// container and Docker daemon see the same files. The remote_dir is passed
+	// via --json to admin setup.
+	remoteDir = filepath.Join(os.TempDir(), fmt.Sprintf("conga-rtest-%s", hash))
+	os.MkdirAll(remoteDir, 0755)
+	t.Cleanup(func() { os.RemoveAll(remoteDir) })
+
+	pubKeyPath := filepath.Join(keyDir, "id_test.pub")
+	out, err := exec.Command("docker", "run", "-d",
+		"--name", sshContainerName,
+		"-v", "/var/run/docker.sock:/var/run/docker.sock",
+		"-v", pubKeyPath+":/root/.ssh/authorized_keys:ro",
+		"-v", remoteDir+":"+remoteDir,
+		"-p", "0:22",
+		sshImageName,
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to start SSH container: %v\n%s", err, out)
+	}
+
+	// Extract the assigned host port
+	portOut, err := exec.Command("docker", "port", sshContainerName, "22").Output()
+	if err != nil {
+		t.Fatalf("failed to get SSH container port: %v", err)
+	}
+	// Output format: "0.0.0.0:12345\n" or "[::]:12345\n"
+	portStr := strings.TrimSpace(string(portOut))
+	parts := strings.Split(portStr, ":")
+	port, parseErr := strconv.Atoi(parts[len(parts)-1])
+	if parseErr != nil {
+		t.Fatalf("failed to parse SSH port from %q: %v", portStr, parseErr)
+	}
+	return port, remoteDir
+}
+
+// waitForSSH polls until the SSH port is accepting connections, then adds
+// the host key to ~/.ssh/known_hosts so the SSH client doesn't reject it.
+func waitForSSH(t *testing.T, port int) {
+	t.Helper()
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	for i := 0; i < 20; i++ {
+		conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
+		if err == nil {
+			conn.Close()
+			// Scan and add host key to known_hosts
+			addSSHHostKey(t, port)
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("SSH container not reachable at %s after 10s", addr)
+}
+
+// addSSHHostKey scans the SSH container's host key and adds it to known_hosts.
+func addSSHHostKey(t *testing.T, port int) {
+	t.Helper()
+	out, err := exec.Command("ssh-keyscan", "-p", strconv.Itoa(port), "127.0.0.1").Output()
+	if err != nil || len(out) == 0 {
+		t.Logf("WARNING: ssh-keyscan failed (host key verification may fail): %v", err)
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
+
+	// Read existing content to check for duplicates and to restore later
+	existing, _ := os.ReadFile(knownHostsPath)
+
+	// Append the new key
+	f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Logf("WARNING: cannot write known_hosts: %v", err)
+		return
+	}
+	f.Write(out)
+	f.Close()
+
+	// Restore original known_hosts on cleanup
+	t.Cleanup(func() {
+		os.WriteFile(knownHostsPath, existing, 0600)
+	})
+}
+
+// stopSSHContainer removes the test SSH container.
+func stopSSHContainer() {
+	exec.Command("docker", "rm", "-f", sshContainerName).Run()
+}
+
+// setupRemoteTestEnv creates a remote test environment: builds SSH image,
+// generates keys, starts SSH container, creates isolated data dir.
+func setupRemoteTestEnv(t *testing.T) (dataDir, agentName string, sshPort int, keyPath, remoteDir string) {
+	t.Helper()
+	requireDocker(t)
+
+	hash := fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(t.Name())))
+	if len(hash) > 8 {
+		hash = hash[:8]
+	}
+
+	buildSSHImage(t)
+	keyDir := generateSSHKey(t)
+	sshPort, remoteDir = startSSHContainer(t, keyDir, hash)
+	waitForSSH(t, sshPort)
+
+	dataDir = filepath.Join(t.TempDir(), ".conga")
+	agentName = "rtest-" + hash
+	keyPath = filepath.Join(keyDir, "id_test")
+
+	// Cleanup in LIFO order: teardown first (needs SSH), then containers, then SSH.
+	t.Cleanup(func() { stopSSHContainer() })
+	t.Cleanup(func() { cleanupTestContainers(agentName) })
+	t.Cleanup(func() {
+		if prov != nil {
+			runCLI(t, "--provider", "remote", "--data-dir", dataDir,
+				"admin", "teardown", "--force")
+		}
+	})
+
+	return dataDir, agentName, sshPort, keyPath, remoteDir
+}
+
+// remoteBaseArgs returns the common CLI args for remote provider commands.
+func remoteBaseArgs(dataDir string) []string {
+	return []string{"--provider", "remote", "--data-dir", dataDir}
 }
