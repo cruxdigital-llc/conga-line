@@ -8,10 +8,13 @@
 
   Getting started:
     1. mkdir behavior/agents/<your-agent>
-    2. cp behavior/default/SOUL.md behavior/agents/<your-agent>/SOUL.md
-       — or write your own from scratch
+    2. cp behavior/default/<runtime>/<type>/SOUL.md behavior/agents/<your-agent>/SOUL.md
+       — e.g. behavior/default/openclaw/user/SOUL.md, or write your own from scratch
     3. Edit to define the agent's personality, boundaries, and context
     4. conga refresh --agent <your-agent>
+
+  Per-agent overrides apply regardless of runtime — the agents/<name>/
+  directory is not scoped by runtime or type.
 
   This example file is a reference, not a starting point. Clone the
   default and extend it, or write something purpose-built for your agent.
@@ -26,11 +29,10 @@ to a particular product, project, client, or team dynamic.
 
 ## Tips
 
-- Start by copying `behavior/default/SOUL.md` so you inherit the
-  baseline personality, then customize.
-- If the agent serves a team (not an individual), include the
-  multi-user awareness and "when to speak" sections from the default
-  team SOUL.md — these aren't carried over automatically.
+- Start by copying `behavior/default/<runtime>/<type>/SOUL.md` so you
+  inherit the baseline personality, then customize.
+- The default SOUL.md already differs between user and team agents
+  (privacy vs multi-user awareness). Your override replaces it entirely.
 - Keep it under 150 lines. SOUL.md is the first file loaded into the
   system prompt.
 - Use `conga agent show <name> SOUL.md` to inspect the deployed version.

@@ -183,7 +183,8 @@ func agentBehaviorAddRun(cmd *cobra.Command, args []string) error {
 	agentName := args[0]
 	srcPath := args[1]
 
-	if _, err := prov.GetAgent(ctx, agentName); err != nil {
+	agentCfg, err := prov.GetAgent(ctx, agentName)
+	if err != nil {
 		return fmt.Errorf("agent %q not found: %w", agentName, err)
 	}
 
@@ -203,7 +204,7 @@ func agentBehaviorAddRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("behavior files must be .md (got %q)", targetName)
 	}
 
-	rt := runtime.ResolveRuntime("", "")
+	rt := runtime.ResolveRuntime(agentCfg.Runtime, "")
 	if common.IsProtectedPath(targetName, rt) {
 		return fmt.Errorf("%q is a protected path and cannot be used as a behavior file", targetName)
 	}
@@ -290,7 +291,8 @@ func agentBehaviorDiffRun(cmd *cobra.Command, args []string) error {
 
 	agentName := args[0]
 
-	if _, err := prov.GetAgent(ctx, agentName); err != nil {
+	agentCfg, err := prov.GetAgent(ctx, agentName)
+	if err != nil {
 		return fmt.Errorf("agent %q not found: %w", agentName, err)
 	}
 
@@ -307,8 +309,16 @@ func agentBehaviorDiffRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Build runtime-aware manifest path inside the container
+	rtName := runtime.ResolveRuntime(agentCfg.Runtime, "")
+	rt, err := runtime.Get(rtName)
+	if err != nil {
+		return fmt.Errorf("unknown runtime %q: %w", rtName, err)
+	}
+	manifestPath := filepath.Join(rt.ContainerDataPath(), rt.WorkspacePath(), ".conga-overlay-manifest.json")
+
 	// Read workspace manifest via container exec
-	manifestJSON, err := prov.ContainerExec(ctx, agentName, []string{"cat", "/home/node/.openclaw/data/workspace/.conga-overlay-manifest.json"})
+	manifestJSON, err := prov.ContainerExec(ctx, agentName, []string{"cat", manifestPath})
 	var manifest *common.OverlayManifest
 	if err == nil && manifestJSON != "" {
 		manifest = common.ParseOverlayManifest([]byte(manifestJSON))

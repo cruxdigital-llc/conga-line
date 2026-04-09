@@ -23,7 +23,7 @@ This is an infrastructure-as-code project deploying Conga Line (autonomous AI as
 - **Local provider**: `pkg/provider/localprovider/` — Docker CLI operations, file-based secrets (mode 0400), config integrity monitoring
 - **Remote provider**: `pkg/provider/remoteprovider/` — SSH-based Docker operations on any remote host, file-based secrets (mode 0400), SSH tunneling for gateway access, config integrity monitoring
 - **Common package**: `pkg/common/` — shared logic used by all providers: config generation, routing (`GenerateRoutingJSON`), behavior file resolution (`resolveBehaviorFiles`), manifest tracking, port allocation, validation
-- **Behavior files**: `behavior/default/` has shared defaults (SOUL.md, AGENTS.md, USER.md.tmpl); `behavior/agents/<name>/` has per-agent overrides that fully replace the defaults. CLI: `conga agent {list,add,rm,show,diff}`. See `pkg/common/behavior.go` and `pkg/common/overlay.go`
+- **Behavior files**: `behavior/default/<runtime>/<type>/` has runtime+type-specific defaults (SOUL.md, AGENTS.md, USER.md.tmpl) for each combination of runtime (openclaw, hermes) and agent type (user, team). SOUL.md and AGENTS.md differ between user agents (privacy-focused, personal memory) and team agents (multi-user awareness, shared memory). `behavior/agents/<name>/` has per-agent overrides that fully replace the defaults. CLI: `conga agent {list,add,rm,show,diff}`. See `pkg/common/behavior.go` and `pkg/common/overlay.go`
 - **Provider selection**: `--provider aws|local|remote` flag, persisted in `~/.conga/config.json` (default: `local`)
 - **Slack is optional**: When no Slack tokens are provided, openclaw.json omits the `channels` section and the agent runs in gateway-only mode. The router is only started when Slack is configured.
 

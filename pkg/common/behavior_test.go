@@ -6,22 +6,43 @@ import (
 	"testing"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
+	_ "github.com/cruxdigital-llc/conga-line/pkg/runtime/hermes"
 	_ "github.com/cruxdigital-llc/conga-line/pkg/runtime/openclaw"
 )
 
-// setupBehaviorDir creates a temp behavior directory with the new structure:
+// setupBehaviorDir creates a temp behavior directory with the runtime+type structure:
 //
-//	default/SOUL.md, default/AGENTS.md, default/team/USER.md.tmpl, default/user/USER.md.tmpl
+//	default/openclaw/team/{SOUL.md, AGENTS.md, USER.md.tmpl}
+//	default/openclaw/user/{SOUL.md, AGENTS.md, USER.md.tmpl}
 func setupBehaviorDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 
-	os.MkdirAll(filepath.Join(dir, "default", "team"), 0755)
-	os.MkdirAll(filepath.Join(dir, "default", "user"), 0755)
-	os.WriteFile(filepath.Join(dir, "default", "SOUL.md"), []byte("default soul"), 0644)
-	os.WriteFile(filepath.Join(dir, "default", "AGENTS.md"), []byte("default agents"), 0644)
-	os.WriteFile(filepath.Join(dir, "default", "team", "USER.md.tmpl"), []byte("team user: {{AGENT_NAME}}"), 0644)
-	os.WriteFile(filepath.Join(dir, "default", "user", "USER.md.tmpl"), []byte("dm user: {{AGENT_NAME}}"), 0644)
+	os.MkdirAll(filepath.Join(dir, "default", "openclaw", "team"), 0755)
+	os.MkdirAll(filepath.Join(dir, "default", "openclaw", "user"), 0755)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "team", "SOUL.md"), []byte("team soul"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "team", "AGENTS.md"), []byte("team agents"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "team", "USER.md.tmpl"), []byte("team user: {{AGENT_NAME}}"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "user", "SOUL.md"), []byte("user soul"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "user", "AGENTS.md"), []byte("user agents"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "user", "USER.md.tmpl"), []byte("dm user: {{AGENT_NAME}}"), 0644)
+
+	return dir
+}
+
+// setupHermesBehaviorDir creates a temp behavior directory with Hermes runtime files.
+func setupHermesBehaviorDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	os.MkdirAll(filepath.Join(dir, "default", "hermes", "team"), 0755)
+	os.MkdirAll(filepath.Join(dir, "default", "hermes", "user"), 0755)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "team", "SOUL.md"), []byte("hermes team soul"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "team", "AGENTS.md"), []byte("hermes team agents"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "team", "USER.md.tmpl"), []byte("hermes team: {{AGENT_NAME}}"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "user", "SOUL.md"), []byte("hermes user soul"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "user", "AGENTS.md"), []byte("hermes user agents"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "user", "USER.md.tmpl"), []byte("hermes dm: {{AGENT_NAME}}"), 0644)
 
 	return dir
 }
@@ -36,11 +57,16 @@ func TestComposeAgentWorkspaceFiles_DefaultsOnly(t *testing.T) {
 	}
 
 	soul := string(files["SOUL.md"].Content)
-	if soul != "default soul" {
-		t.Errorf("SOUL.md = %q, want 'default soul'", soul)
+	if soul != "team soul" {
+		t.Errorf("SOUL.md = %q, want 'team soul'", soul)
 	}
 	if files["SOUL.md"].Source != "default" {
 		t.Errorf("SOUL.md source = %q, want default", files["SOUL.md"].Source)
+	}
+
+	agents := string(files["AGENTS.md"].Content)
+	if agents != "team agents" {
+		t.Errorf("AGENTS.md = %q, want 'team agents'", agents)
 	}
 
 	user := string(files["USER.md"].Content)
@@ -63,6 +89,16 @@ func TestComposeAgentWorkspaceFiles_UserAgentDefaults(t *testing.T) {
 	files, _, _, err := ComposeAgentWorkspaceFiles(dir, agent, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	soul := string(files["SOUL.md"].Content)
+	if soul != "user soul" {
+		t.Errorf("SOUL.md = %q, want 'user soul'", soul)
+	}
+
+	agents := string(files["AGENTS.md"].Content)
+	if agents != "user agents" {
+		t.Errorf("AGENTS.md = %q, want 'user agents'", agents)
 	}
 
 	user := string(files["USER.md"].Content)
@@ -94,8 +130,8 @@ func TestComposeAgentWorkspaceFiles_AgentOverridesDefault(t *testing.T) {
 
 	// AGENTS.md should still come from default
 	agents := string(files["AGENTS.md"].Content)
-	if agents != "default agents" {
-		t.Errorf("AGENTS.md = %q, want 'default agents' (should fall back)", agents)
+	if agents != "team agents" {
+		t.Errorf("AGENTS.md = %q, want 'team agents' (should fall back)", agents)
 	}
 }
 
@@ -246,5 +282,90 @@ func TestComposeAgentWorkspaceFiles_BackwardsCompatOldManifest(t *testing.T) {
 	}
 	if len(toDelete) != 1 || toDelete[0] != "REMOVED.md" {
 		t.Errorf("toDelete = %v, want [REMOVED.md] (backwards compat with 'overlay' source)", toDelete)
+	}
+}
+
+func TestComposeAgentWorkspaceFiles_HermesDefaults(t *testing.T) {
+	dir := setupHermesBehaviorDir(t)
+	agent := provider.AgentConfig{Name: "atlas", Type: provider.AgentTypeTeam, Runtime: "hermes"}
+
+	files, _, _, err := ComposeAgentWorkspaceFiles(dir, agent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	soul := string(files["SOUL.md"].Content)
+	if soul != "hermes team soul" {
+		t.Errorf("SOUL.md = %q, want 'hermes team soul'", soul)
+	}
+
+	agents := string(files["AGENTS.md"].Content)
+	if agents != "hermes team agents" {
+		t.Errorf("AGENTS.md = %q, want 'hermes team agents'", agents)
+	}
+
+	user := string(files["USER.md"].Content)
+	if user != "hermes team: atlas" {
+		t.Errorf("USER.md = %q, want 'hermes team: atlas'", user)
+	}
+}
+
+func TestComposeAgentWorkspaceFiles_HermesUserDefaults(t *testing.T) {
+	dir := setupHermesBehaviorDir(t)
+	agent := provider.AgentConfig{Name: "jarvis", Type: provider.AgentTypeUser, Runtime: "hermes"}
+
+	files, _, _, err := ComposeAgentWorkspaceFiles(dir, agent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	soul := string(files["SOUL.md"].Content)
+	if soul != "hermes user soul" {
+		t.Errorf("SOUL.md = %q, want 'hermes user soul'", soul)
+	}
+
+	agents := string(files["AGENTS.md"].Content)
+	if agents != "hermes user agents" {
+		t.Errorf("AGENTS.md = %q, want 'hermes user agents'", agents)
+	}
+
+	user := string(files["USER.md"].Content)
+	if user != "hermes dm: jarvis" {
+		t.Errorf("USER.md = %q, want 'hermes dm: jarvis'", user)
+	}
+}
+
+func TestComposeAgentWorkspaceFiles_RuntimeIsolation(t *testing.T) {
+	// Create a dir with both openclaw and hermes defaults
+	dir := t.TempDir()
+
+	os.MkdirAll(filepath.Join(dir, "default", "openclaw", "team"), 0755)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "team", "SOUL.md"), []byte("openclaw team soul"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "team", "AGENTS.md"), []byte("openclaw team agents"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "openclaw", "team", "USER.md.tmpl"), []byte("openclaw team: {{AGENT_NAME}}"), 0644)
+
+	os.MkdirAll(filepath.Join(dir, "default", "hermes", "team"), 0755)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "team", "SOUL.md"), []byte("hermes team soul"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "team", "AGENTS.md"), []byte("hermes team agents"), 0644)
+	os.WriteFile(filepath.Join(dir, "default", "hermes", "team", "USER.md.tmpl"), []byte("hermes team: {{AGENT_NAME}}"), 0644)
+
+	// OpenClaw agent gets openclaw files
+	ocAgent := provider.AgentConfig{Name: "acme", Type: provider.AgentTypeTeam}
+	ocFiles, _, _, err := ComposeAgentWorkspaceFiles(dir, ocAgent, nil, nil)
+	if err != nil {
+		t.Fatalf("openclaw: unexpected error: %v", err)
+	}
+	if string(ocFiles["SOUL.md"].Content) != "openclaw team soul" {
+		t.Errorf("openclaw SOUL.md = %q, want 'openclaw team soul'", string(ocFiles["SOUL.md"].Content))
+	}
+
+	// Hermes agent gets hermes files
+	hAgent := provider.AgentConfig{Name: "acme", Type: provider.AgentTypeTeam, Runtime: "hermes"}
+	hFiles, _, _, err := ComposeAgentWorkspaceFiles(dir, hAgent, nil, nil)
+	if err != nil {
+		t.Fatalf("hermes: unexpected error: %v", err)
+	}
+	if string(hFiles["SOUL.md"].Content) != "hermes team soul" {
+		t.Errorf("hermes SOUL.md = %q, want 'hermes team soul'", string(hFiles["SOUL.md"].Content))
 	}
 }

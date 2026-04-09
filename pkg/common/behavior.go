@@ -22,21 +22,20 @@ type BehaviorFiles map[string]BehaviorFile
 
 // resolveBehaviorFiles assembles behavior files for an agent.
 //
-// Resolution order for SOUL.md and AGENTS.md:
+// Resolution order (all files):
 //  1. agents/<agent_name>/<file> — agent-specific override (full replacement)
-//  2. default/<file> — shared default
+//  2. default/<runtime>/<type>/<file> — runtime+type-specific default
 //
-// Resolution order for USER.md:
-//  1. agents/<agent_name>/USER.md — agent-specific override
-//  2. default/<type>/USER.md.tmpl — type-specific template, rendered with agent vars
+// USER.md.tmpl is rendered with agent template variables before deployment.
 func resolveBehaviorFiles(behaviorDir string, agent provider.AgentConfig) BehaviorFiles {
 	files := make(BehaviorFiles)
 	agentType := string(agent.Type)
 
 	agentDir := filepath.Join(behaviorDir, "agents", agent.Name)
-	defaultDir := filepath.Join(behaviorDir, "default")
+	rtName := string(runtime.ResolveRuntime(agent.Runtime, ""))
+	defaultDir := filepath.Join(behaviorDir, "default", rtName, agentType)
 
-	// SOUL.md and AGENTS.md: agent-specific > default
+	// SOUL.md and AGENTS.md: agent-specific > runtime+type default
 	for _, name := range []string{"SOUL.md", "AGENTS.md"} {
 		if data, err := os.ReadFile(filepath.Join(agentDir, name)); err == nil {
 			files[name] = BehaviorFile{Content: data, Source: "agent"}
@@ -47,11 +46,11 @@ func resolveBehaviorFiles(behaviorDir string, agent provider.AgentConfig) Behavi
 		}
 	}
 
-	// USER.md: agent-specific > render type-specific template from default/
+	// USER.md: agent-specific > render runtime+type template
 	if data, err := os.ReadFile(filepath.Join(agentDir, "USER.md")); err == nil {
 		files["USER.md"] = BehaviorFile{Content: data, Source: "agent"}
 	} else {
-		tmplPath := filepath.Join(defaultDir, agentType, "USER.md.tmpl")
+		tmplPath := filepath.Join(defaultDir, "USER.md.tmpl")
 		if data, err := os.ReadFile(tmplPath); err == nil {
 			content := string(data)
 			content = strings.ReplaceAll(content, "{{.AgentName}}", agent.Name)

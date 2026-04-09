@@ -3,8 +3,17 @@ set -euo pipefail
 
 AGENT_NAME="$1"
 AGENT_TYPE="$2"
+AGENT_RUNTIME="${3:-openclaw}"
 STAGING="/opt/conga/behavior"
-WORKSPACE="/opt/conga/data/$AGENT_NAME/data/workspace"
+
+# Runtime-aware workspace path and file ownership
+if [ "$AGENT_RUNTIME" = "hermes" ]; then
+  WORKSPACE="/opt/conga/data/$AGENT_NAME/workspace"
+  OWNER="0:0"
+else
+  WORKSPACE="/opt/conga/data/$AGENT_NAME/data/workspace"
+  OWNER="1000:1000"
+fi
 
 # Read Slack identifier for template substitution
 SLACK_ID=$(cat "/opt/conga/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
@@ -12,32 +21,34 @@ SLACK_ID=$(cat "/opt/conga/config/$AGENT_NAME.slack-id" 2>/dev/null || echo "")
 AGENT_DIR="$STAGING/agents/$AGENT_NAME"
 DEFAULT_DIR="$STAGING/default"
 
-# --- SOUL.md: agent-specific > default ---
+# --- SOUL.md: agent-specific > runtime+type default ---
 if [ -f "$AGENT_DIR/SOUL.md" ]; then
   cp "$AGENT_DIR/SOUL.md" "$WORKSPACE/SOUL.md"
-elif [ -f "$DEFAULT_DIR/SOUL.md" ]; then
-  cp "$DEFAULT_DIR/SOUL.md" "$WORKSPACE/SOUL.md"
+elif [ -f "$DEFAULT_DIR/$AGENT_RUNTIME/$AGENT_TYPE/SOUL.md" ]; then
+  cp "$DEFAULT_DIR/$AGENT_RUNTIME/$AGENT_TYPE/SOUL.md" "$WORKSPACE/SOUL.md"
 fi
 
-# --- AGENTS.md: agent-specific > default ---
+# --- AGENTS.md: agent-specific > runtime+type default ---
 if [ -f "$AGENT_DIR/AGENTS.md" ]; then
   cp "$AGENT_DIR/AGENTS.md" "$WORKSPACE/AGENTS.md"
-elif [ -f "$DEFAULT_DIR/AGENTS.md" ]; then
-  cp "$DEFAULT_DIR/AGENTS.md" "$WORKSPACE/AGENTS.md"
+elif [ -f "$DEFAULT_DIR/$AGENT_RUNTIME/$AGENT_TYPE/AGENTS.md" ]; then
+  cp "$DEFAULT_DIR/$AGENT_RUNTIME/$AGENT_TYPE/AGENTS.md" "$WORKSPACE/AGENTS.md"
 fi
 
-# --- USER.md: agent-specific > render type-specific template from default/ ---
+# --- USER.md: agent-specific > render runtime+type template ---
 if [ -f "$AGENT_DIR/USER.md" ]; then
   cp "$AGENT_DIR/USER.md" "$WORKSPACE/USER.md"
-elif [ -f "$DEFAULT_DIR/$AGENT_TYPE/USER.md.tmpl" ]; then
+elif [ -f "$DEFAULT_DIR/$AGENT_RUNTIME/$AGENT_TYPE/USER.md.tmpl" ]; then
+  # Legacy {{AGENT_NAME}} form — can be dropped once all USER.md.tmpl
+  # files are migrated to {{.AgentName}}.
   sed -e "s|{{.AgentName}}|$AGENT_NAME|g" \
       -e "s|{{AGENT_NAME}}|$AGENT_NAME|g" \
       -e "s|{{.SlackChannel}}|$SLACK_ID|g" \
       -e "s|{{.SlackMemberID}}|$SLACK_ID|g" \
-      "$DEFAULT_DIR/$AGENT_TYPE/USER.md.tmpl" > "$WORKSPACE/USER.md"
+      "$DEFAULT_DIR/$AGENT_RUNTIME/$AGENT_TYPE/USER.md.tmpl" > "$WORKSPACE/USER.md"
 fi
 
-# Fix ownership — container runs as uid 1000 (node)
-chown 1000:1000 "$WORKSPACE/SOUL.md" "$WORKSPACE/AGENTS.md" "$WORKSPACE/USER.md" 2>/dev/null || true
+# Fix ownership — runtime-aware uid
+chown $OWNER "$WORKSPACE/SOUL.md" "$WORKSPACE/AGENTS.md" "$WORKSPACE/USER.md" 2>/dev/null || true
 
-echo "Behavior files deployed for $AGENT_NAME ($AGENT_TYPE)"
+echo "Behavior files deployed for $AGENT_NAME ($AGENT_TYPE, $AGENT_RUNTIME)"

@@ -8,10 +8,13 @@
 
   Getting started:
     1. mkdir behavior/agents/<your-agent>
-    2. cp behavior/default/AGENTS.md behavior/agents/<your-agent>/AGENTS.md
-       — or write your own from scratch
+    2. cp behavior/default/<runtime>/<type>/AGENTS.md behavior/agents/<your-agent>/AGENTS.md
+       — e.g. behavior/default/openclaw/team/AGENTS.md, or write your own from scratch
     3. Edit to add agent-specific context (client, team, project, rules)
     4. conga refresh --agent <your-agent>
+
+  Per-agent overrides apply regardless of runtime — the agents/<name>/
+  directory is not scoped by runtime or type.
 
   This example file is a reference, not a starting point. Clone the
   default and extend it, or write something purpose-built for your agent.
@@ -26,9 +29,10 @@ entire file — include everything the agent needs to operate.
 
 ## Tips
 
-- Start by copying `behavior/default/AGENTS.md` so you inherit the
-  baseline rules, then append your agent-specific sections.
-- Keep total file size under 150 lines. OpenClaw concatenates all
-  workspace markdown into a single system prompt — brevity matters.
+- Start by copying `behavior/default/<runtime>/<type>/AGENTS.md` so you
+  inherit the baseline rules, then append your agent-specific sections.
+- The default AGENTS.md already differs between user and team agents
+  (personal vs shared memory management). Your override replaces it entirely.
+- Keep total file size under 150 lines — brevity matters for system prompts.
 - Use `conga agent show <name> AGENTS.md` to inspect the deployed version.
 - Use `conga agent diff <name>` to compare source vs workspace.
