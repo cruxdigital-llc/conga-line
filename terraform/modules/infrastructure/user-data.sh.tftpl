@@ -39,7 +39,7 @@ sysctl --system
 # 2. INSTALL DOCKER + NODE.JS + JQ
 # ============================================================
 
-dnf install -y docker nodejs npm jq
+dnf install -y docker nodejs npm jq wireguard-tools
 useradd -m -s /bin/bash conga || true
 usermod -aG docker conga
 systemctl enable --now docker
