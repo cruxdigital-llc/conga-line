@@ -30,3 +30,26 @@ resource "aws_s3_object" "bootstrap_script" {
   content = local.bootstrap_content
   etag    = md5(local.bootstrap_content)
 }
+
+# Seed the egress policy to S3 so fresh instances bootstrap with correct
+# Envoy configs instead of deny-all. The conga_policy terraform resource
+# handles ongoing updates; this just ensures first boot works.
+resource "aws_s3_object" "egress_policy" {
+  count  = length(var.egress_allowed_domains) > 0 ? 1 : 0
+  bucket = local.state_bucket
+  key    = "conga/conga-policy.yaml"
+  content = yamlencode({
+    apiVersion = "conga.dev/v1alpha1"
+    egress = {
+      mode            = var.egress_mode
+      allowed_domains = var.egress_allowed_domains
+    }
+  })
+  etag = md5(yamlencode({
+    apiVersion = "conga.dev/v1alpha1"
+    egress = {
+      mode            = var.egress_mode
+      allowed_domains = var.egress_allowed_domains
+    }
+  }))
+}

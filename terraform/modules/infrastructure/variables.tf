@@ -63,6 +63,23 @@ variable "repo_root" {
   type        = string
 }
 
+variable "egress_mode" {
+  description = "Global egress enforcement mode. Seeded into S3 so fresh instances bootstrap with correct egress policy."
+  type        = string
+  default     = "enforce"
+
+  validation {
+    condition     = contains(["enforce", "validate"], var.egress_mode)
+    error_message = "egress_mode must be \"enforce\" or \"validate\"."
+  }
+}
+
+variable "egress_allowed_domains" {
+  description = "Global egress allowed domains. Seeded into S3 so fresh instances bootstrap with correct egress policy."
+  type        = list(string)
+  default     = []
+}
+
 variable "egress_ports" {
   description = "Egress ports to open on the host security group and NACLs. Use cidr=\"vpc\" for VPC-scoped rules."
   type = list(object({

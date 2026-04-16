@@ -47,6 +47,8 @@ module "infrastructure" {
   config_check_interval_minutes = var.config_check_interval_minutes
   alert_email                   = var.alert_email
   egress_ports                  = var.egress_ports
+  egress_mode                   = var.egress_mode
+  egress_allowed_domains        = var.egress_allowed_domains
 }
 
 # Layer 2: CongaLine Agent Lifecycle
