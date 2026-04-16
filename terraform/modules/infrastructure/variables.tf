@@ -100,9 +100,19 @@ variable "egress_ports" {
   }
 
   validation {
+    condition     = alltrue([for p in var.egress_ports : p.port >= 1 && p.port <= 65535])
+    error_message = "Each egress port must be between 1 and 65535."
+  }
+
+  validation {
     condition = length(var.egress_ports) == length(distinct([
       for p in var.egress_ports : "${p.protocol}-${p.port}"
     ]))
     error_message = "Duplicate protocol-port combinations are not allowed in egress_ports."
+  }
+
+  validation {
+    condition     = length(var.egress_ports) <= 90
+    error_message = "Maximum 90 egress port entries (NACL rule_number budget)."
   }
 }

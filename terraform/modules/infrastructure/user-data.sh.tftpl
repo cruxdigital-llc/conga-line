@@ -148,7 +148,8 @@ aws s3 sync s3://${state_bucket}/conga/behavior/ /opt/conga/behavior/ --region "
   log "WARNING: Failed to sync behavior files from S3 — agents may use stale behavior"; }
 
 # Download policy file from S3 (if uploaded by operator)
-aws s3 cp s3://${state_bucket}/conga/conga-policy.yaml /opt/conga/conga-policy.yaml --region "$AWS_REGION" 2>/dev/null || true
+aws s3 cp s3://${state_bucket}/conga/conga-policy.yaml /opt/conga/conga-policy.yaml --region "$AWS_REGION" 2>&1 || {
+  log "WARNING: Failed to download egress policy from S3 — agents may start with deny-all"; }
 
 # Install router dependencies (umask 022 so node_modules are readable by container user)
 log "Installing router dependencies..."
