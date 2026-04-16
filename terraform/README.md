@@ -100,6 +100,33 @@ conga connect --agent myagent         # open SSM tunnel to web UI
 
 The `congaline` module uses the [conga Terraform provider](https://registry.terraform.io/providers/cruxdigital-llc/conga), which calls the same provider interface as the CLI. If you're managing your environment through Terraform, all agent lifecycle changes should go through `terraform apply` — not the CLI.
 
+## Network Egress
+
+The EC2 host runs in a zero-ingress VPC. Outbound traffic is restricted to an explicit list of ports defined by the `egress_ports` variable. The default allows HTTPS and DNS only:
+
+```hcl
+egress_ports = [
+  { protocol = "tcp", port = 443, description = "HTTPS (Slack WSS, LLM APIs, Docker Hub, SSM)" },
+  { protocol = "tcp", port = 53, cidr = "vpc", description = "DNS TCP (VPC resolver)" },
+  { protocol = "udp", port = 53, cidr = "vpc", description = "DNS UDP (VPC resolver)" },
+]
+```
+
+To add ports (e.g. WireGuard VPN to a local LLM gateway), add entries in `terraform.tfvars`:
+
+```hcl
+egress_ports = [
+  { protocol = "tcp", port = 443, description = "HTTPS (Slack WSS, LLM APIs, Docker Hub, SSM)" },
+  { protocol = "tcp", port = 53, cidr = "vpc", description = "DNS TCP (VPC resolver)" },
+  { protocol = "udp", port = 53, cidr = "vpc", description = "DNS UDP (VPC resolver)" },
+  { protocol = "udp", port = 51820, description = "WireGuard VPN" },
+]
+```
+
+Use `cidr = "vpc"` to scope a rule to the VPC CIDR. All other rules default to `0.0.0.0/0`. When a static IP is available for a VPN endpoint, set `cidr = "x.x.x.x/32"` to tighten both the outbound and return-traffic NACL rules from a single config change.
+
+Both security group egress rules and NACL rules are generated from this list. NACL ingress rules for return traffic are created automatically based on which protocols are in the list.
+
 ## Secrets
 
 Never put real secret values in `.tf` files or commit them to git. Use `terraform.tfvars` (gitignored) or pass them via environment variables:
