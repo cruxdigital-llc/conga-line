@@ -39,7 +39,7 @@ sysctl --system
 # 2. INSTALL DOCKER + NODE.JS + JQ
 # ============================================================
 
-dnf install -y docker nodejs npm jq
+dnf install -y docker nodejs npm jq wireguard-tools
 useradd -m -s /bin/bash conga || true
 usermod -aG docker conga
 systemctl enable --now docker
@@ -152,7 +152,7 @@ aws s3 cp s3://${state_bucket}/conga/conga-policy.yaml /opt/conga/conga-policy.y
 
 # Install router dependencies (umask 022 so node_modules are readable by container user)
 log "Installing router dependencies..."
-(umask 022 && cd /opt/conga/router && npm install --production) || {
+(umask 022 && cd /opt/conga/router/slack && npm install --production) || {
   log "FATAL: npm install failed for router"; exit 1; }
 
 # Router container runs as 1000:1000 — make source readable
@@ -236,7 +236,7 @@ Type=simple
 EnvironmentFile=/opt/conga/config/router.env
 ExecStartPre=-/usr/bin/docker rm -f conga-router
 ExecStartPre=/bin/chown -R 1000:1000 /opt/conga/router /opt/conga/config/routing.json
-ExecStart=/usr/bin/docker run --name conga-router --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --read-only --user 1000:1000 --tmpfs /tmp:rw,noexec,nosuid -v /opt/conga/router:/app:ro -v /opt/conga/config/routing.json:/opt/conga/config/routing.json:ro -e SLACK_APP_TOKEN -e SLACK_BOT_TOKEN -e SLACK_SIGNING_SECRET -e ROUTER_CONFIG=/opt/conga/config/routing.json node:22-alpine node /app/src/index.js
+ExecStart=/usr/bin/docker run --name conga-router --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --read-only --user 1000:1000 --tmpfs /tmp:rw,noexec,nosuid -v /opt/conga/router/slack:/app:ro -v /opt/conga/config/routing.json:/opt/conga/config/routing.json:ro -e SLACK_APP_TOKEN -e SLACK_BOT_TOKEN -e SLACK_SIGNING_SECRET -e ROUTER_CONFIG=/opt/conga/config/routing.json node:22-alpine node /app/src/index.js
 ExecStartPost=-/opt/conga/bin/connect-router-networks.sh
 ExecStop=/usr/bin/docker stop conga-router
 StandardOutput=append:/var/log/conga-router.log

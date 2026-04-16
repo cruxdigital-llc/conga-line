@@ -62,3 +62,30 @@ variable "repo_root" {
   description = "Absolute path to the congaline repository root. Used to locate behavior files, router source, and CLI scripts."
   type        = string
 }
+
+variable "egress_ports" {
+  description = "Egress ports to open on the host security group and NACLs. Use cidr=\"vpc\" for VPC-scoped rules."
+  type = list(object({
+    protocol    = string
+    port        = number
+    cidr        = optional(string, "0.0.0.0/0")
+    description = optional(string, "")
+  }))
+  default = [
+    { protocol = "tcp", port = 443, description = "HTTPS (Slack WSS, LLM APIs, Docker Hub, SSM)" },
+    { protocol = "tcp", port = 53, cidr = "vpc", description = "DNS TCP (VPC resolver)" },
+    { protocol = "udp", port = 53, cidr = "vpc", description = "DNS UDP (VPC resolver)" },
+  ]
+
+  validation {
+    condition     = alltrue([for p in var.egress_ports : contains(["tcp", "udp"], p.protocol)])
+    error_message = "Each egress port protocol must be \"tcp\" or \"udp\"."
+  }
+
+  validation {
+    condition = length(var.egress_ports) == length(distinct([
+      for p in var.egress_ports : "${p.protocol}-${p.port}"
+    ]))
+    error_message = "Duplicate protocol-port combinations are not allowed in egress_ports."
+  }
+}

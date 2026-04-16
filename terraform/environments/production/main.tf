@@ -46,6 +46,7 @@ module "infrastructure" {
   instance_type                 = var.instance_type
   config_check_interval_minutes = var.config_check_interval_minutes
   alert_email                   = var.alert_email
+  egress_ports                  = var.egress_ports
 }
 
 # Layer 2: CongaLine Agent Lifecycle

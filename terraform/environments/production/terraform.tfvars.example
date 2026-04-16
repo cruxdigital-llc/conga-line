@@ -10,6 +10,17 @@ repo_root = "/path/to/congaline"
 instance_type = "r6g.medium"
 alert_email   = ""
 
+# Egress ports — the complete list of allowed outbound traffic.
+# Omit to use defaults (HTTPS + DNS). Override to add ports (e.g. VPN).
+# Use cidr="vpc" to scope a rule to the VPC CIDR, or cidr="x.x.x.x/32"
+# to restrict to a specific endpoint.
+# egress_ports = [
+#   { protocol = "tcp", port = 443, description = "HTTPS (Slack WSS, LLM APIs, Docker Hub, SSM)" },
+#   { protocol = "tcp", port = 53, cidr = "vpc", description = "DNS TCP (VPC resolver)" },
+#   { protocol = "udp", port = 53, cidr = "vpc", description = "DNS UDP (VPC resolver)" },
+#   { protocol = "udp", port = 51820, description = "WireGuard VPN to local infrastructure" },
+# ]
+
 # --- Global Egress Policy ---
 egress_mode            = "enforce"  # "enforce" or "validate"
 egress_allowed_domains = ["api.anthropic.com", "*.slack.com", "*.slack-edge.com"]
