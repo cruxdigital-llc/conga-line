@@ -76,4 +76,16 @@ variable "egress_ports" {
     { protocol = "tcp", port = 53, cidr = "vpc", description = "DNS TCP (VPC resolver)" },
     { protocol = "udp", port = 53, cidr = "vpc", description = "DNS UDP (VPC resolver)" },
   ]
+
+  validation {
+    condition     = alltrue([for p in var.egress_ports : contains(["tcp", "udp"], p.protocol)])
+    error_message = "Each egress port protocol must be \"tcp\" or \"udp\"."
+  }
+
+  validation {
+    condition = length(var.egress_ports) == length(distinct([
+      for p in var.egress_ports : "${p.protocol}-${p.port}"
+    ]))
+    error_message = "Duplicate protocol-port combinations are not allowed in egress_ports."
+  }
 }

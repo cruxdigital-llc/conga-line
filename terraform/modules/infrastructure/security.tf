@@ -9,9 +9,13 @@ locals {
   }
 
   has_tcp_egress = length([for p in var.egress_ports : p if p.protocol == "tcp"]) > 0
-  has_udp_egress = length([for p in var.egress_ports : p if p.protocol == "udp"]) > 0
 
-  has_vpc_udp = length([for p in var.egress_ports : p if p.protocol == "udp" && p.cidr == "vpc"]) > 0
+  vpc_udp_ports = {
+    for i, p in var.egress_ports : "${p.protocol}-${p.port}" => merge(p, {
+      index         = i
+      resolved_cidr = aws_vpc.main.cidr_block
+    }) if p.protocol == "udp" && p.cidr == "vpc"
+  }
 
   wan_udp_ports = {
     for i, p in var.egress_ports : "${p.protocol}-${p.port}" => merge(p, {
@@ -84,17 +88,17 @@ resource "aws_network_acl_rule" "private_ingress_tcp_ephemeral" {
   to_port        = 65535
 }
 
-# Inbound: UDP responses from VPC (DNS responses on port 53)
+# Inbound: UDP return traffic from VPC, scoped per VPC-targeted egress port
 resource "aws_network_acl_rule" "private_ingress_udp_vpc" {
-  count          = local.has_vpc_udp ? 1 : 0
+  for_each       = local.vpc_udp_ports
   network_acl_id = aws_network_acl.private.id
-  rule_number    = 110
+  rule_number    = 200 + each.value.index
   egress         = false
   protocol       = "udp"
   rule_action    = "allow"
-  cidr_block     = aws_vpc.main.cidr_block
-  from_port      = 53
-  to_port        = 53
+  cidr_block     = each.value.resolved_cidr
+  from_port      = 1024
+  to_port        = 65535
 }
 
 # Inbound: UDP return traffic from WAN, scoped to each egress port's CIDR.
@@ -110,4 +114,46 @@ resource "aws_network_acl_rule" "private_ingress_udp_wan" {
   cidr_block     = each.value.resolved_cidr
   from_port      = 1024
   to_port        = 65535
+}
+
+# --- State migration: map old hardcoded resources to new for_each keys ---
+
+moved {
+  from = aws_vpc_security_group_egress_rule.https
+  to   = aws_vpc_security_group_egress_rule.egress["tcp-443"]
+}
+
+moved {
+  from = aws_vpc_security_group_egress_rule.dns_tcp
+  to   = aws_vpc_security_group_egress_rule.egress["tcp-53"]
+}
+
+moved {
+  from = aws_vpc_security_group_egress_rule.dns_udp
+  to   = aws_vpc_security_group_egress_rule.egress["udp-53"]
+}
+
+moved {
+  from = aws_network_acl_rule.private_egress_https
+  to   = aws_network_acl_rule.private_egress["tcp-443"]
+}
+
+moved {
+  from = aws_network_acl_rule.private_egress_dns_tcp
+  to   = aws_network_acl_rule.private_egress["tcp-53"]
+}
+
+moved {
+  from = aws_network_acl_rule.private_egress_dns_udp
+  to   = aws_network_acl_rule.private_egress["udp-53"]
+}
+
+moved {
+  from = aws_network_acl_rule.private_ingress_ephemeral
+  to   = aws_network_acl_rule.private_ingress_tcp_ephemeral[0]
+}
+
+moved {
+  from = aws_network_acl_rule.private_ingress_dns_udp
+  to   = aws_network_acl_rule.private_ingress_udp_vpc["udp-53"]
 }
