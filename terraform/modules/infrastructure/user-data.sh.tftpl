@@ -236,7 +236,7 @@ Type=simple
 EnvironmentFile=/opt/conga/config/router.env
 ExecStartPre=-/usr/bin/docker rm -f conga-router
 ExecStartPre=/bin/chown -R 1000:1000 /opt/conga/router /opt/conga/config/routing.json
-ExecStart=/usr/bin/docker run --name conga-router --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --read-only --user 1000:1000 --tmpfs /tmp:rw,noexec,nosuid -v /opt/conga/router:/app:ro -v /opt/conga/config/routing.json:/opt/conga/config/routing.json:ro -e SLACK_APP_TOKEN -e SLACK_BOT_TOKEN -e SLACK_SIGNING_SECRET -e ROUTER_CONFIG=/opt/conga/config/routing.json node:22-alpine node /app/src/index.js
+ExecStart=/usr/bin/docker run --name conga-router --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --read-only --user 1000:1000 --tmpfs /tmp:rw,noexec,nosuid -v /opt/conga/router/slack:/app:ro -v /opt/conga/config/routing.json:/opt/conga/config/routing.json:ro -e SLACK_APP_TOKEN -e SLACK_BOT_TOKEN -e SLACK_SIGNING_SECRET -e ROUTER_CONFIG=/opt/conga/config/routing.json node:22-alpine node /app/src/index.js
 ExecStartPost=-/opt/conga/bin/connect-router-networks.sh
 ExecStop=/usr/bin/docker stop conga-router
 StandardOutput=append:/var/log/conga-router.log
