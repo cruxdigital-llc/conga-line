@@ -63,6 +63,23 @@ variable "repo_root" {
   type        = string
 }
 
+variable "egress_mode" {
+  description = "Global egress enforcement mode. Seeded into S3 so fresh instances bootstrap with correct egress policy."
+  type        = string
+  default     = "enforce"
+
+  validation {
+    condition     = contains(["enforce", "validate"], var.egress_mode)
+    error_message = "egress_mode must be \"enforce\" or \"validate\"."
+  }
+}
+
+variable "egress_allowed_domains" {
+  description = "Global egress allowed domains. Seeded into S3 so fresh instances bootstrap with correct egress policy."
+  type        = list(string)
+  default     = []
+}
+
 variable "egress_ports" {
   description = "Egress ports to open on the host security group and NACLs. Use cidr=\"vpc\" for VPC-scoped rules."
   type = list(object({
@@ -83,9 +100,19 @@ variable "egress_ports" {
   }
 
   validation {
+    condition     = alltrue([for p in var.egress_ports : p.port >= 1 && p.port <= 65535])
+    error_message = "Each egress port must be between 1 and 65535."
+  }
+
+  validation {
     condition = length(var.egress_ports) == length(distinct([
       for p in var.egress_ports : "${p.protocol}-${p.port}"
     ]))
     error_message = "Duplicate protocol-port combinations are not allowed in egress_ports."
+  }
+
+  validation {
+    condition     = length(var.egress_ports) <= 90
+    error_message = "Maximum 90 egress port entries (NACL rule_number budget)."
   }
 }

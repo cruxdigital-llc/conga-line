@@ -62,7 +62,7 @@ resource "aws_network_acl" "private" {
   }
 }
 
-# Outbound: one rule per egress port
+# Outbound: one rule per egress port (rule_number range: 100–199)
 resource "aws_network_acl_rule" "private_egress" {
   for_each       = local.egress_ports
   network_acl_id = aws_network_acl.private.id
@@ -75,11 +75,11 @@ resource "aws_network_acl_rule" "private_egress" {
   to_port        = each.value.port
 }
 
-# Inbound: TCP ephemeral return traffic
+# Inbound: TCP ephemeral return traffic (rule_number: 200)
 resource "aws_network_acl_rule" "private_ingress_tcp_ephemeral" {
   count          = local.has_tcp_egress ? 1 : 0
   network_acl_id = aws_network_acl.private.id
-  rule_number    = 100
+  rule_number    = 200
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
@@ -88,11 +88,11 @@ resource "aws_network_acl_rule" "private_ingress_tcp_ephemeral" {
   to_port        = 65535
 }
 
-# Inbound: UDP return traffic from VPC, scoped per VPC-targeted egress port
+# Inbound: UDP return traffic from VPC (rule_number range: 300–399)
 resource "aws_network_acl_rule" "private_ingress_udp_vpc" {
   for_each       = local.vpc_udp_ports
   network_acl_id = aws_network_acl.private.id
-  rule_number    = 200 + each.value.index
+  rule_number    = 300 + each.value.index
   egress         = false
   protocol       = "udp"
   rule_action    = "allow"
@@ -101,13 +101,13 @@ resource "aws_network_acl_rule" "private_ingress_udp_vpc" {
   to_port        = 65535
 }
 
-# Inbound: UDP return traffic from WAN, scoped to each egress port's CIDR.
+# Inbound: UDP return traffic from WAN (rule_number range: 400–499)
 # When a static IP is available, set cidr on the egress port entry in tfvars
 # to lock down both outbound and return traffic.
 resource "aws_network_acl_rule" "private_ingress_udp_wan" {
   for_each       = local.wan_udp_ports
   network_acl_id = aws_network_acl.private.id
-  rule_number    = 120 + each.value.index
+  rule_number    = 400 + each.value.index
   egress         = false
   protocol       = "udp"
   rule_action    = "allow"
@@ -117,6 +117,8 @@ resource "aws_network_acl_rule" "private_ingress_udp_wan" {
 }
 
 # --- State migration: map old hardcoded resources to new for_each keys ---
+# These moved blocks are one-time migrations. Safe to remove once all
+# environments have applied with the dynamic egress_ports variable.
 
 moved {
   from = aws_vpc_security_group_egress_rule.https
