@@ -54,6 +54,7 @@ func (s *Server) registerTools() {
 		s.toolPolicySetRouting(),
 		s.toolPolicySetPosture(),
 		s.toolPolicyDeploy(),
+		s.toolPolicyDrift(),
 	}
 	s.mcp.AddTools(s.tools...)
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/common"
 	"github.com/cruxdigital-llc/conga-line/pkg/discovery"
+	"github.com/cruxdigital-llc/conga-line/pkg/policy"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 )
 
@@ -287,6 +288,50 @@ func (p *AWSProvider) UnbindChannel(ctx context.Context, agentName string, platf
 	}
 
 	return nil
+}
+
+// ReadProxyManifest runs a `cat` on the instance to fetch the deployed
+// egress policy manifest for an agent. Returns (nil, ErrNotFound) when the
+// manifest file is absent — e.g. if the agent has not been deployed with
+// the drift-aware pipeline yet.
+func (p *AWSProvider) ReadProxyManifest(ctx context.Context, agentName string) ([]byte, error) {
+	if !isValidAgentName(agentName) {
+		return nil, fmt.Errorf("invalid agent name %q", agentName)
+	}
+	instanceID, err := p.findInstance(ctx)
+	if err != nil {
+		return nil, err
+	}
+	manifestPath := fmt.Sprintf("/opt/conga/config/%s", policy.EgressManifestFileName(agentName))
+	// Emit an exit-2 sentinel for "missing" so we can distinguish from read errors.
+	script := fmt.Sprintf(`if [ -f %q ]; then cat %q; else exit 2; fi`, manifestPath, manifestPath)
+	result, err := p.runOnInstance(ctx, instanceID, script, 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.Status != "Success" {
+		// Non-zero exit — most likely the file is missing.
+		return nil, fmt.Errorf("manifest for agent %q: %w", agentName, provider.ErrNotFound)
+	}
+	return []byte(result.Stdout), nil
+}
+
+// isValidAgentName mirrors the agent-name safety check in deploy-egress.sh.tmpl
+// and keeps injection-prone characters out of the interpolated shell command.
+func isValidAgentName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
+		if !ok {
+			return false
+		}
+		if i == 0 && r == '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // --- helpers ---

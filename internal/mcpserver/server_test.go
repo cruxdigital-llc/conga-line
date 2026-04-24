@@ -22,14 +22,15 @@ type mockProvider struct {
 	name string
 
 	// Return values for each method. Set these per-test.
-	identity    *provider.Identity
-	agents      []provider.AgentConfig
-	agent       *provider.AgentConfig
-	status      *provider.AgentStatus
-	logs        string
-	secrets     []provider.SecretEntry
-	execOutput  string
-	connectInfo *provider.ConnectInfo
+	identity      *provider.Identity
+	agents        []provider.AgentConfig
+	agent         *provider.AgentConfig
+	status        *provider.AgentStatus
+	logs          string
+	secrets       []provider.SecretEntry
+	execOutput    string
+	connectInfo   *provider.ConnectInfo
+	manifestBytes []byte
 
 	// Capture call args.
 	lastAgentName      string
@@ -143,6 +144,13 @@ func (m *mockProvider) BindChannel(ctx context.Context, agentName string, bindin
 func (m *mockProvider) UnbindChannel(ctx context.Context, agentName string, platform string) error {
 	m.lastAgentName = agentName
 	return m.err
+}
+func (m *mockProvider) ReadProxyManifest(ctx context.Context, agentName string) ([]byte, error) {
+	m.lastAgentName = agentName
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.manifestBytes, nil
 }
 func (m *mockProvider) CycleHost(ctx context.Context) error { return m.err }
 func (m *mockProvider) Teardown(ctx context.Context) error  { return m.err }

@@ -4,11 +4,36 @@ import (
 	"context"
 	"fmt"
 	posixpath "path"
+	"strings"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/common"
+	"github.com/cruxdigital-llc/conga-line/pkg/policy"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 )
+
+// ReadProxyManifest downloads the deployed egress policy manifest for an
+// agent from the remote host. Returns (nil, ErrNotFound) when the
+// manifest file is absent on the host.
+func (p *RemoteProvider) ReadProxyManifest(ctx context.Context, agentName string) ([]byte, error) {
+	if err := p.requireSSH(); err != nil {
+		return nil, err
+	}
+	path := posixpath.Join(p.remoteConfigDir(), policy.EgressManifestFileName(agentName))
+	data, err := p.ssh.Download(path)
+	if err != nil {
+		// SSHClient.Download returns a generic error for "file not found".
+		// The SFTP + cat fallback surfaces different messages — check both.
+		msg := err.Error()
+		if strings.Contains(msg, "file does not exist") ||
+			strings.Contains(msg, "No such file") ||
+			strings.Contains(msg, "not found") {
+			return nil, fmt.Errorf("manifest for agent %q: %w", agentName, provider.ErrNotFound)
+		}
+		return nil, fmt.Errorf("reading manifest for %q: %w", agentName, err)
+	}
+	return data, nil
+}
 
 // AddChannel configures a messaging channel platform on the remote host by
 // uploading its shared secrets and starting (or restarting) the router.

@@ -272,18 +272,28 @@ func TestPolicySetEgress(t *testing.T) {
 		t.Fatalf("unexpected error: %s", textContent(t, result))
 	}
 
-	var pf policy.PolicyFile
-	if err := json.Unmarshal([]byte(textContent(t, result)), &pf); err != nil {
+	var resp struct {
+		Policy         *policy.PolicyFile `json:"policy"`
+		DeployRequired bool               `json:"deploy_required"`
+		DeployHint     string             `json:"deploy_hint"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if pf.Egress == nil {
-		t.Fatal("egress is nil")
+	if !resp.DeployRequired {
+		t.Error("deploy_required should be true after a set without deploy=true")
 	}
-	if len(pf.Egress.AllowedDomains) != 2 {
-		t.Errorf("allowed_domains len = %d, want 2", len(pf.Egress.AllowedDomains))
+	if resp.DeployHint == "" {
+		t.Error("deploy_hint should be populated when deploy_required is true")
 	}
-	if pf.Egress.Mode != policy.EgressModeEnforce {
-		t.Errorf("mode = %q, want %q", pf.Egress.Mode, "enforce")
+	if resp.Policy == nil || resp.Policy.Egress == nil {
+		t.Fatal("policy.egress is nil")
+	}
+	if len(resp.Policy.Egress.AllowedDomains) != 2 {
+		t.Errorf("allowed_domains len = %d, want 2", len(resp.Policy.Egress.AllowedDomains))
+	}
+	if resp.Policy.Egress.Mode != policy.EgressModeEnforce {
+		t.Errorf("mode = %q, want %q", resp.Policy.Egress.Mode, "enforce")
 	}
 }
 
@@ -319,9 +329,15 @@ egress:
 		t.Fatalf("unexpected error: %s", textContent(t, result))
 	}
 
-	var pf policy.PolicyFile
-	if err := json.Unmarshal([]byte(textContent(t, result)), &pf); err != nil {
+	var resp struct {
+		Policy *policy.PolicyFile `json:"policy"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
+	}
+	pf := resp.Policy
+	if pf == nil {
+		t.Fatal("policy is nil")
 	}
 	// Global should be unchanged
 	if len(pf.Egress.AllowedDomains) != 1 {
@@ -565,13 +581,14 @@ egress:
 // mockEgressProvider embeds mockProvider and implements DeployEgress.
 type mockEgressProvider struct {
 	mockProvider
-	deployedAgents  []string
-	deployedConfigs map[string]string            // agent name -> envoy config
-	deployedModes   map[string]policy.EgressMode // agent name -> mode
-	deployErr       map[string]error             // agent name -> error
+	deployedAgents    []string
+	deployedConfigs   map[string]string            // agent name -> envoy config
+	deployedModes     map[string]policy.EgressMode // agent name -> mode
+	deployedManifests map[string]string            // agent name -> manifest JSON
+	deployErr         map[string]error             // agent name -> error
 }
 
-func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig string, mode policy.EgressMode) error {
+func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig, manifestJSON string, mode policy.EgressMode) error {
 	if err, ok := m.deployErr[agentName]; ok && err != nil {
 		return err
 	}
@@ -582,8 +599,12 @@ func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policy
 	if m.deployedModes == nil {
 		m.deployedModes = make(map[string]policy.EgressMode)
 	}
+	if m.deployedManifests == nil {
+		m.deployedManifests = make(map[string]string)
+	}
 	m.deployedConfigs[agentName] = envoyConfig
 	m.deployedModes[agentName] = mode
+	m.deployedManifests[agentName] = manifestJSON
 	return nil
 }
 
@@ -852,12 +873,15 @@ func TestPolicySetEgressDefaultMode(t *testing.T) {
 		t.Fatalf("unexpected error: %s", textContent(t, result))
 	}
 
-	var pf policy.PolicyFile
-	if err := json.Unmarshal([]byte(textContent(t, result)), &pf); err != nil {
+	var resp struct {
+		Policy *policy.PolicyFile `json:"policy"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if pf.Egress == nil {
-		t.Fatal("egress is nil")
+	pf := resp.Policy
+	if pf == nil || pf.Egress == nil {
+		t.Fatal("policy.egress is nil")
 	}
 	if pf.Egress.Mode != policy.EgressModeEnforce {
 		t.Errorf("mode = %q, want %q (default when omitted)", pf.Egress.Mode, policy.EgressModeEnforce)

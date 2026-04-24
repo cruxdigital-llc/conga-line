@@ -18,6 +18,7 @@ func TestDeployEgressScriptTemplateRender(t *testing.T) {
 		PolicyContent    string
 		EnvoyConfig      string
 		ProxyBootstrapJS string
+		ManifestJSON     string
 	}{
 		AgentName: "testagent",
 		Mode:      "enforce",
@@ -29,6 +30,7 @@ egress:
   mode: enforce`,
 		EnvoyConfig:      "static_resources:\n  listeners:\n    - name: main\n",
 		ProxyBootstrapJS: "const http = require('http');\n",
+		ManifestJSON:     `{"schema_version":1,"policy_hash":"abc","egress":{"mode":"enforce"}}`,
 	}
 
 	var buf strings.Builder
@@ -52,6 +54,14 @@ egress:
 	if !strings.Contains(output, "set -euo pipefail") {
 		t.Error("expected bash strict mode in rendered output")
 	}
+	if !strings.Contains(output, `"policy_hash":"abc"`) {
+		t.Error("expected manifest JSON in rendered output")
+	}
+	// The script uses bash-level $AGENT_NAME, so the literal path is
+	// egress-$AGENT_NAME.manifest.json until bash expands it at runtime.
+	if !strings.Contains(output, "egress-$AGENT_NAME.manifest.json") {
+		t.Error("expected manifest file path in rendered output")
+	}
 }
 
 func TestDeployEgressScriptValidateModeAppliesIptables(t *testing.T) {
@@ -66,6 +76,7 @@ func TestDeployEgressScriptValidateModeAppliesIptables(t *testing.T) {
 		PolicyContent    string
 		EnvoyConfig      string
 		ProxyBootstrapJS string
+		ManifestJSON     string
 	}{
 		AgentName: "testagent",
 		Mode:      "validate",
@@ -76,6 +87,7 @@ egress:
   mode: validate`,
 		EnvoyConfig:      "static_resources:\n  listeners:\n    - name: main\n",
 		ProxyBootstrapJS: "const http = require('http');\n",
+		ManifestJSON:     `{"schema_version":1,"egress":{"mode":"validate"}}`,
 	}
 
 	var buf strings.Builder

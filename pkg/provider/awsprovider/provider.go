@@ -516,7 +516,13 @@ func (p *AWSProvider) RefreshAll(ctx context.Context) error {
 // DeployEgress deploys the egress proxy for a single agent without requiring a host cycle.
 // It uploads the policy file and pre-generated Envoy config, starts the proxy container,
 // restarts the agent container with HTTPS_PROXY, and applies iptables rules (all modes).
-func (p *AWSProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig string, mode policy.EgressMode) error {
+//
+// manifestJSON is an optional pre-rendered deployment manifest (see
+// policy.BuildManifest → MarshalForDeploy) written alongside the Envoy
+// config so drift detection can inspect what was deployed without parsing
+// the Lua filter. When empty, an empty manifest file is written; callers
+// that want drift detection should always supply a manifest.
+func (p *AWSProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig, manifestJSON string, mode policy.EgressMode) error {
 	instanceID, err := p.findInstance(ctx)
 	if err != nil {
 		return err
@@ -533,6 +539,7 @@ func (p *AWSProvider) DeployEgress(ctx context.Context, agentName, policyContent
 		"PolicyContent":    policyContent,
 		"EnvoyConfig":      envoyConfig,
 		"ProxyBootstrapJS": policy.ProxyBootstrapJS(),
+		"ManifestJSON":     manifestJSON,
 	}); err != nil {
 		return err
 	}
@@ -544,7 +551,8 @@ func (p *AWSProvider) DeployEgress(ctx context.Context, agentName, policyContent
 		PolicyContent    string
 		EnvoyConfig      string
 		ProxyBootstrapJS string
-	}{agentName, string(mode), policyContent, envoyConfig, policy.ProxyBootstrapJS()}); err != nil {
+		ManifestJSON     string
+	}{agentName, string(mode), policyContent, envoyConfig, policy.ProxyBootstrapJS(), manifestJSON}); err != nil {
 		return fmt.Errorf("failed to render deploy-egress script: %w", err)
 	}
 
