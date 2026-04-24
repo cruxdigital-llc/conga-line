@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -46,8 +48,26 @@ client but not logged by the proxy).`,
 	}
 	proxyLogsCmd.Flags().IntVarP(&logLines, "lines", "n", 50, "Number of log lines")
 
+	driftCmd := &cobra.Command{
+		Use:   "drift",
+		Short: "Detect drift between the policy file and the running egress proxy",
+		Long: `Compare the desired egress policy (from the local policy file) against
+the policy manifest deployed to each agent's host, and report any drift.
+
+Drift means the running proxy is enforcing a different allowlist or mode
+than the policy file says it should. The most common cause is forgetting
+to run 'conga policy deploy' after editing the policy — since mode and
+domains are baked into the Envoy filter at deploy time, the proxy won't
+pick up changes until the next deploy.
+
+Use --agent to check a single agent; omit it to scan all non-paused agents.
+Use --output json for structured output.`,
+		RunE: policyDriftRun,
+	}
+
 	policyCmd.AddCommand(validateCmd)
 	policyCmd.AddCommand(proxyLogsCmd)
+	policyCmd.AddCommand(driftCmd)
 	rootCmd.AddCommand(policyCmd)
 }
 
@@ -151,6 +171,157 @@ func policyValidateRun(cmd *cobra.Command, args []string) error {
 		rows = append(rows, []string{r.Section, r.Rule, string(r.Level), r.Detail})
 	}
 	ui.PrintTable(headers, rows)
+
+	return nil
+}
+
+// AgentDriftReport is the per-agent drift result returned by conga policy drift.
+type AgentDriftReport struct {
+	Agent   string              `json:"agent"`
+	InSync  bool                `json:"in_sync"`
+	Summary string              `json:"summary"`
+	Drift   []policy.DriftEntry `json:"drift,omitempty"`
+	Error   string              `json:"error,omitempty"` // populated when the agent couldn't be inspected
+}
+
+func policyDriftRun(cmd *cobra.Command, args []string) error {
+	ctx, cancel := commandContext()
+	defer cancel()
+
+	if prov == nil {
+		return fmt.Errorf("no provider configured; use --provider or run conga admin setup")
+	}
+
+	// Load the desired policy once so per-agent merging is cheap.
+	path, err := defaultPolicyPath()
+	if err != nil {
+		return err
+	}
+	pf, err := policy.Load(path)
+	if err != nil {
+		return fmt.Errorf("failed to load policy: %w", err)
+	}
+	if pf == nil {
+		return fmt.Errorf("no policy file at %s — nothing to compare against", path)
+	}
+	if err := pf.Validate(); err != nil {
+		return fmt.Errorf("policy validation failed: %w", err)
+	}
+
+	// Build the list of agents to check.
+	var targets []string
+	if flagAgent != "" {
+		targets = []string{flagAgent}
+	} else {
+		agents, err := prov.ListAgents(ctx)
+		if err != nil {
+			return fmt.Errorf("listing agents: %w", err)
+		}
+		for _, a := range agents {
+			if !a.Paused {
+				targets = append(targets, a.Name)
+			}
+		}
+	}
+	if len(targets) == 0 {
+		if ui.OutputJSON {
+			ui.EmitJSON([]AgentDriftReport{})
+			return nil
+		}
+		fmt.Println("No active agents to check.")
+		return nil
+	}
+
+	reports := make([]AgentDriftReport, 0, len(targets))
+	for _, name := range targets {
+		reports = append(reports, driftReportForAgent(ctx, pf, name))
+	}
+
+	if ui.OutputJSON {
+		ui.EmitJSON(reports)
+		return nil
+	}
+	return renderDriftTable(reports)
+}
+
+// driftReportForAgent computes the drift report for a single agent, wrapping
+// lookups in a structured report so the caller can render a full table even
+// when individual agents fail (e.g. manifest not deployed yet).
+func driftReportForAgent(ctx context.Context, pf *policy.PolicyFile, agentName string) AgentDriftReport {
+	report := AgentDriftReport{Agent: agentName}
+
+	merged := pf.MergeForAgent(agentName)
+	desired := policy.BuildManifest(merged.Egress)
+
+	raw, err := prov.ReadProxyManifest(ctx, agentName)
+	if err != nil {
+		if errors.Is(err, provpkg.ErrNotFound) {
+			// No manifest on host — definitely drifted (or never deployed).
+			report.InSync = false
+			report.Drift = policy.DiffManifests(desired, nil)
+			report.Summary = "not deployed"
+			return report
+		}
+		report.InSync = false
+		report.Summary = "error"
+		report.Error = err.Error()
+		return report
+	}
+
+	actual, parseErr := policy.ParseManifest(raw)
+	if parseErr != nil {
+		report.InSync = false
+		report.Summary = "malformed manifest"
+		report.Error = parseErr.Error()
+		return report
+	}
+
+	report.Drift = policy.DiffManifests(desired, actual)
+	report.InSync = len(report.Drift) == 0
+	report.Summary = policy.Summary(report.Drift)
+	return report
+}
+
+// renderDriftTable writes a human-readable table of drift reports to stdout.
+// One row per report; drifted agents get a second indented block listing
+// per-field drift entries for quick scanning.
+func renderDriftTable(reports []AgentDriftReport) error {
+	headers := []string{"AGENT", "STATUS", "SUMMARY"}
+	var rows [][]string
+	for _, r := range reports {
+		status := "in-sync"
+		switch {
+		case r.Error != "":
+			status = "ERROR"
+		case !r.InSync:
+			status = "DRIFTED"
+		}
+		rows = append(rows, []string{r.Agent, status, r.Summary})
+	}
+	ui.PrintTable(headers, rows)
+
+	// Detail blocks for drifted agents, rendered below the table.
+	for _, r := range reports {
+		if r.InSync && r.Error == "" {
+			continue
+		}
+		fmt.Println()
+		fmt.Printf("Agent %s:\n", r.Agent)
+		if r.Error != "" {
+			fmt.Printf("  error: %s\n", r.Error)
+			continue
+		}
+		for _, e := range r.Drift {
+			switch e.Kind {
+			case policy.DriftMismatch:
+				fmt.Printf("  %s: desired=%q, actual=%q\n", e.Field, e.Desired, e.Actual)
+			case policy.DriftMissingOnHost:
+				fmt.Printf("  %s: missing on host: %s\n", e.Field, e.Desired)
+			case policy.DriftExtraOnHost:
+				fmt.Printf("  %s: extra on host: %s\n", e.Field, e.Actual)
+			}
+		}
+	}
 
 	return nil
 }

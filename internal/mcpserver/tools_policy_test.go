@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cruxdigital-llc/conga-line/internal/mcpserver"
 	"github.com/cruxdigital-llc/conga-line/pkg/policy"
@@ -272,18 +273,28 @@ func TestPolicySetEgress(t *testing.T) {
 		t.Fatalf("unexpected error: %s", textContent(t, result))
 	}
 
-	var pf policy.PolicyFile
-	if err := json.Unmarshal([]byte(textContent(t, result)), &pf); err != nil {
+	var resp struct {
+		Policy         *policy.PolicyFile `json:"policy"`
+		DeployRequired bool               `json:"deploy_required"`
+		DeployHint     string             `json:"deploy_hint"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if pf.Egress == nil {
-		t.Fatal("egress is nil")
+	if !resp.DeployRequired {
+		t.Error("deploy_required should be true after a set without deploy=true")
 	}
-	if len(pf.Egress.AllowedDomains) != 2 {
-		t.Errorf("allowed_domains len = %d, want 2", len(pf.Egress.AllowedDomains))
+	if resp.DeployHint == "" {
+		t.Error("deploy_hint should be populated when deploy_required is true")
 	}
-	if pf.Egress.Mode != policy.EgressModeEnforce {
-		t.Errorf("mode = %q, want %q", pf.Egress.Mode, "enforce")
+	if resp.Policy == nil || resp.Policy.Egress == nil {
+		t.Fatal("policy.egress is nil")
+	}
+	if len(resp.Policy.Egress.AllowedDomains) != 2 {
+		t.Errorf("allowed_domains len = %d, want 2", len(resp.Policy.Egress.AllowedDomains))
+	}
+	if resp.Policy.Egress.Mode != policy.EgressModeEnforce {
+		t.Errorf("mode = %q, want %q", resp.Policy.Egress.Mode, "enforce")
 	}
 }
 
@@ -319,9 +330,15 @@ egress:
 		t.Fatalf("unexpected error: %s", textContent(t, result))
 	}
 
-	var pf policy.PolicyFile
-	if err := json.Unmarshal([]byte(textContent(t, result)), &pf); err != nil {
+	var resp struct {
+		Policy *policy.PolicyFile `json:"policy"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
+	}
+	pf := resp.Policy
+	if pf == nil {
+		t.Fatal("policy is nil")
 	}
 	// Global should be unchanged
 	if len(pf.Egress.AllowedDomains) != 1 {
@@ -565,13 +582,14 @@ egress:
 // mockEgressProvider embeds mockProvider and implements DeployEgress.
 type mockEgressProvider struct {
 	mockProvider
-	deployedAgents  []string
-	deployedConfigs map[string]string            // agent name -> envoy config
-	deployedModes   map[string]policy.EgressMode // agent name -> mode
-	deployErr       map[string]error             // agent name -> error
+	deployedAgents    []string
+	deployedConfigs   map[string]string            // agent name -> envoy config
+	deployedModes     map[string]policy.EgressMode // agent name -> mode
+	deployedManifests map[string]string            // agent name -> manifest JSON
+	deployErr         map[string]error             // agent name -> error
 }
 
-func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig string, mode policy.EgressMode) error {
+func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig, manifestJSON string, mode policy.EgressMode) error {
 	if err, ok := m.deployErr[agentName]; ok && err != nil {
 		return err
 	}
@@ -582,8 +600,12 @@ func (m *mockEgressProvider) DeployEgress(ctx context.Context, agentName, policy
 	if m.deployedModes == nil {
 		m.deployedModes = make(map[string]policy.EgressMode)
 	}
+	if m.deployedManifests == nil {
+		m.deployedManifests = make(map[string]string)
+	}
 	m.deployedConfigs[agentName] = envoyConfig
 	m.deployedModes[agentName] = mode
+	m.deployedManifests[agentName] = manifestJSON
 	return nil
 }
 
@@ -852,12 +874,15 @@ func TestPolicySetEgressDefaultMode(t *testing.T) {
 		t.Fatalf("unexpected error: %s", textContent(t, result))
 	}
 
-	var pf policy.PolicyFile
-	if err := json.Unmarshal([]byte(textContent(t, result)), &pf); err != nil {
+	var resp struct {
+		Policy *policy.PolicyFile `json:"policy"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if pf.Egress == nil {
-		t.Fatal("egress is nil")
+	pf := resp.Policy
+	if pf == nil || pf.Egress == nil {
+		t.Fatal("policy.egress is nil")
 	}
 	if pf.Egress.Mode != policy.EgressModeEnforce {
 		t.Errorf("mode = %q, want %q (default when omitted)", pf.Egress.Mode, policy.EgressModeEnforce)
@@ -930,5 +955,225 @@ egress:
 	text := textContent(t, result)
 	if !strings.Contains(text, "no active agents") {
 		t.Errorf("error = %q, want it to mention no active agents", text)
+	}
+}
+
+// --- conga_policy_drift tests (C4) ---
+
+// driftReport mirrors the JSON shape emitted by conga_policy_drift handler.
+// Duplicated here rather than importing internal/mcpserver.agentDriftReport
+// because that type is unexported.
+type driftReport struct {
+	Agent   string              `json:"agent"`
+	InSync  bool                `json:"in_sync"`
+	Summary string              `json:"summary"`
+	Drift   []policy.DriftEntry `json:"drift,omitempty"`
+	Error   string              `json:"error,omitempty"`
+}
+
+// testPolicyYAML is a canonical policy used for drift tests.
+const testPolicyYAML = `apiVersion: conga.dev/v1alpha1
+egress:
+  allowed_domains:
+    - api.anthropic.com
+    - "*.slack.com"
+  mode: validate
+`
+
+// manifestBytesFor builds a manifest JSON for the given egress spec.
+// Convenience for seeding mockProvider.manifestBytes.
+func manifestBytesFor(t *testing.T, ep *policy.EgressPolicy) []byte {
+	t.Helper()
+	m := policy.BuildManifest(ep)
+	// Stamp a deterministic time so the hash stays stable across test runs.
+	m.DeployedAt = time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC)
+	b, err := m.MarshalForDeploy()
+	if err != nil {
+		t.Fatalf("build manifest: %v", err)
+	}
+	return b
+}
+
+func TestPolicyDrift_InSync(t *testing.T) {
+	env, client := newPolicyTestEnv(t, testPolicyYAML)
+	env.mock.manifestBytes = manifestBytesFor(t, &policy.EgressPolicy{
+		AllowedDomains: []string{"api.anthropic.com", "*.slack.com"},
+		Mode:           policy.EgressModeValidate,
+	})
+
+	result := callTool(t, client, "conga_policy_drift", map[string]any{"agent": "agent1"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	var reports []driftReport
+	if err := json.Unmarshal([]byte(textContent(t, result)), &reports); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("want 1 report for agent1, got %d", len(reports))
+	}
+	r := reports[0]
+	if !r.InSync {
+		t.Errorf("want in_sync, got drift: %+v", r.Drift)
+	}
+	if r.Summary != "in sync" {
+		t.Errorf("summary = %q, want \"in sync\"", r.Summary)
+	}
+}
+
+func TestPolicyDrift_ModeDrift(t *testing.T) {
+	env, client := newPolicyTestEnv(t, testPolicyYAML)
+	// Host says enforce, desired says validate → mode mismatch.
+	env.mock.manifestBytes = manifestBytesFor(t, &policy.EgressPolicy{
+		AllowedDomains: []string{"api.anthropic.com", "*.slack.com"},
+		Mode:           policy.EgressModeEnforce,
+	})
+
+	result := callTool(t, client, "conga_policy_drift", map[string]any{"agent": "agent1"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	var reports []driftReport
+	if err := json.Unmarshal([]byte(textContent(t, result)), &reports); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(reports) != 1 || reports[0].InSync {
+		t.Fatalf("want drifted, got %+v", reports)
+	}
+	var modeFound bool
+	for _, e := range reports[0].Drift {
+		if e.Field == "mode" && e.Desired == "validate" && e.Actual == "enforce" {
+			modeFound = true
+		}
+	}
+	if !modeFound {
+		t.Errorf("expected mode drift entry (desired=validate, actual=enforce), got %+v", reports[0].Drift)
+	}
+}
+
+func TestPolicyDrift_DomainMissingOnHost(t *testing.T) {
+	yaml := `apiVersion: conga.dev/v1alpha1
+egress:
+  allowed_domains:
+    - api.anthropic.com
+    - "*.slack.com"
+    - oauth2.googleapis.com
+  mode: validate
+`
+	env, client := newPolicyTestEnv(t, yaml)
+	// Host manifest missing the new googleapis domain.
+	env.mock.manifestBytes = manifestBytesFor(t, &policy.EgressPolicy{
+		AllowedDomains: []string{"api.anthropic.com", "*.slack.com"},
+		Mode:           policy.EgressModeValidate,
+	})
+
+	result := callTool(t, client, "conga_policy_drift", map[string]any{"agent": "agent1"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	var reports []driftReport
+	if err := json.Unmarshal([]byte(textContent(t, result)), &reports); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	r := reports[0]
+	var missingFound bool
+	for _, e := range r.Drift {
+		if e.Field == "allowed_domains" && e.Kind == policy.DriftMissingOnHost && e.Desired == "oauth2.googleapis.com" {
+			missingFound = true
+		}
+	}
+	if !missingFound {
+		t.Errorf("expected missing-on-host entry for oauth2.googleapis.com, got %+v", r.Drift)
+	}
+}
+
+func TestPolicyDrift_NotDeployed(t *testing.T) {
+	env, client := newPolicyTestEnv(t, testPolicyYAML)
+	// Provider returns ErrNotFound → "not deployed".
+	env.mock.err = provider.ErrNotFound
+
+	result := callTool(t, client, "conga_policy_drift", map[string]any{"agent": "agent1"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	var reports []driftReport
+	if err := json.Unmarshal([]byte(textContent(t, result)), &reports); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("want 1 report, got %d", len(reports))
+	}
+	r := reports[0]
+	if r.InSync {
+		t.Error("want not in_sync when manifest is missing")
+	}
+	if r.Summary != "not deployed" {
+		t.Errorf("summary = %q, want \"not deployed\"", r.Summary)
+	}
+	if len(r.Drift) == 0 || r.Drift[0].Field != "manifest" {
+		t.Errorf("want a single manifest-level drift entry, got %+v", r.Drift)
+	}
+}
+
+func TestPolicyDrift_MalformedManifest(t *testing.T) {
+	env, client := newPolicyTestEnv(t, testPolicyYAML)
+	env.mock.manifestBytes = []byte("this is not json {")
+
+	result := callTool(t, client, "conga_policy_drift", map[string]any{"agent": "agent1"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	var reports []driftReport
+	if err := json.Unmarshal([]byte(textContent(t, result)), &reports); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	r := reports[0]
+	if r.InSync {
+		t.Error("want not in_sync with malformed manifest")
+	}
+	if r.Summary != "malformed manifest" {
+		t.Errorf("summary = %q, want \"malformed manifest\"", r.Summary)
+	}
+	if r.Error == "" {
+		t.Error("want non-empty error for malformed manifest")
+	}
+}
+
+func TestPolicyDrift_AllAgentsWhenAgentOmitted(t *testing.T) {
+	env, client := newPolicyTestEnv(t, testPolicyYAML)
+	env.mock.manifestBytes = manifestBytesFor(t, &policy.EgressPolicy{
+		AllowedDomains: []string{"api.anthropic.com", "*.slack.com"},
+		Mode:           policy.EgressModeValidate,
+	})
+
+	// newPolicyTestEnv seeds mock.agents with agent1 (active) + agent2 (active).
+	result := callTool(t, client, "conga_policy_drift", nil)
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", textContent(t, result))
+	}
+
+	var reports []driftReport
+	if err := json.Unmarshal([]byte(textContent(t, result)), &reports); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(reports) != 2 {
+		t.Fatalf("want 2 reports (all non-paused agents), got %d: %+v", len(reports), reports)
+	}
+}
+
+func TestPolicyDrift_NoPolicyFile_Errors(t *testing.T) {
+	_, client := newPolicyTestEnv(t, "") // no policy file on disk
+
+	result := callTool(t, client, "conga_policy_drift", map[string]any{"agent": "agent1"})
+	if !result.IsError {
+		t.Fatal("expected error when no policy file exists")
+	}
+	if !strings.Contains(textContent(t, result), "no policy file") {
+		t.Errorf("error = %q, want it to mention missing policy", textContent(t, result))
 	}
 }

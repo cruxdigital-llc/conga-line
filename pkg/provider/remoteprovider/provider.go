@@ -994,6 +994,18 @@ func (p *RemoteProvider) startAgentEgressProxy(ctx context.Context, agentName st
 		return fmt.Errorf("uploading egress config: %w", err)
 	}
 
+	// Upload the deployment manifest alongside the YAML so drift detection
+	// (conga policy drift) can tell whether the running proxy matches the
+	// current desired policy. Best-effort: manifest upload failure does not
+	// abort the deploy.
+	manifestPath := posixpath.Join(p.remoteConfigDir(), policy.EgressManifestFileName(agentName))
+	manifestBytes, err := policy.BuildManifest(ep).MarshalForDeploy()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to build egress manifest for %s: %v\n", agentName, err)
+	} else if err := p.ssh.Upload(manifestPath, manifestBytes, 0444); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to upload egress manifest %s: %v\n", manifestPath, err)
+	}
+
 	// Ensure agent network exists (caller should have created it, but be safe)
 	if !p.networkExists(ctx, netName) {
 		if err := p.createNetwork(ctx, netName); err != nil {

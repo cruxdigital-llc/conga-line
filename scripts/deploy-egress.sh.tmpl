@@ -28,6 +28,15 @@ cat > "$EGRESS_CONF" << 'ENVOYEOF'
 ENVOYEOF
 chmod 0444 "$EGRESS_CONF"
 
+# Write deployment manifest alongside the Envoy config so drift detection
+# (conga policy drift) can compare the running proxy's config to the current
+# desired policy without parsing Lua out of the YAML.
+EGRESS_MANIFEST="/opt/conga/config/egress-$AGENT_NAME.manifest.json"
+cat > "$EGRESS_MANIFEST" << 'MANIFESTEOF'
+{{.ManifestJSON}}
+MANIFESTEOF
+chmod 0444 "$EGRESS_MANIFEST"
+
 # Write proxy bootstrap JS (patches Node.js fetch/https to route through proxy)
 BOOTSTRAP_PATH="/opt/conga/config/proxy-bootstrap.js"
 cat > "$BOOTSTRAP_PATH" << 'BOOTSTRAPEOF'

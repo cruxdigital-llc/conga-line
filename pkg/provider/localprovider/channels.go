@@ -2,6 +2,7 @@ package localprovider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,9 +10,26 @@ import (
 
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/common"
+	"github.com/cruxdigital-llc/conga-line/pkg/policy"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
+
+// ReadProxyManifest returns the raw JSON bytes of the deployed egress
+// policy manifest for an agent. Returns (nil, ErrNotFound) when the
+// manifest file is absent — typically because the agent was never
+// provisioned or its egress proxy was never deployed.
+func (p *LocalProvider) ReadProxyManifest(_ context.Context, agentName string) ([]byte, error) {
+	path := filepath.Join(p.configDir(), policy.EgressManifestFileName(agentName))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("manifest for agent %q: %w", agentName, provider.ErrNotFound)
+		}
+		return nil, fmt.Errorf("reading manifest for %q: %w", agentName, err)
+	}
+	return data, nil
+}
 
 // routerContainerForPlatform returns the Docker container name for a platform's router.
 func routerContainerForPlatform(platform string) string {

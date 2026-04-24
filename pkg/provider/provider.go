@@ -192,6 +192,14 @@ type Provider interface {
 	// UnbindChannel removes a channel binding from an agent.
 	UnbindChannel(ctx context.Context, agentName string, platform string) error
 
+	// ReadProxyManifest returns the raw JSON bytes of the egress policy
+	// manifest deployed for an agent (or ErrNotFound wrapped if the agent
+	// has no manifest on the host — e.g. not yet deployed, or the manifest
+	// file was never written by an older deploy script). Callers parse the
+	// bytes via policy.ParseManifest. The interface stays byte-oriented so
+	// pkg/provider does not need to import pkg/policy.
+	ReadProxyManifest(ctx context.Context, agentName string) ([]byte, error)
+
 	// --- Connectivity ---
 
 	// Connect establishes a connection to the agent's web UI.

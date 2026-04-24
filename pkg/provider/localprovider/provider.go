@@ -1577,6 +1577,21 @@ func (p *LocalProvider) startAgentEgressProxy(ctx context.Context, agentName str
 		return fmt.Errorf("writing egress config: %w", err)
 	}
 
+	// Write the deployment manifest alongside the YAML so drift detection
+	// (conga policy drift) can tell whether the running proxy matches the
+	// current desired policy. Best-effort: manifest write failure does not
+	// abort the deploy.
+	manifestPath := filepath.Join(p.configDir(), policy.EgressManifestFileName(agentName))
+	manifestBytes, err := policy.BuildManifest(ep).MarshalForDeploy()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to build egress manifest for %s: %v\n", agentName, err)
+	} else {
+		_ = os.Remove(manifestPath)
+		if err := os.WriteFile(manifestPath, manifestBytes, 0444); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to write egress manifest %s: %v\n", manifestPath, err)
+		}
+	}
+
 	// Ensure agent network exists (caller should have created it, but be safe)
 	if !networkExists(ctx, netName) {
 		if err := createNetwork(ctx, netName); err != nil {

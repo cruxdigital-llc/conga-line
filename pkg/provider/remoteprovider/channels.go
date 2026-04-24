@@ -2,13 +2,53 @@ package remoteprovider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	posixpath "path"
+	"strings"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/channels"
 	"github.com/cruxdigital-llc/conga-line/pkg/common"
+	"github.com/cruxdigital-llc/conga-line/pkg/policy"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 )
+
+// ReadProxyManifest downloads the deployed egress policy manifest for an
+// agent from the remote host. Returns (nil, ErrNotFound) when the
+// manifest file is absent on the host.
+func (p *RemoteProvider) ReadProxyManifest(ctx context.Context, agentName string) ([]byte, error) {
+	if err := p.requireSSH(); err != nil {
+		return nil, err
+	}
+	path := posixpath.Join(p.remoteConfigDir(), policy.EgressManifestFileName(agentName))
+	data, err := p.ssh.Download(path)
+	if err != nil {
+		if isNotExist(err) {
+			return nil, fmt.Errorf("manifest for agent %q: %w", agentName, provider.ErrNotFound)
+		}
+		return nil, fmt.Errorf("reading manifest for %q: %w", agentName, err)
+	}
+	return data, nil
+}
+
+// isNotExist reports whether err indicates a missing file, across the two
+// code paths in SSHClient.Download:
+//   - SFTP path: wraps os.ErrNotExist / fs.ErrNotExist via *sftp.StatusError,
+//     which satisfies errors.Is.
+//   - cat fallback: wraps the shell's "No such file or directory" stderr
+//     plus a session exit error. Detected here via substring match on the
+//     common variants.
+func isNotExist(err error) bool {
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "file does not exist") ||
+		strings.Contains(msg, "No such file") ||
+		strings.Contains(msg, "not found")
+}
 
 // AddChannel configures a messaging channel platform on the remote host by
 // uploading its shared secrets and starting (or restarting) the router.

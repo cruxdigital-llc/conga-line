@@ -2,12 +2,14 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/cruxdigital-llc/conga-line/pkg/policy"
+	"github.com/cruxdigital-llc/conga-line/pkg/provider"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -214,8 +216,11 @@ func (s *Server) toolPolicyGetAgent() server.ServerTool {
 func (s *Server) toolPolicySetEgress() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{
-			Name:        "conga_policy_set_egress",
-			Description: "Update the egress policy (allowed/blocked domains and enforcement mode). Replaces the entire egress section. Validates before saving. Use 'agent' to create a per-agent override instead of modifying the global policy.",
+			Name: "conga_policy_set_egress",
+			Description: "Update the egress policy (allowed/blocked domains and enforcement mode). Replaces the entire egress section. Validates before saving. " +
+				"Use 'agent' to create a per-agent override instead of modifying the global policy. " +
+				"The policy is only saved locally — running proxies continue to enforce the previously-deployed policy until conga_policy_deploy runs. " +
+				"Pass deploy=true to chain the deploy step automatically; the response's deploy_required field is true whenever set without deploy completes and a running agent may have drifted.",
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
@@ -237,6 +242,10 @@ func (s *Server) toolPolicySetEgress() server.ServerTool {
 					"agent": map[string]any{
 						"type":        "string",
 						"description": "If set, creates a per-agent override instead of modifying the global policy",
+					},
+					"deploy": map[string]any{
+						"type":        "boolean",
+						"description": "If true, regenerate the Envoy proxy config on affected agents after saving. Skips the deploy-required reminder. Default false.",
 					},
 				},
 			},
@@ -268,15 +277,170 @@ func (s *Server) toolPolicySetEgress() server.ServerTool {
 				BlockedDomains: blockedDomains,
 				Mode:           mode,
 			}
+			agentName := req.GetString("agent", "")
 
-			policy.SetEgress(pf, req.GetString("agent", ""), patch)
+			policy.SetEgress(pf, agentName, patch)
 
 			if err := policy.Save(pf, path); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			return jsonResult(pf)
+
+			// Read back the just-saved policy bytes so we can pass them into
+			// deployPolicyEgress without a second disk read inside the helper.
+			// Only used when deploy=true; set_egress without deploy never touches
+			// the running agents.
+			var policyContent string
+			if req.GetBool("deploy", false) {
+				policyBytes, readErr := os.ReadFile(path)
+				if readErr != nil {
+					return mcp.NewToolResultError(
+						fmt.Sprintf("policy saved but could not re-read for deploy: %v", readErr)), nil
+				}
+				policyContent = string(policyBytes)
+			}
+
+			// Response includes a deploy reminder so the caller can't miss it.
+			// When 'deploy' is true we run the deploy step inline and report its
+			// outcome alongside the saved policy.
+			resp := setEgressResult{
+				Policy:         pf,
+				DeployRequired: true,
+				DeployHint:     "Run conga_policy_deploy to apply to running agents (their proxies still enforce the previously-deployed policy until then).",
+			}
+			if req.GetBool("deploy", false) {
+				ctx, cancel := toolCtx(ctx)
+				defer cancel()
+				deployed, deployErrs := s.deployPolicyEgress(ctx, pf, agentName, []byte(policyContent))
+				resp.Deployed = deployed
+				resp.DeployErrors = deployErrs
+				// Deploy is "complete" only when every target succeeded.
+				// Any failure — partial or total — leaves at least one proxy
+				// stale, so deploy_required must stay true. The hint points
+				// operators at the corrective action.
+				switch {
+				case len(deployErrs) == 0:
+					resp.DeployRequired = false
+					resp.DeployHint = ""
+				case len(deployed) == 0:
+					// Total failure: no agent got the new policy.
+					resp.DeployRequired = true
+					resp.DeployHint = "deploy failed — rerun conga_policy_deploy after addressing the errors above."
+					body, _ := s.resultJSON(resp)
+					return mcp.NewToolResultError(fmt.Sprintf("policy saved but deploy failed: %s\n%s",
+						strings.Join(deployErrs, "; "), body)), nil
+				default:
+					// Partial failure: some agents drifted.
+					resp.DeployRequired = true
+					resp.DeployHint = fmt.Sprintf(
+						"deploy partially succeeded (%d ok, %d failed) — rerun conga_policy_deploy to retry the failed agents.",
+						len(deployed), len(deployErrs),
+					)
+				}
+			}
+			return jsonResult(resp)
 		},
 	}
+}
+
+// setEgressResult is the response body for conga_policy_set_egress. Extended
+// with deploy hints so callers always know whether the running proxy has
+// been refreshed.
+type setEgressResult struct {
+	Policy         *policy.PolicyFile `json:"policy"`
+	DeployRequired bool               `json:"deploy_required"`
+	DeployHint     string             `json:"deploy_hint,omitempty"`
+	Deployed       []string           `json:"deployed,omitempty"`
+	DeployErrors   []string           `json:"deploy_errors,omitempty"`
+}
+
+// egressDeployer is implemented by providers that support pushing egress
+// config directly to an agent's host (AWS via SSM). Providers without a
+// direct path (local, remote) fall through to RefreshAgent — which in turn
+// regenerates the Envoy YAML + manifest from their own code paths.
+type egressDeployer interface {
+	DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig, manifestJSON string, mode policy.EgressMode) error
+}
+
+// deployPolicyEgress runs the same egress-deploy logic as conga_policy_deploy,
+// scoped to a single agent when agentName is set or to all non-paused agents
+// otherwise. policyBytes must be the authoritative on-disk policy content —
+// the caller owns reading/marshaling; this helper never re-reads the file.
+// Returns (deployed, errors).
+func (s *Server) deployPolicyEgress(ctx context.Context, pf *policy.PolicyFile, agentName string, policyBytes []byte) ([]string, []string) {
+	var targets []string
+	if agentName != "" {
+		targets = []string{agentName}
+	} else {
+		agents, err := s.prov.ListAgents(ctx)
+		if err != nil {
+			return nil, []string{fmt.Sprintf("listing agents: %v", err)}
+		}
+		for _, a := range agents {
+			if !a.Paused {
+				targets = append(targets, a.Name)
+			}
+		}
+	}
+
+	policyContent := string(policyBytes)
+
+	deployer, ok := s.prov.(egressDeployer)
+	if !ok {
+		// Fallback to provider-wide refresh when the provider has no direct
+		// DeployEgress path (local/remote go through RefreshAgent).
+		var deployed []string
+		var errs []string
+		for _, name := range targets {
+			if err := s.prov.RefreshAgent(ctx, name); err != nil {
+				errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+				continue
+			}
+			deployed = append(deployed, name)
+		}
+		return deployed, errs
+	}
+
+	var deployed []string
+	var errs []string
+	for _, name := range targets {
+		merged := pf.MergeForAgent(name)
+		envoyConfig, err := policy.GenerateProxyConf(merged.Egress)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		manifest := policy.BuildManifest(merged.Egress)
+		manifestBytes, marshalErr := manifest.MarshalForDeploy()
+		if marshalErr != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, marshalErr))
+			continue
+		}
+		mode := policy.EgressModeEnforce
+		if merged.Egress != nil {
+			mode = merged.Egress.Mode
+		}
+		if err := deployer.DeployEgress(ctx, name, policyContent, envoyConfig, string(manifestBytes), mode); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		deployed = append(deployed, name)
+	}
+	return deployed, errs
+}
+
+// resultJSON marshals a tool response; used when we need the body text in
+// an error path rather than returning a normal jsonResult.
+func (s *Server) resultJSON(v any) (string, error) {
+	r, err := jsonResult(v)
+	if err != nil || r == nil {
+		return "", err
+	}
+	for _, c := range r.Content {
+		if t, ok := c.(mcp.TextContent); ok {
+			return t.Text, nil
+		}
+	}
+	return "", nil
 }
 
 func (s *Server) toolPolicySetRouting() server.ServerTool {
@@ -491,10 +655,8 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 				return mcp.NewToolResultError("no active agents to deploy to — all agents are paused"), nil
 			}
 
-			// Check if provider supports direct egress deployment (e.g., AWS via SSM)
-			type egressDeployer interface {
-				DeployEgress(ctx context.Context, agentName, policyContent, envoyConfig string, mode policy.EgressMode) error
-			}
+			// Check if provider supports direct egress deployment (e.g., AWS via SSM).
+			// Interface defined once at the package level (see egressDeployer).
 
 			var deployed []string
 			var errors []string
@@ -510,11 +672,23 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 						continue
 					}
 
+					// Build the deployment manifest so drift detection can compare
+					// the running proxy to the current desired policy without
+					// reverse-engineering the Lua filter. If manifest building
+					// fails, proceed with an empty manifest — drift detection
+					// will then report "manifest missing" which surfaces the bug.
+					manifest := policy.BuildManifest(merged.Egress)
+					manifestBytes, marshalErr := manifest.MarshalForDeploy()
+					if marshalErr != nil {
+						errors = append(errors, fmt.Sprintf("%s: building manifest: %v", name, marshalErr))
+						continue
+					}
+
 					mode := policy.EgressModeEnforce
 					if merged.Egress != nil {
 						mode = merged.Egress.Mode
 					}
-					if err := deployer.DeployEgress(ctx, name, policyContent, envoyConfig, mode); err != nil {
+					if err := deployer.DeployEgress(ctx, name, policyContent, envoyConfig, string(manifestBytes), mode); err != nil {
 						errors = append(errors, fmt.Sprintf("%s: %v", name, err))
 					} else {
 						deployed = append(deployed, name)
@@ -547,4 +721,119 @@ func (s *Server) toolPolicyDeploy() server.ServerTool {
 			return jsonResult(result)
 		},
 	}
+}
+
+// agentDriftReport is the per-agent structure returned by conga_policy_drift.
+// Mirrors internal/cmd.AgentDriftReport — duplicated rather than shared to
+// keep the MCP package free of an internal/cmd dependency.
+type agentDriftReport struct {
+	Agent   string              `json:"agent"`
+	InSync  bool                `json:"in_sync"`
+	Summary string              `json:"summary"`
+	Drift   []policy.DriftEntry `json:"drift,omitempty"`
+	Error   string              `json:"error,omitempty"`
+}
+
+func (s *Server) toolPolicyDrift() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name: "conga_policy_drift",
+			Description: "Detect drift between the policy file and the running egress proxy. " +
+				"Compares the desired policy (from the local policy file) against the manifest " +
+				"deployed to each agent's host. Returns a per-agent report with drift entries. " +
+				"Pass 'agent' to check a single agent; omit it to scan all non-paused agents.",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"agent": map[string]any{
+						"type":        "string",
+						"description": "Agent name (optional — omit to scan all non-paused agents)",
+					},
+				},
+			},
+			Annotations: mcp.ToolAnnotation{
+				ReadOnlyHint: boolPtr(true),
+			},
+		},
+		Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			ctx, cancel := toolCtx(ctx)
+			defer cancel()
+
+			// Drift detection requires an explicit policy file — loadPolicy()
+			// returns a skeleton when the file is missing, which would give a
+			// misleading "everything is fine" against an empty spec. Check
+			// disk presence directly.
+			path, err := s.policyPath()
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+				return mcp.NewToolResultError(
+					"no policy file found — create one with conga_policy_set_egress or conga_policy_set_routing first",
+				), nil
+			}
+			pf, _, err := s.loadPolicy()
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			if err := pf.Validate(); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("policy validation failed: %v", err)), nil
+			}
+
+			agent := req.GetString("agent", "")
+			var targets []string
+			if agent != "" {
+				targets = []string{agent}
+			} else {
+				agents, err := s.prov.ListAgents(ctx)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("listing agents: %v", err)), nil
+				}
+				for _, a := range agents {
+					if !a.Paused {
+						targets = append(targets, a.Name)
+					}
+				}
+			}
+
+			reports := make([]agentDriftReport, 0, len(targets))
+			for _, name := range targets {
+				reports = append(reports, s.computeAgentDrift(ctx, pf, name))
+			}
+			return jsonResult(reports)
+		},
+	}
+}
+
+// computeAgentDrift is the MCP-side counterpart to the CLI's drift report.
+// Kept as a Server method so tests can stub out prov via the usual seams.
+func (s *Server) computeAgentDrift(ctx context.Context, pf *policy.PolicyFile, agentName string) agentDriftReport {
+	report := agentDriftReport{Agent: agentName}
+
+	merged := pf.MergeForAgent(agentName)
+	desired := policy.BuildManifest(merged.Egress)
+
+	raw, err := s.prov.ReadProxyManifest(ctx, agentName)
+	if err != nil {
+		if errors.Is(err, provider.ErrNotFound) {
+			report.Drift = policy.DiffManifests(desired, nil)
+			report.Summary = "not deployed"
+			return report
+		}
+		report.Summary = "error"
+		report.Error = err.Error()
+		return report
+	}
+
+	actual, parseErr := policy.ParseManifest(raw)
+	if parseErr != nil {
+		report.Summary = "malformed manifest"
+		report.Error = parseErr.Error()
+		return report
+	}
+
+	report.Drift = policy.DiffManifests(desired, actual)
+	report.InSync = len(report.Drift) == 0
+	report.Summary = policy.Summary(report.Drift)
+	return report
 }
