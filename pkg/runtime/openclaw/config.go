@@ -165,7 +165,7 @@ func applyModelOverlay(config map[string]any, m *runtime.ModelOverlay) error {
 	}
 	// agents.defaults.models: MERGE the overlay's model into the existing
 	// allowlist rather than replacing it. This preserves the runtime defaults
-	// (e.g. anthropic/claude-opus-4-7 from openclaw-defaults.json) so operators
+	// (e.g. anthropic/claude-opus-4-8 from openclaw-defaults.json) so operators
 	// can /model into them mid-conversation. Lockdown — if you want it — should
 	// be enforced at the egress policy layer, not by trimming the allowlist.
 	allowlist, ok := defaults["models"].(map[string]any)

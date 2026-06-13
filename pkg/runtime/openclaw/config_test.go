@@ -59,8 +59,8 @@ func TestGenerateConfig_NoOverlay_PreservesDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing agents.defaults.model")
 	}
-	if got := model["primary"]; got != "anthropic/claude-opus-4-7" {
-		t.Fatalf("want anthropic/claude-opus-4-7, got %v", got)
+	if got := model["primary"]; got != "anthropic/claude-opus-4-8" {
+		t.Fatalf("want anthropic/claude-opus-4-8, got %v", got)
 	}
 
 	// models allowlist unchanged
@@ -68,7 +68,7 @@ func TestGenerateConfig_NoOverlay_PreservesDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing agents.defaults.models")
 	}
-	if _, ok := models["anthropic/claude-opus-4-7"]; !ok {
+	if _, ok := models["anthropic/claude-opus-4-8"]; !ok {
 		t.Fatalf("anthropic entry missing from allowlist: %+v", models)
 	}
 
@@ -131,9 +131,9 @@ func TestGenerateConfig_OllamaOverlay(t *testing.T) {
 	if _, ok := allow["ollama/qwen3:6b"]; !ok {
 		t.Fatalf("allowlist missing ollama/qwen3:6b: %+v", allow)
 	}
-	// The runtime default (anthropic/claude-opus-4-7 from openclaw-defaults.json)
+	// The runtime default (anthropic/claude-opus-4-8 from openclaw-defaults.json)
 	// must be preserved so operators can /model into it mid-conversation.
-	if _, ok := allow["anthropic/claude-opus-4-7"]; !ok {
+	if _, ok := allow["anthropic/claude-opus-4-8"]; !ok {
 		t.Fatalf("allowlist should preserve anthropic default for /model switching: %+v", allow)
 	}
 
@@ -395,7 +395,7 @@ func TestGenerateConfig_OverlayAndChannelsCoexist(t *testing.T) {
 
 func TestGenerateConfig_SubagentsOverlay_Basic(t *testing.T) {
 	// Subagent-only overlay (no primary model block) — primary stays at the
-	// runtime default (anthropic/claude-opus-4-7) and the subagent is Qwen
+	// runtime default (anthropic/claude-opus-4-8) and the subagent is Qwen
 	// via LiteLLM. Mirrors the role-code-dev shape.
 	params := baseParams()
 	params.Overlay = &runtime.AgentOverlay{
@@ -440,7 +440,7 @@ func TestGenerateConfig_SubagentsOverlay_Basic(t *testing.T) {
 		t.Fatalf("allowlist missing subagent model: %+v", allow)
 	}
 	// Runtime default preserved (no overlay primary → defaults stay).
-	if _, ok := allow["anthropic/claude-opus-4-7"]; !ok {
+	if _, ok := allow["anthropic/claude-opus-4-8"]; !ok {
 		t.Fatalf("allowlist should preserve runtime default: %+v", allow)
 	}
 
@@ -594,7 +594,7 @@ func TestGenerateConfig_SubagentsOverlay_AllowlistMergePreservesPrimary(t *testi
 	cfg := decodeJSON(t, out)
 
 	allow := cfg["agents"].(map[string]any)["defaults"].(map[string]any)["models"].(map[string]any)
-	for _, modelRef := range []string{"ollama/qwen3:6b", "openai/qwen-2.5-72b-instruct", "anthropic/claude-opus-4-7"} {
+	for _, modelRef := range []string{"ollama/qwen3:6b", "openai/qwen-2.5-72b-instruct", "anthropic/claude-opus-4-8"} {
 		if _, ok := allow[modelRef]; !ok {
 			t.Fatalf("allowlist missing %q: %+v", modelRef, allow)
 		}
@@ -863,7 +863,7 @@ func TestGenerateConfig_RuntimeDefaults(t *testing.T) {
 			t.Fatalf("generate: %v", err)
 		}
 		// Embedded baseline's model.primary (see openclaw-defaults.json).
-		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-7" {
+		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-8" {
 			t.Fatalf("embedded fallback not used: model.primary = %q", got)
 		}
 	})
@@ -875,7 +875,7 @@ func TestGenerateConfig_RuntimeDefaults(t *testing.T) {
 		if err != nil {
 			t.Fatalf("generate should fall back, not error: %v", err)
 		}
-		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-7" {
+		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-8" {
 			t.Fatalf("malformed input should fall back to embedded: model.primary = %q", got)
 		}
 	})
