@@ -159,6 +159,22 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   - Pattern-observer: logged a `preferred` philosophy (logic in tested Go behind thin seams, not
     templated bash) to `product-knowledge/observations/observed-philosophies.md` (pending).
 
+- **2026-06-13** — **opus 4.8 fleet default** (commit `4b488c2`). Operator asked whether the engine
+  change prohibits operator model control → it's the opposite: AWS is the one place "provide the
+  model" is broken (static bash heredoc ignores both the canonical default and the per-agent
+  `agent.yaml` overlay); slice 2 fixes that. Bumped `claude-opus-4-7`→`claude-opus-4-8` in all 6
+  active config locations (live + embedded canonical JSON, 2 add scripts, 2 boot-tftpl sections) +
+  tests/comment/example. Per-agent override remains via `agent.yaml model:`. build/vet/gofmt/suite clean.
+- **2026-06-13** — **Slice 2 grounded; deliberately paused before the production change.** Found the
+  Go config-gen method **already exists + is proven**: `regenerateAgentConfigOnInstance`
+  (`channels.go:468`), used by `RefreshAgent` step 1. `ProvisionAgent` is the holdout on the bash
+  heredoc — same shape as slice 1 — BUT with an ordering constraint: `add-user.sh.tmpl` generates the
+  config heredoc AND `systemctl start`s the container in one SSM run, so removing the heredoc needs a
+  **provision-flow reorder** (config-on-disk before container start, as `RefreshAgent` does). That's
+  the highest-blast-radius change in the feature (every new AWS agent's boot). Recorded Path A (the
+  reorder, recommended) + Path B (safe stepping-stone) + tasks in `tasks.md`. Stopped here rather than
+  rush the production first-provision flow at the end of a long session — resume slice 2 deliberately.
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

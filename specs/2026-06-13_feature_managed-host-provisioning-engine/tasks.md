@@ -61,10 +61,49 @@ skeleton + `Transport` interface + fake test, and routes AWS routing.json genera
 
 ---
 
-## Slice 2 — openclaw.json + `$include` layers via engine (audit #2, #4)
-Introduce/solidify `pkg/provider/managedhost` (Transport + artifacts); generate openclaw.json +
-the 3 include layers in Go, `PutFile` them, drop the 4 bash heredocs + 3 bash `$include` self-heal
-copies. *(Detailed at slice start.)*
+## Slice 2 — openclaw.json + `$include` layers via engine (audit #2, #4) — GROUNDED, ready to implement
+
+**Grounding (2026-06-13):** The Go config-gen path **already exists and is proven** —
+`AWSProvider.regenerateAgentConfigOnInstance` (`channels.go:468`) generates openclaw.json + the
+`$include`/managed layers + env + integrity baselines via `common.RuntimeGenerateAgentFilesWithOverlay`
+(+ `readSharedSecrets`/`readAgentSecrets`, gateway-token preserve, root:root 0444 re-protect). It is
+used by `RefreshAgent` (step 1, `provider.go:541`), then `RefreshAgent` runs `refresh-user.sh.tmpl`
+(write unit + restart). So the Go path is the same proven shape as slice 1 — `ProvisionAgent` is the
+holdout still using the `add-user.sh.tmpl`/`add-team.sh.tmpl` openclaw.json heredoc + `jq $include`.
+
+**The ordering constraint (why slice 2 ≠ a one-line wire-up like slice 1):** `add-user.sh.tmpl`
+*generates the openclaw.json heredoc AND `systemctl start`s the container in one SSM run* (lines
+240-242). So the heredoc can't simply be deleted — the container would start with no config. Removing
+it requires **reordering**: config must be on disk before the container starts (as `RefreshAgent`
+already does: Go-config-first, then unit+start).
+
+**Two implementation paths:**
+- **Path A (real end-state — recommended).** Restructure the provision flow so config-gen precedes
+  container start: split `add-user/add-team.sh.tmpl` into "create data dir + egress + systemd unit
+  (no start)" → `ProvisionAgent` calls `regenerateAgentConfigOnInstance` (Go) → start the container.
+  Then delete the openclaw.json heredoc + `cp` + `jq $include` from both scripts. Mirrors
+  `RefreshAgent`. Higher blast radius (production first-provision flow) → pair with the live-verify
+  gate; verify byte/schema-equivalence of the Go config vs the (now opus-4-8) heredoc first.
+- **Path B (safe stepping-stone, optional).** Keep the heredoc; after `add-user.sh`, call
+  `regenerateAgentConfigOnInstance` + restart (additive, mirrors slice 1). Makes Go config
+  authoritative on first provision — notably **applies per-agent `agent.yaml` model overlays on first
+  provision** (today they only apply after a `conga refresh` on AWS; the heredoc ignores the overlay).
+  Wasteful double-start; does NOT remove the heredoc. Use only if we want the per-agent-overlay fix
+  before the Path-A reorder.
+
+**Tasks (Path A):**
+- [ ] T2.1 — Split `add-user.sh.tmpl`/`add-team.sh.tmpl`: stop generating openclaw.json + the `jq
+  $include`; create the unit but do NOT `systemctl start` (or gate start behind config-present).
+- [ ] T2.2 — `ProvisionAgent`: after the (restructured) script creates the unit, call
+  `regenerateAgentConfigOnInstance(ctx, instanceID, cfg)` (already exists), then start the container.
+  Confirm data-dir exists before the Go upload (script must `mkdir` first).
+- [ ] T2.3 — Equivalence test: Go-generated openclaw.json structurally matches the prior heredoc
+  (post-opus-4-8) for a no-overlay agent; `$include` array present; per-agent overlay applied when set.
+- [ ] T2.4 — Remove the now-dead heredoc lines; `build`/`vet`/`gofmt`/`go test ./...`.
+- [ ] T2.5 — Live verify (isolated AWS agent): provision → confirm Go-generated config on host (model
+  = canonical/overlay), container boots, `$include` resolves; tear down. (Release-gated.)
+- Note: `add-user/add-team.sh.tmpl` are scripts/ (no provider release); the `ProvisionAgent` change is
+  `pkg/` → release. Boot tftpl heredoc reduction stays in slice 5.
 
 ## Slice 3 — egress: Envoy config + static-IP iptables via engine (audit #7)
 Static per-agent IP at network create → deterministic egress command (no discovery loop); reuse
