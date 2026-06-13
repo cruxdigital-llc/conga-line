@@ -232,6 +232,20 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 		fmt.Fprintf(os.Stderr, "Setup output:\n%s\n%s\n", result.Stdout, result.Stderr)
 		return fmt.Errorf("provisioning agent %s failed on instance", cfg.Name)
 	}
+
+	// Reconcile routing.json (loopback form) in Go and restart the router so the
+	// new agent's route is picked up. The provision scripts no longer mutate
+	// routing.json or attach the router to per-agent bridge networks — the router
+	// runs --network host and delivers to 127.0.0.1:<hostPort> (loopback topology,
+	// see specs/2026-06-11_bugfix_router-host-networking/). The agent's SSM record
+	// was written above, so it is included in the regenerated routing. Mirrors
+	// RefreshAgent; non-fatal (the container is already running) but surfaced.
+	if err := p.regenerateRoutingOnInstance(ctx, instanceID); err != nil {
+		common.Warn(ctx, "routing.json regeneration failed for %s: %v", cfg.Name, err)
+	}
+	if err := p.restartRouterOnInstance(ctx, instanceID); err != nil {
+		common.Warn(ctx, "router restart failed for %s: %v", cfg.Name, err)
+	}
 	return nil
 }
 

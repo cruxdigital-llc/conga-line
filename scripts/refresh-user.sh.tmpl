@@ -88,7 +88,6 @@ ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
 # block the agent from starting.
 ExecStartPre=-/usr/bin/docker run --rm --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $CONGA_IMAGE openclaw plugins install @openclaw/slack
 $EXEC_START
-ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
 ExecStartPost=-/bin/bash -c 'AGENT_IP=""; for i in \$(seq 1 10); do AGENT_IP=\$(docker inspect -f "{{`{{(index .NetworkSettings.Networks "`}}conga-$AGENT_NAME{{`").IPAddress}}`}}" conga-$AGENT_NAME 2>/dev/null); [ -n "\$AGENT_IP" ] && break; sleep 1; done; NET_CIDR=\$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' conga-$AGENT_NAME 2>/dev/null); if [ -n "\$AGENT_IP" ] && [ -n "\$NET_CIDR" ]; then iptables -C DOCKER-USER -s \$AGENT_IP -j DROP 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -j DROP; iptables -C DOCKER-USER -s \$AGENT_IP -d \$NET_CIDR -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -d \$NET_CIDR -j RETURN; iptables -C DOCKER-USER -s \$AGENT_IP -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN; iptables -C DOCKER-USER -s \$AGENT_IP -p udp --dport 53 -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -p udp --dport 53 -j RETURN; iptables -C DOCKER-USER -s \$AGENT_IP -p tcp --dport 53 -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s \$AGENT_IP -p tcp --dport 53 -j RETURN; echo "Egress iptables applied for conga-$AGENT_NAME (\$AGENT_IP)"; else echo "ERROR: egress iptables failed for conga-$AGENT_NAME — IP or subnet not found" >&2; fi'
 ExecStopPost=-/bin/bash -c 'AGENT_IP=\$(docker inspect -f "{{`{{(index .NetworkSettings.Networks "`}}conga-$AGENT_NAME{{`").IPAddress}}`}}" conga-$AGENT_NAME 2>/dev/null); NET_CIDR=\$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' conga-$AGENT_NAME 2>/dev/null); if [ -n "\$AGENT_IP" ] && [ -n "\$NET_CIDR" ]; then iptables -D DOCKER-USER -s \$AGENT_IP -p tcp --dport 53 -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -p udp --dport 53 -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -d \$NET_CIDR -j RETURN 2>/dev/null || true; iptables -D DOCKER-USER -s \$AGENT_IP -j DROP 2>/dev/null || true; fi'
 ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
@@ -142,12 +141,9 @@ if [ -f "/opt/conga/config/egress-$AGENT_NAME.yaml" ]; then
   fi
 fi
 
-# Reconnect router to agent network (lost on container restart) — after iptables to minimize enforcement gap
-if docker inspect conga-router >/dev/null 2>&1; then
-  if ! docker network connect "conga-$AGENT_NAME" conga-router 2>/dev/null; then
-    # Not fatal — may already be connected (ExecStartPost races with this script)
-    echo "WARNING: Could not reconnect conga-router to conga-$AGENT_NAME — may already be connected or router stopped"
-  fi
-fi
+# No router bridge attach: the router runs --network host and reaches this agent
+# via 127.0.0.1:<hostPort> (loopback topology). RefreshAgent regenerates routing.json
+# (Go, loopback) and restarts the router after this script — see
+# pkg/provider/managedhost + specs/2026-06-11_bugfix_router-host-networking/.
 
 echo "Secrets refreshed and container restarted for $AGENT_NAME"

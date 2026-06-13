@@ -183,6 +183,65 @@ func TestRefreshUserScriptTemplateRender(t *testing.T) {
 	}
 }
 
+// TestProvisionScriptsDropBridgeRouterWiring is the slice-1 regression guard
+// (audit #1; specs/2026-06-13_feature_managed-host-provisioning-engine/): the
+// provision/refresh scripts must NOT mutate routing.json (node -e) or attach the
+// router to per-agent bridge networks (docker network connect conga-router).
+// routing.json is now generated in Go (loopback form) and the router runs
+// --network host; ProvisionAgent/RefreshAgent reconcile routing + restart the
+// router after these scripts run. The bridge attach broke on Docker 25 +
+// kernel 6.1.174 (specs/2026-06-11_bugfix_router-host-networking/).
+func TestProvisionScriptsDropBridgeRouterWiring(t *testing.T) {
+	render := func(name, tmplStr string, data any) string {
+		t.Helper()
+		tmpl, err := template.New(name).Parse(tmplStr)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		var buf strings.Builder
+		if err := tmpl.Execute(&buf, data); err != nil {
+			t.Fatalf("execute %s: %v", name, err)
+		}
+		return buf.String()
+	}
+
+	type provData struct {
+		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
+		GatewayPort                                                    int
+		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
+	}
+	pd := provData{AgentName: "testuser", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "x", EgressMode: "enforce", ProxyBootstrapJS: "y"}
+
+	scripts := map[string]string{
+		"add-user":     render("add-user", AddUserScript, pd),
+		"add-team":     render("add-team", AddTeamScript, pd),
+		"refresh-user": render("refresh-user", RefreshUserScript, struct{ AWSRegion, AgentName string }{"us-east-1", "testuser"}),
+	}
+	// Unambiguous markers of the removed bash routing/bridge wiring. (`/slack/events`
+	// is NOT a marker — it legitimately appears as the openclaw.json webhookPath.)
+	forbidden := []string{"docker network connect", "node -e", "cfg.members", "cfg.channels"}
+	for name, out := range scripts {
+		for _, f := range forbidden {
+			if strings.Contains(out, f) {
+				t.Errorf("%s still contains removed bridge/router wiring %q", name, f)
+			}
+		}
+	}
+
+	// refresh-all legitimately references conga-router in its skip-list and the
+	// cleanup sed (which DELETES deprecated lines from old units). Assert it neither
+	// re-injects the ExecStartPost connect nor runs `docker network connect`.
+	refreshAll := render("refresh-all", RefreshAllScript, struct{ Agents []struct{ Name string } }{
+		Agents: []struct{ Name string }{{Name: "testuser"}},
+	})
+	if strings.Contains(refreshAll, `docker network connect "conga-`) {
+		t.Error("refresh-all still runs docker network connect for agents")
+	}
+	if strings.Contains(refreshAll, "/ExecStop=/i ExecStartPost") {
+		t.Error("refresh-all still re-injects the deprecated ExecStartPost router connect")
+	}
+}
+
 // assertOpenClawV5Shape exercises the assertions a rendered OpenClaw config
 // heredoc must satisfy on v2026.5.18+. Shared across add-user / add-team
 // tests because the gateway / streaming / update / plugin-install shape is

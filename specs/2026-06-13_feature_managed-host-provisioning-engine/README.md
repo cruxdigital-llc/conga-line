@@ -127,6 +127,38 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   (egress-controls.md doc-sync when the bash parser is deleted; confirm config-taxonomy unit-artifact
   locus). Ready for `/glados:implement-feature` (slice 1 = routing.json loopback proof + live-bug fix).
 
+## Session Log (implement phase)
+
+- **2026-06-13** — `/glados:implement-feature` started (branch `plan/managed-host-provisioning-engine`,
+  commit `78687a8`). Capabilities: conga MCP + AWS SSM (live isolated-agent verify), `gh` (provider
+  release). Grounded slice 1 in the real code: the AWS Go path **already has** `regenerateRoutingOnInstance`
+  (`channels.go:601`, loopback via `common.GenerateRoutingJSON(..., LoopbackWebhookResolver(""))`) and
+  `RefreshAgent` already calls it — but `ProvisionAgent` (`provider.go:225`) runs the `add-user.sh.tmpl`
+  SSM script (bash `node -e` bridge-form routing + `docker network connect`) and never calls the Go
+  path. So slice 1 is a **smaller, lower-risk** fix than the spec implied: strip bash routing from the
+  provision scripts + route `ProvisionAgent` through the existing Go loopback reconcile. Drafted
+  `tasks.md` with a scope question (does slice 1 also seed `pkg/provider/managedhost`, or defer to
+  slice 2?). Paused for breakdown review per workflow.
+
+- **2026-06-13** — **Slice 1 implemented (Option B), code complete + unit-verified.** Files:
+  - **New** `pkg/provider/managedhost/`: `transport.go` (`Transport` interface `{PutFile, RunCommand,
+    ReadFile}` + `ExecFuncFor`), `routing.go` (`WriteRoutingJSON`), `transport_test.go` (in-memory
+    fake + 3 tests).
+  - **New** `pkg/provider/awsprovider/transport.go`: `ssmTransport` adapter (`var _ managedhost.Transport`).
+  - **Mod** `pkg/provider/awsprovider/channels.go`: `regenerateRoutingOnInstance` refactored through
+    the seam (`managedhost.WriteRoutingJSON`); managedhost import.
+  - **Mod** `pkg/provider/awsprovider/provider.go`: `ProvisionAgent` now reconciles routing (Go
+    loopback) + restarts the router after the provision script (non-fatal, mirrors `RefreshAgent`).
+  - **Mod** scripts `add-user.sh.tmpl`, `add-team.sh.tmpl`, `refresh-user.sh.tmpl`,
+    `refresh-all.sh.tmpl`: stripped bash routing (`node -e`) + bridge attach (`docker network
+    connect conga-router`) + unit `ExecStartPost` connect; refresh-all now *deletes* deprecated
+    connect lines from old units.
+  - **Mod** `scripts/scripts_test.go`: `TestProvisionScriptsDropBridgeRouterWiring` regression guard.
+  - Verification: `go build`/`vet`/`gofmt -l`/`go test ./...` all clean/pass. T1.6 live verify + T1.7
+    provider release DEFERRED to verify/release phase (deployed path needs the `pkg/` release first).
+  - Pattern-observer: logged a `preferred` philosophy (logic in tested Go behind thin seams, not
+    templated bash) to `product-knowledge/observations/observed-philosophies.md` (pending).
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

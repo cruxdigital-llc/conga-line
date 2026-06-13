@@ -225,7 +225,6 @@ ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
 # leading "-" tolerates that (already-installed is the desired end state).
 ExecStartPre=-/usr/bin/docker run --rm --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $CONGA_IMAGE openclaw plugins install @openclaw/slack
 ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536 --require /opt/proxy-bootstrap.js" -e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1 --pids-limit 256 --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw -v $BOOTSTRAP_PATH:/opt/proxy-bootstrap.js:ro $ENV_FLAGS $CONGA_IMAGE
-ExecStartPost=-/usr/bin/docker network connect conga-$AGENT_NAME conga-router
 ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
 StandardOutput=append:/var/log/conga-$AGENT_NAME.log
 StandardError=append:/var/log/conga-$AGENT_NAME.log
@@ -263,18 +262,12 @@ else
   exit 1
 fi
 
-# Update routing config with the user's member entry (DM routing only)
-# Initialize routing.json if it does not exist (first agent on fresh host)
-[ -f /opt/conga/config/routing.json ] || echo '{"channels":{},"members":{}}' > /opt/conga/config/routing.json
-node -e "
-  const fs = require('fs');
-  const cfg = JSON.parse(fs.readFileSync('/opt/conga/config/routing.json', 'utf-8'));
-  cfg.members['$SLACK_MEMBER_ID'] = 'http://conga-$AGENT_NAME:18789/slack/events';
-  fs.writeFileSync('/opt/conga/config/routing.json', JSON.stringify(cfg, null, 2));
-"
-
-# Connect router to the new agent's network
-docker network connect "conga-$AGENT_NAME" conga-router 2>/dev/null || true
+# routing.json is generated in Go (loopback form) and the router is restarted by
+# ProvisionAgent after this script returns — see pkg/provider/managedhost +
+# AWSProvider.regenerateRoutingOnInstance/restartRouterOnInstance. The router runs
+# --network host and reaches each agent via 127.0.0.1:<hostPort>, so there is no
+# per-agent bridge attach here (that broke on Docker 25 + kernel 6.1.174 — see
+# specs/2026-06-11_bugfix_router-host-networking/).
 
 # Update CloudWatch dashboard with all agents
 /opt/conga/bin/update-dashboard.sh || echo "WARNING: Dashboard update failed"
