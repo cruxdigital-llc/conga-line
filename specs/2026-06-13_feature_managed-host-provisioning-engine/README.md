@@ -175,6 +175,17 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   reorder, recommended) + Path B (safe stepping-stone) + tasks in `tasks.md`. Stopped here rather than
   rush the production first-provision flow at the end of a long session — resume slice 2 deliberately.
 
+- **2026-06-13** — **Slice 2a implemented: Go config authoritative on first provision.** After
+  reading `RefreshAgent` end-to-end (regenerate Go config → refresh-user.sh unit+restart with
+  `ExecStartPost` iptables → routing → egress policy — all proven), wired `ProvisionAgent` to call
+  `RefreshAgent` (non-fatal) after the bash provision. AWS agents now run the Go-generated config
+  (canonical model + per-agent `agent.yaml` overlay) from first provision, not just after a later
+  `conga refresh`. Subsumes slice 1's standalone `ProvisionAgent` routing calls (RefreshAgent step 3).
+  Mod: `pkg/provider/awsprovider/provider.go`. build/vet/gofmt/`go test ./...` clean. **2b (heredoc
+  physical removal) is now de-risked cleanup** — the Go config overwrites the heredoc on every
+  provision; removal also drops `systemctl start` from the scripts (RefreshAgent does first start).
+  Live verify release-gated.
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

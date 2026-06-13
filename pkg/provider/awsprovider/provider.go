@@ -233,18 +233,22 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 		return fmt.Errorf("provisioning agent %s failed on instance", cfg.Name)
 	}
 
-	// Reconcile routing.json (loopback form) in Go and restart the router so the
-	// new agent's route is picked up. The provision scripts no longer mutate
-	// routing.json or attach the router to per-agent bridge networks — the router
-	// runs --network host and delivers to 127.0.0.1:<hostPort> (loopback topology,
-	// see specs/2026-06-11_bugfix_router-host-networking/). The agent's SSM record
-	// was written above, so it is included in the regenerated routing. Mirrors
-	// RefreshAgent; non-fatal (the container is already running) but surfaced.
-	if err := p.regenerateRoutingOnInstance(ctx, instanceID); err != nil {
-		common.Warn(ctx, "routing.json regeneration failed for %s: %v", cfg.Name, err)
-	}
-	if err := p.restartRouterOnInstance(ctx, instanceID); err != nil {
-		common.Warn(ctx, "router restart failed for %s: %v", cfg.Name, err)
+	// Bring the agent into full sync via the proven refresh path. This regenerates
+	// openclaw.json + .env in Go (applying the canonical fleet model AND any
+	// per-agent agent.yaml overlay — the static provision-script heredoc does
+	// neither), rewrites the systemd unit consistently, restarts, reconciles
+	// routing.json (loopback), and deploys the current egress policy. It makes the
+	// Go-generated config authoritative on FIRST provision, not just on a later
+	// `conga refresh` (managed-host engine, slice 2). It also subsumes the
+	// loopback-routing reconcile + router restart (RefreshAgent step 3), so the
+	// provision scripts no longer touch routing or the router bridge.
+	//
+	// Non-fatal: the provision script already created + started the agent on a
+	// valid baseline config, so a refresh hiccup (e.g. the agents/ overlay dir
+	// isn't resolvable from the operator's cwd) leaves a working agent on the
+	// provision-time config rather than failing provisioning. Surfaced via Warn.
+	if err := p.RefreshAgent(ctx, cfg.Name); err != nil {
+		common.Warn(ctx, "post-provision sync for %s did not complete (agent is running on the provision-time config): %v", cfg.Name, err)
 	}
 	return nil
 }

@@ -61,7 +61,27 @@ skeleton + `Transport` interface + fake test, and routes AWS routing.json genera
 
 ---
 
-## Slice 2 — openclaw.json + `$include` layers via engine (audit #2, #4) — GROUNDED, ready to implement
+## Slice 2 — openclaw.json + `$include` layers via engine (audit #2, #4) — ✅ FUNCTIONAL increment done; 2b cleanup remains
+
+**2a (done, 2026-06-13): Go config authoritative on first provision.** `ProvisionAgent` now calls
+`RefreshAgent` after the bash provision script (non-fatal). RefreshAgent regenerates openclaw.json +
+`$include`/managed layers + env in Go (`regenerateAgentConfigOnInstance`, applying the canonical model
+AND per-agent `agent.yaml` overlays — the static heredoc does neither), rewrites the systemd unit
+consistently (refresh-user.sh, with `ExecStartPost` iptables), restarts, reconciles loopback routing,
+and deploys the egress policy. So AWS agents now run the **Go-generated config from first provision**,
+not just after a later `conga refresh`. Subsumes slice 1's standalone routing calls in `ProvisionAgent`.
+Reuses the proven RefreshAgent path (low risk); non-fatal so provisioning never regresses. build/vet/
+gofmt/`go test ./...` clean. Live verify release-gated.
+
+**2b (remaining — now de-risked cleanup): physically remove the heredoc.** Because RefreshAgent now
+regenerates the config on every provision, the `add-user.sh.tmpl`/`add-team.sh.tmpl` openclaw.json
+heredoc + `cp` + `jq $include` + managed-include seeding + baseline are redundant (immediately
+overwritten). Remove them; to avoid a no-config first start, also drop `systemctl start` from the
+provision scripts and let RefreshAgent's refresh-user.sh do the first unit-write+start (it already
+"recreates if missing"). Net: add-user/add-team shrink to data dir + egress proxy setup. Pair with the
+live-verify gate (it changes the first-start sequence).
+
+### Original grounding (kept for reference)
 
 **Grounding (2026-06-13):** The Go config-gen path **already exists and is proven** —
 `AWSProvider.regenerateAgentConfigOnInstance` (`channels.go:468`) generates openclaw.json + the

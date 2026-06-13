@@ -379,7 +379,7 @@ No new Conga data-model concept.
 - **Remaining**: **R1** `terraform-provider-conga` release (post-merge, `pkg/` changed); **T2.4** AWS bash
   boot-path de-embed unification (tracked follow-up). See `specs/2026-06-10_feature_fleet-baseline-configuration/`.
 
-### 32. Managed-Host Provisioning Engine (AWS → shared-Go convergence) — 🔨 Implementing (slice 1/6 code-complete, unit-verified)
+### 32. Managed-Host Provisioning Engine (AWS → shared-Go convergence) — 🔨 Implementing (slice 1 done; slice 2 functional, 2b cleanup pending)
 - **Goal**: provision AWS agents by running Conga's **shared Go logic** (the code the remote provider
   already uses) over a minimal host transport, eliminating the hand-maintained bash provisioning
   scripts (`scripts/*.sh.tmpl`) and shrinking the 1,384-line boot `user-data.sh.tftpl`. Simplify +
