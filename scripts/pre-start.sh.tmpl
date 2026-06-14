@@ -20,6 +20,19 @@ if [ -z "$STATE_BUCKET" ]; then
   exit 0
 fi
 
+# Serialize the S3 sync + deploy across agents via a host-wide flock. A simultaneous
+# fleet start (host reboot / docker daemon restart) otherwise runs N concurrent
+# `aws s3 sync`s in parallel ExecStartPre's, which contend and blow the unit's
+# TimeoutStartSec → start-pre timeout crash-loop (managed-host migration hardening,
+# R4). Serialized, each sync runs solo and fast. The wait is BOUNDED (-w 240, below
+# TimeoutStartSec=300) so a stuck holder can't deadlock the whole fleet; on a
+# lock-timeout we proceed with the on-disk behavior (the sync is a best-effort
+# refresh, not a start gate). The lock releases when this script exits (fd 9 closes).
+# Open the lock fd defensively: a failed redirect under `set -e` would otherwise
+# abort ExecStartPre (the opposite of this block's fail-soft intent).
+exec 9>/var/lock/conga-prestart.lock 2>/dev/null || true
+flock -w 240 9 2>/dev/null || echo "WARNING: conga-prestart lock unavailable/timed out; proceeding with on-disk behavior" >&2
+
 # Sync behavior files from S3
 aws s3 sync "s3://$STATE_BUCKET/conga/agents/" /opt/conga/agents/ --region "$AWS_REGION" 2>/dev/null || true
 

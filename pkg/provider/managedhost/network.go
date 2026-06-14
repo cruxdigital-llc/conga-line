@@ -11,13 +11,15 @@ type AgentNetwork struct {
 	SubnetCIDR string // e.g. "10.99.3.0/24"
 	GatewayIP  string // .1 — the Docker bridge gateway
 	AgentIP    string // .2 — the agent container; the egress iptables DROP source (pinned via `docker run --ip`)
-	// ProxyIP (.3) is an ADVISORY reservation, not an enforced assignment: the
-	// egress proxy is started with --network (no --ip) and is reached by the agent
-	// through Docker DNS (conga-egress-<name>:3128), so it auto-assigns from the
-	// subnet — landing on .3 in practice because it's (re)created after the agent
-	// has already claimed .2. Reserved here to document the scheme and keep .3 free
-	// should a future change pin it.
-	ProxyIP string // .3 — reserved for the per-agent Envoy egress proxy (advisory)
+	// ProxyIP (.3) is ENFORCED: the per-agent Envoy egress proxy is started with
+	// `docker run --ip <ProxyIP>` at every creation site (deploy-egress, add-user,
+	// add-team). Pinning is a reboot-survival requirement, not cosmetic — the proxy
+	// runs `--restart always`, so on a simultaneous restart (host reboot / docker
+	// daemon restart) the daemon brings it up before the systemd-managed agent; with
+	// no `--ip` it would grab the lowest free address (the agent's `.2`) and the
+	// agent's `docker run --ip .2` would then fail (exit 125) → crash-loop. Pinning
+	// to `.3` makes the assignment deterministic regardless of restart ordering.
+	ProxyIP string // .3 — the per-agent Envoy egress proxy (pinned via `docker run --ip`)
 }
 
 // PlanAgentNetwork derives a collision-free per-agent network from the agent's

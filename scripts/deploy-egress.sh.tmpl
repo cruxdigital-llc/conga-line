@@ -77,10 +77,14 @@ if [ ! -f "$EGRESS_CONF" ]; then
 fi
 echo "Config file: $(ls -la "$EGRESS_CONF")"
 
-# Start egress proxy container
+# Start egress proxy container. Pin the proxy to its reserved static IP ({{.ProxyIP}})
+# so a simultaneous restart (reboot / docker daemon restart) can't let this
+# --restart-always proxy grab the agent's .2 before the agent does (exit-125
+# crash-loop). The agent binds .2, the proxy binds .3 — deterministic either order.
 docker run -d \
   --name "$EGRESS_PROXY" \
   --network "$AGENT_NET" \
+  --ip "{{.ProxyIP}}" \
   --restart always \
   --cap-drop ALL \
   --security-opt no-new-privileges \

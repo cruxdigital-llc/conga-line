@@ -25,6 +25,11 @@ type fakeTransport struct {
 	reads map[string][]byte
 
 	failPut, failRun, failRead error
+
+	// responder, when set, supplies per-command stdout/err (after the command is
+	// recorded), letting tests drive output-dependent branches (e.g. the network
+	// reconcile reading the current subnet / attached endpoints).
+	responder func(cmd string) (string, error)
 }
 
 func newFakeTransport() *fakeTransport {
@@ -49,7 +54,20 @@ func (f *fakeTransport) RunCommand(_ context.Context, cmd string) (string, error
 		return "", f.failRun
 	}
 	f.cmds = append(f.cmds, cmd)
+	if f.responder != nil {
+		return f.responder(cmd)
+	}
 	return "", nil
+}
+
+// ranCmd reports whether any recorded command contains the substring.
+func (f *fakeTransport) ranCmd(substr string) bool {
+	for _, c := range f.cmds {
+		if strings.Contains(c, substr) {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeTransport) ReadFile(_ context.Context, path string) ([]byte, error) {

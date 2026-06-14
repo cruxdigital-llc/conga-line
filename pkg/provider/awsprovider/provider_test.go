@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -396,5 +397,32 @@ func TestValidateHeredocSafety(t *testing.T) {
 				t.Errorf("validateHeredocSafety() error = %v, wantErr = %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestPerAgentRefreshCtx_DecoupledFromParentDeadline is the R3 guard: refresh-all
+// must give each agent a fresh deadline, NOT inherit the parent's global --timeout
+// (which, once exhausted, killed the rest of the fleet with "context deadline
+// exceeded" in the live migration).
+func TestPerAgentRefreshCtx_DecoupledFromParentDeadline(t *testing.T) {
+	parent, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	time.Sleep(2 * time.Millisecond) // ensure the parent deadline has passed
+	if parent.Err() == nil {
+		t.Fatal("precondition: parent context should be expired")
+	}
+
+	aCtx, aCancel := perAgentRefreshCtx(parent)
+	defer aCancel()
+
+	if aCtx.Err() != nil {
+		t.Errorf("per-agent ctx must not inherit the parent's expired deadline; err=%v", aCtx.Err())
+	}
+	dl, ok := aCtx.Deadline()
+	if !ok {
+		t.Fatal("per-agent ctx must carry its own deadline")
+	}
+	if remaining := time.Until(dl); remaining < 5*time.Minute || remaining > perAgentRefreshTimeout+time.Second {
+		t.Errorf("per-agent deadline should be ~%v; remaining=%v", perAgentRefreshTimeout, remaining)
 	}
 }

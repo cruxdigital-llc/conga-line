@@ -75,7 +75,18 @@ else
   done
 fi
 
-docker network create --driver bridge "conga-$AGENT_NAME" || true
+# Create the per-agent network with its deterministic static subnet ({{.SubnetCIDR}})
+# so the agent (.2) and egress proxy (.3) can bind fixed IPs — the proxy pin below
+# requires the static subnet to exist. For a fresh agent this creates it up front
+# (no migration churn). If the network ALREADY EXISTS (a re-provision, or a legacy
+# auto-subnet agent), `create` fails — bail with an actionable message rather than
+# proceeding to pin the proxy on a possibly-non-static subnet (which would exit-125).
+# Migrating an existing agent is `conga refresh`'s job (it runs the network reconcile
+# first); add-user is for NEW agents.
+if ! docker network create --driver bridge --subnet "{{.SubnetCIDR}}" --gateway "{{.GatewayIP}}" "conga-$AGENT_NAME" 2>/dev/null; then
+  echo "ERROR: network conga-$AGENT_NAME already exists — this agent is not new. Run 'conga refresh $AGENT_NAME' to (re)apply config + migrate its network; do not re-provision via add-user." >&2
+  exit 1
+fi
 
 # Deploy egress proxy (deny-all when no policy, enforce by default)
 EGRESS_MODE="{{.EgressMode}}"
@@ -109,6 +120,7 @@ docker rm -f "$EGRESS_PROXY" 2>/dev/null || true
 docker run -d \
   --name "$EGRESS_PROXY" \
   --network "conga-$AGENT_NAME" \
+  --ip "{{.ProxyIP}}" \
   --restart always \
   --cap-drop ALL \
   --security-opt no-new-privileges \

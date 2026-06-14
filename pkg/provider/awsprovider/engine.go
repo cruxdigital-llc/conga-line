@@ -29,15 +29,18 @@ import (
 // the static-IP egress iptables in its ExecStartPost/StopPost) is written +
 // enabled, and only then is the service (re)started — so an agent is either
 // started-with-egress or not started, never running unfiltered.
-func (p *AWSProvider) defineAndStartAgentService(ctx context.Context, instanceID string, agent provider.AgentConfig) error {
+// defineAndStartAgentService returns migrated=true when the network reconcile ran
+// its destructive COMMIT (the egress proxy was torn down and must be recreated) —
+// the caller uses this to decide whether a failed egress redeploy is fatal.
+func (p *AWSProvider) defineAndStartAgentService(ctx context.Context, instanceID string, agent provider.AgentConfig) (migrated bool, err error) {
 	image, err := awsutil.GetParameter(ctx, p.clients.SSM, "/conga/config/image")
 	if err != nil {
-		return fmt.Errorf("failed to resolve container image: %w", err)
+		return false, fmt.Errorf("failed to resolve container image: %w", err)
 	}
 
 	spec, net, err := buildAgentServiceSpec(agent, image, p.region)
 	if err != nil {
-		return err
+		return false, err
 	}
 	containerName := spec.Name
 	t := p.transport(instanceID)
@@ -49,31 +52,33 @@ func (p *AWSProvider) defineAndStartAgentService(ctx context.Context, instanceID
 	// drift from the Go validator; 0755 so systemd can exec it.
 	guard := managedhost.ReservedKeyGuardScript(agentIncludePaths(agent.Name))
 	if err := t.PutFile(ctx, reservedKeyGuardPath(agent.Name), []byte(guard), 0o755); err != nil {
-		return fmt.Errorf("failed to deploy reserved-key guard for %s: %w", agent.Name, err)
+		return false, fmt.Errorf("failed to deploy reserved-key guard for %s: %w", agent.Name, err)
 	}
 
-	// 1) Reconcile the per-agent network to its deterministic static subnet. On a
-	//    mismatch (existing auto-subnet agent, or fresh add-user auto-subnet) this
-	//    stops the unit first so Restart=always can't race the network rm, then
-	//    recreates the net + frees the proxy (DeployEgress re-creates it). On a
-	//    steady-state refresh it's a no-op, so there's no egress gap.
-	if _, err := t.RunCommand(ctx, agentNetworkMigrationCmd(agent.Name, net)); err != nil {
-		return fmt.Errorf("failed to reconcile network for %s: %w", agent.Name, err)
+	// 1) Reconcile the per-agent network to its deterministic static subnet via the
+	//    prepare-then-commit orchestration: it clears foreign/dangling endpoints
+	//    BEFORE touching the agent, so a ghost-endpoint failure leaves the agent
+	//    running on its old net (fail-safe) rather than down. No-op on a steady-state
+	//    refresh (subnet already correct), so no egress gap. migrated=true means the
+	//    proxy was torn down (COMMIT ran) → the egress redeploy is then fatal.
+	migrated, err = managedhost.ReconcileAgentNetwork(ctx, t, agent.Name, net)
+	if err != nil {
+		return false, fmt.Errorf("failed to reconcile network for %s: %w", agent.Name, err)
 	}
 
 	// 2) Define + enable the unit (write + daemon-reload + enable — survives reboot).
 	sup := managedhost.NewSystemdSupervisor()
 	if err := sup.DefineService(ctx, t, spec); err != nil {
-		return fmt.Errorf("failed to define service for %s: %w", agent.Name, err)
+		return migrated, fmt.Errorf("failed to define service for %s: %w", agent.Name, err)
 	}
 
 	// 3) (Re)start so the new unit takes effect on the (possibly migrated) network.
 	//    Restart starts a not-yet-running unit too. The unit's ExecStartPost applies
 	//    egress iptables synchronously, so on return the agent is filtered.
 	if err := sup.Restart(ctx, t, containerName); err != nil {
-		return fmt.Errorf("failed to start service for %s: %w", agent.Name, err)
+		return migrated, fmt.Errorf("failed to start service for %s: %w", agent.Name, err)
 	}
-	return nil
+	return migrated, nil
 }
 
 // buildAgentServiceSpec assembles the systemd ServiceSpec + network plan for an
@@ -164,41 +169,12 @@ func buildAgentServiceSpec(agent provider.AgentConfig, image, region string) (ma
 			PostStop:  []string{fmt.Sprintf("-/bin/bash -c '%s'", removeCmd)},
 		},
 		LogTarget: fmt.Sprintf("/var/log/conga-%s.log", name),
+		// Generous start timeout: pre-start.sh serializes its S3 sync via flock under
+		// a simultaneous fleet start (R4), so an agent late in the queue must not trip
+		// the unit's start timeout (the flock wait is bounded at 240s < 300s).
+		StartTimeoutSec: 300,
 	}
 	return spec, net, nil
-}
-
-// agentNetworkMigrationCmd returns a short shell command that ensures the
-// per-agent Docker network exists with the deterministic subnet, recreating it
-// (and detaching the agent + egress proxy first) only when the current subnet
-// doesn't match. The `{{range …}}` are docker --format templates, not Go
-// templates — literal braces in the emitted command.
-//
-// Before tearing the old network down it flushes any DOCKER-USER rules keyed on
-// the OLD container IP: on the auto-subnet→static migration the old rules are
-// keyed on an auto-assigned IP that the new unit's ExecStopPost (which only knows
-// the new static IP) would never remove, leaving inert-but-accumulating cruft.
-// On a fresh provision the agent container doesn't exist yet, so the flush is a
-// no-op. `docker network rm` keeps its stderr (no 2>/dev/null) so a "network has
-// active endpoints" failure is visible in the SSM output rather than masked by
-// the subsequent `docker network create` failing opaquely.
-func agentNetworkMigrationCmd(agentName string, net managedhost.AgentNetwork) string {
-	containerName := "conga-" + agentName
-	proxyName := "conga-egress-" + agentName
-	return fmt.Sprintf(
-		`NET=%[1]q; DESIRED=%[2]q; `+
-			`CUR=$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$NET" 2>/dev/null || echo ""); `+
-			`if [ "$CUR" != "$DESIRED" ]; then `+
-			`echo "Migrating $NET subnet '${CUR:-<none>}' -> '$DESIRED' (deterministic static-IP egress)"; `+
-			`OLD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' %[1]q 2>/dev/null || echo ""); `+
-			`if [ -n "$OLD_IP" ]; then iptables -S DOCKER-USER 2>/dev/null | grep -- "-s $OLD_IP/" | sed 's/^-A /-D /' | while read -r r; do iptables $r 2>/dev/null || true; done; fi; `+
-			`systemctl stop %[1]q 2>/dev/null || true; `+
-			`docker rm -f %[1]q 2>/dev/null || true; `+
-			`docker rm -f %[3]q 2>/dev/null || true; `+
-			`docker network rm "$NET" || true; `+
-			`docker network create --driver bridge --subnet "$DESIRED" --gateway %[4]q "$NET"; `+
-			`fi`,
-		containerName, net.SubnetCIDR, proxyName, net.GatewayIP)
 }
 
 // reservedKeyGuardPath is where the per-agent fail-closed reserved-key guard

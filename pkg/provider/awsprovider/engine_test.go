@@ -59,6 +59,9 @@ func TestBuildAgentServiceSpec_UnitEquivalence(t *testing.T) {
 		// than looping forever (PR #67 review #3).
 		"StartLimitIntervalSec=300",
 		"StartLimitBurst=5",
+		// R4: generous start timeout so a flock-serialized pre-start.sh under a
+		// simultaneous fleet start doesn't trip the unit's start timeout.
+		"TimeoutStartSec=300",
 		"WantedBy=multi-user.target",
 	}
 	for _, want := range mustContain {
@@ -84,38 +87,10 @@ func TestBuildAgentServiceSpec_UnitEquivalence(t *testing.T) {
 	}
 }
 
-// TestAgentNetworkMigrationCmd covers the subnet-migration command (PR #67 review
-// #1/#2/#7): it flushes DOCKER-USER rules for the OLD container IP before tearing
-// the network down, surfaces `docker network rm` errors (no 2>/dev/null), and
-// derives both the agent + proxy names from the agent name (no prefix-slicing).
-func TestAgentNetworkMigrationCmd(t *testing.T) {
-	net, err := managedhost.PlanAgentNetwork(18791, 18789) // -> 10.99.2.0/24
-	if err != nil {
-		t.Fatalf("PlanAgentNetwork: %v", err)
-	}
-	cmd := agentNetworkMigrationCmd("demo", net)
-
-	for _, want := range []string{
-		`NET="conga-demo"`,
-		`DESIRED="10.99.2.0/24"`,
-		// #1: discover the OLD IP and flush its DOCKER-USER rules before teardown.
-		`OLD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "conga-demo"`,
-		`iptables -S DOCKER-USER`,
-		`grep -- "-s $OLD_IP/"`,
-		`sed 's/^-A /-D /'`,
-		`systemctl stop "conga-demo"`,
-		`docker rm -f "conga-egress-demo"`, // #7: proxy name from agent name
-		`docker network create --driver bridge --subnet "$DESIRED" --gateway "10.99.2.1" "$NET"`,
-	} {
-		if !strings.Contains(cmd, want) {
-			t.Errorf("migration cmd missing %q\n got: %s", want, cmd)
-		}
-	}
-	// #2: `docker network rm` must keep its stderr (no 2>/dev/null) so failures show.
-	if strings.Contains(cmd, `docker network rm "$NET" 2>/dev/null`) {
-		t.Error("docker network rm must not swallow stderr — failures need to surface in the SSM output")
-	}
-}
+// NOTE: the shell-string agentNetworkMigrationCmd was replaced in R2 by the
+// prepare-then-commit Go orchestration managedhost.ReconcileAgentNetwork, which is
+// unit-tested (no-op / fail-safe-abort / happy-path ordering) in
+// pkg/provider/managedhost/network_reconcile_test.go against the fake transport.
 
 // TestBuildAgentServiceSpec_PortOutOfRange ensures the network planner's range
 // guard surfaces as a build error rather than a bad unit.
