@@ -210,6 +210,19 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   leftovers (data preserved by default per Agent Data Safety — expected). Slices 1 + 2a now verified on
   **both** the refresh path (aaron) and the fresh-provision path (slice2test).
 
+- **2026-06-13** — **Slice 2b implemented + live-verified: provision scripts are infra-only.**
+  `add-user.sh`/`add-team.sh` stripped of the openclaw.json heredoc + `jq $include` + baseline + unit
+  creation + `systemctl start` + imperative iptables — now infra-only (env, data dir, metadata,
+  behavior, network, egress proxy). RefreshAgent owns config+unit+start+iptables+routing;
+  `ProvisionAgent`'s RefreshAgent call flipped to **fatal**. Tests: rewrote add-user/add-team render
+  tests to infra-only; replaced `assertOpenClawV5Shape` with `TestProvisionScriptsAreInfraOnly` +
+  `TestGenerateConfig_GatewayV5Shape` (Go generator now owns the gateway v5 shape). **Throwaway live
+  test (`slice2btest`) caught a real regression**: refresh-user.sh never `systemctl enable`d the unit,
+  so a 2b-provisioned agent ran but was `disabled` (no reboot survival — breaks the unattended
+  managed-host guarantee). Fixed (refresh-user.sh now enables, idempotent) + regression assertion;
+  re-verified `enabled` + `running` live, then torn down clean (roster back to 6). `go test ./...`
+  (21 pkgs)/vet/gofmt green. Audit #2 (heredoc dedup) + #8 (unit divergence) retired on the add path.
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

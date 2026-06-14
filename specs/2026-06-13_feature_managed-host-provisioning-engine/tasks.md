@@ -76,13 +76,23 @@ not just after a later `conga refresh`. Subsumes slice 1's standalone routing ca
 Reuses the proven RefreshAgent path (low risk); non-fatal so provisioning never regresses. build/vet/
 gofmt/`go test ./...` clean. Live verify release-gated.
 
-**2b (remaining — now de-risked cleanup): physically remove the heredoc.** Because RefreshAgent now
-regenerates the config on every provision, the `add-user.sh.tmpl`/`add-team.sh.tmpl` openclaw.json
-heredoc + `cp` + `jq $include` + managed-include seeding + baseline are redundant (immediately
-overwritten). Remove them; to avoid a no-config first start, also drop `systemctl start` from the
-provision scripts and let RefreshAgent's refresh-user.sh do the first unit-write+start (it already
-"recreates if missing"). Net: add-user/add-team shrink to data dir + egress proxy setup. Pair with the
-live-verify gate (it changes the first-start sequence).
+**2b (done, 2026-06-13): heredoc removed; provision scripts are infra-only.**
+`add-user.sh.tmpl`/`add-team.sh.tmpl` no longer generate openclaw.json (heredoc + `cp` + `jq $include`
++ managed-include baseline) or create/start the systemd unit or apply iptables — they now set up
+per-agent INFRA ONLY (env, data dir, metadata, behavior deploy, network, egress proxy). RefreshAgent
+owns config + unit + start + iptables + routing (regenerateAgentConfigOnInstance → refresh-user.sh).
+`ProvisionAgent`'s RefreshAgent call is now **fatal** (it's the only thing that yields a running
+agent). Tests: rewrote the add-user/add-team render tests to the infra-only shape; replaced
+`assertOpenClawV5Shape` (bash heredoc) with `TestProvisionScriptsAreInfraOnly` (absence guard) +
+`TestGenerateConfig_GatewayV5Shape` in `pkg/runtime/openclaw/config_test.go` (the Go generator owns
+the gateway v5 shape now).
+- **Live-verified on a throwaway (`slice2btest`)** — and the test **caught a real regression**:
+  `refresh-user.sh` did `daemon-reload` + `restart` but never `systemctl enable`, so a 2b-provisioned
+  agent ran but was **`disabled`** (would not survive a host reboot — breaks the unattended
+  guarantee). Fixed: `refresh-user.sh` now `systemctl enable`s the unit (idempotent for existing
+  agents; it's the only enable site now that provision scripts are infra-only) + a regression
+  assertion. Re-verified: `slice2btest` came up Go-config (opus-4-8) + unit `enabled` + `running` +
+  `ExecStartPost` iptables + no bridge attach; torn down clean. `go test ./...` (21 pkgs) green.
 
 ### Original grounding (kept for reference)
 

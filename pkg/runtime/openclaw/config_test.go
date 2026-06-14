@@ -37,6 +37,53 @@ func baseParams() runtime.ConfigParams {
 	}
 }
 
+func TestGenerateConfig_GatewayV5Shape(t *testing.T) {
+	// Regression coverage the bash heredoc used to provide (assertOpenClawV5Shape in
+	// scripts/scripts_test.go): the gateway block must be the v2026.5.18 shape. Slice
+	// 2b moved config generation off the provision-script heredoc onto this Go
+	// generator, so the assertion lives here now.
+	p := baseParams()
+	p.Agent.GatewayPort = 18792 // host port differs from the in-container 18789
+	r := &Runtime{}
+	out, err := r.GenerateConfig(p)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	gw, ok := decodeJSON(t, out)["gateway"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing gateway block")
+	}
+	// bind=lan gives the 0.0.0.0 bind that Docker -p 127.0.0.1:<host>:18789 needs;
+	// mode=local is the supported topology (the image rejects mode=remote).
+	if gw["bind"] != "lan" {
+		t.Errorf("gateway.bind: want lan, got %v", gw["bind"])
+	}
+	if gw["mode"] != "local" {
+		t.Errorf("gateway.mode: want local, got %v", gw["mode"])
+	}
+	auth, _ := gw["auth"].(map[string]any)
+	if auth["mode"] != "token" || auth["token"] != "fixed-token-for-tests" {
+		t.Errorf("gateway.auth: want token mode with the supplied token, got %+v", gw["auth"])
+	}
+	// allowedOrigins must include BOTH the in-container port (18789, for CLI tools
+	// calling the gateway via localhost) and the published host port (browser/tunnel).
+	ui, _ := gw["controlUi"].(map[string]any)
+	origins, _ := ui["allowedOrigins"].([]any)
+	want := map[string]bool{"http://localhost:18789": false, "http://localhost:18792": false}
+	for _, o := range origins {
+		if s, ok := o.(string); ok {
+			if _, tracked := want[s]; tracked {
+				want[s] = true
+			}
+		}
+	}
+	for origin, found := range want {
+		if !found {
+			t.Errorf("gateway.controlUi.allowedOrigins missing %q; got %v", origin, origins)
+		}
+	}
+}
+
 func TestGenerateConfig_NoOverlay_PreservesDefaults(t *testing.T) {
 	r := &Runtime{}
 	out, err := r.GenerateConfig(baseParams())

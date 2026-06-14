@@ -233,22 +233,22 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 		return fmt.Errorf("provisioning agent %s failed on instance", cfg.Name)
 	}
 
-	// Bring the agent into full sync via the proven refresh path. This regenerates
-	// openclaw.json + .env in Go (applying the canonical fleet model AND any
-	// per-agent agent.yaml overlay — the static provision-script heredoc does
-	// neither), rewrites the systemd unit consistently, restarts, reconciles
-	// routing.json (loopback), and deploys the current egress policy. It makes the
-	// Go-generated config authoritative on FIRST provision, not just on a later
-	// `conga refresh` (managed-host engine, slice 2). It also subsumes the
-	// loopback-routing reconcile + router restart (RefreshAgent step 3), so the
-	// provision scripts no longer touch routing or the router bridge.
+	// Generate config + start the agent via the proven refresh path. The provision
+	// scripts now set up per-agent INFRASTRUCTURE ONLY (env, data dir, behavior,
+	// network, egress proxy) — they no longer generate openclaw.json or create/start
+	// the systemd unit (managed-host engine, slice 2b). RefreshAgent does that:
+	// regenerateAgentConfigOnInstance writes openclaw.json + the $include layers +
+	// env in Go (canonical model + per-agent agent.yaml overlay), then refresh-user.sh
+	// writes the unit (with the ExecStartPost/ExecStopPost egress-iptables lifecycle),
+	// starts the container, reconciles loopback routing.json, and deploys egress policy.
 	//
-	// Non-fatal: the provision script already created + started the agent on a
-	// valid baseline config, so a refresh hiccup (e.g. the agents/ overlay dir
-	// isn't resolvable from the operator's cwd) leaves a working agent on the
-	// provision-time config rather than failing provisioning. Surfaced via Warn.
+	// FATAL: RefreshAgent is now the only thing that produces a running agent, so a
+	// failure means provisioning failed (no config/unit/container). It errors hard if
+	// the agents/ overlay dir isn't resolvable — the correct contract: provisioning
+	// requires the overlay to generate config. The infra above is idempotent, so the
+	// operator can fix the cwd/overlay and re-run `conga admin add-user`.
 	if err := p.RefreshAgent(ctx, cfg.Name); err != nil {
-		common.Warn(ctx, "post-provision sync for %s did not complete (agent is running on the provision-time config): %v", cfg.Name, err)
+		return fmt.Errorf("agent %s infrastructure was provisioned, but config generation + container start (via refresh) failed: %w", cfg.Name, err)
 	}
 	return nil
 }

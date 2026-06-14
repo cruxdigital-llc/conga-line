@@ -42,89 +42,18 @@ if [ -n "$AGENT_SECRET_NAMES" ]; then
 fi
 chmod 0400 /opt/conga/config/$AGENT_NAME.env
 
-# Generate gateway auth token (OpenClaw v2026.3.22+ refuses to bind a
-# non-loopback gateway without auth). 32 random bytes → 64 hex chars.
-GATEWAY_TOKEN=$(openssl rand -hex 32)
-
-cat > /opt/conga/config/$AGENT_NAME-config.json << OCCONFIG
-{
-  "agents": {
-    "defaults": {
-      "model": { "primary": "anthropic/claude-opus-4-8", "fallbacks": [] },
-      "models": { "anthropic/claude-opus-4-8": { "params": {} } },
-      "workspace": "/home/node/.openclaw/data/workspace",
-      "heartbeat": {
-        "every": "55m",
-        "lightContext": true,
-        "target": "none"
-      },
-      "contextPruning": {
-        "mode": "cache-ttl",
-        "ttl": "5m"
-      },
-      "compaction": {
-        "mode": "safeguard"
-      }
-    }
-  },
-  "tools": { "profile": "coding" },
-  "commands": { "native": "auto", "nativeSkills": "auto", "restart": true, "ownerDisplay": "raw" },
-  "session": { "dmScope": "per-channel-peer" },
-  "hooks": {
-    "internal": {
-      "enabled": true,
-      "entries": {
-        "command-logger": { "enabled": true },
-        "session-memory": { "enabled": true }
-      }
-    }
-  },
-  "channels": {
-    "slack": {
-      "mode": "http",
-      "enabled": true,
-      "botToken": "$SLACK_BOT_TOKEN",
-      "signingSecret": "$SLACK_SIGNING_SECRET",
-      "webhookPath": "/slack/events",
-      "userTokenReadOnly": true,
-      "groupPolicy": "disabled",
-      "dmPolicy": "allowlist",
-      "allowFrom": ["$SLACK_MEMBER_ID"],
-      "dm": { "enabled": true },
-      "streaming": { "mode": "partial", "nativeTransport": true }
-    }
-  },
-  "gateway": { "port": 18789, "mode": "local", "bind": "lan", "auth": { "mode": "token", "token": "$GATEWAY_TOKEN" }, "controlUi": { "allowedOrigins": ["http://localhost:18789", "http://localhost:${GATEWAY_PORT}"] } },
-  "skills": { "install": { "nodeManager": "pnpm" } },
-  "plugins": { "entries": { "slack": { "enabled": true } } },
-  "update": { "checkOnStart": false, "auto": { "enabled": false } }
-}
-OCCONFIG
+# openclaw.json, the $include layers, the integrity baseline, and the agent's
+# gateway token are NOT generated here anymore. ProvisionAgent calls RefreshAgent
+# after this infra script; RefreshAgent's regenerateAgentConfigOnInstance generates
+# openclaw.json + env in Go (canonical model + per-agent agent.yaml overlay — the
+# old static heredoc honored neither), seeds the $include layers + baselines, and
+# refresh-user.sh writes the systemd unit + starts the container + applies egress
+# iptables. This script now only prepares per-agent infrastructure. See
+# pkg/provider/managedhost + slice 2 of
+# specs/2026-06-13_feature_managed-host-provisioning-engine/.
 
 mkdir -p /opt/conga/data/$AGENT_NAME/data/{workspace,memory,logs,agents,canvas,cron,devices,identity,media}
 chown -R 1000:1000 /opt/conga/data/$AGENT_NAME
-cp /opt/conga/config/$AGENT_NAME-config.json /opt/conga/data/$AGENT_NAME/openclaw.json
-# Reference the layered custom-config includes ($include array, feature #31).
-# OpenClaw merges them under this managed root in array order (later wins), and
-# the root wins over every include. Effective precedence:
-# root > agent-custom (admin drift) > agent-managed (per-agent) > fleet.
-# A missing $include target invalidates the whole config, so all three files must
-# exist: deploy-agents.sh creates fleet-custom.json + agent-managed-custom.json
-# (from S3-synced sources or "{}"); agent-custom.json is ensured below. root:root
-# 0444 keeps them read-only to the agent (uid 1000) — which still reads them for
-# $include resolution — so a prompt-injected agent can't inject a channel binding;
-# admins edit agent-custom.json via SSM as root. Never clobber existing admin content.
-jq '. + {"$include": ["fleet-custom.json", "agent-managed-custom.json", "agent-custom.json"]}' /opt/conga/data/$AGENT_NAME/openclaw.json > /opt/conga/data/$AGENT_NAME/openclaw.json.tmp \
-  && mv /opt/conga/data/$AGENT_NAME/openclaw.json.tmp /opt/conga/data/$AGENT_NAME/openclaw.json
-chown 1000:1000 /opt/conga/data/$AGENT_NAME/openclaw.json
-[ -e /opt/conga/data/$AGENT_NAME/agent-custom.json ] || printf '{}\n' > /opt/conga/data/$AGENT_NAME/agent-custom.json
-chown root:root /opt/conga/data/$AGENT_NAME/agent-custom.json
-chmod 0444 /opt/conga/data/$AGENT_NAME/agent-custom.json
-
-# Config hash baseline — hash the deployed openclaw.json (post-$include) so the
-# periodic integrity check matches what the agent actually loads.
-sha256sum /opt/conga/data/$AGENT_NAME/openclaw.json | cut -d' ' -f1 > /opt/conga/config/$AGENT_NAME-config.json.sha256
-chmod 0444 /opt/conga/config/$AGENT_NAME-config.json.sha256
 
 # Store agent metadata for behavior deployment
 echo "user" > /opt/conga/config/$AGENT_NAME.type
@@ -204,70 +133,14 @@ if ! docker inspect -f '{{`{{.State.Running}}`}}' "$EGRESS_PROXY" 2>/dev/null | 
 fi
 echo "Egress proxy started for $AGENT_NAME (mode=$EGRESS_MODE)"
 
-ENV_FLAGS=""
-while IFS="=" read -r key value; do
-  [ -n "$key" ] && ENV_FLAGS="$ENV_FLAGS -e $key"
-done < /opt/conga/config/$AGENT_NAME.env
-
-cat > /etc/systemd/system/conga-$AGENT_NAME.service << UNIT
-[Unit]
-Description=OpenClaw Gateway ($AGENT_NAME)
-After=docker.service conga-router.service
-Requires=docker.service
-
-[Service]
-Type=simple
-EnvironmentFile=/opt/conga/config/$AGENT_NAME.env
-ExecStartPre=-/usr/bin/docker rm -f conga-$AGENT_NAME
-# Seed @openclaw/slack plugin into the agent's data dir before the persistent
-# container starts (v2026.5.x extracted Slack into an external plugin).
-# Idempotent: errors with "plugin already exists" on subsequent starts; the
-# leading "-" tolerates that (already-installed is the desired end state).
-ExecStartPre=-/usr/bin/docker run --rm --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw $CONGA_IMAGE openclaw plugins install @openclaw/slack
-ExecStart=/usr/bin/docker run --name conga-$AGENT_NAME --network conga-$AGENT_NAME -p 127.0.0.1:${GATEWAY_PORT}:18789 --cap-drop ALL --security-opt no-new-privileges --memory 2g -e NODE_OPTIONS="--max-old-space-size=1536 --require /opt/proxy-bootstrap.js" -e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1 --pids-limit 256 --user 1000:1000 -v /opt/conga/data/$AGENT_NAME:/home/node/.openclaw:rw -v $BOOTSTRAP_PATH:/opt/proxy-bootstrap.js:ro $ENV_FLAGS $CONGA_IMAGE
-ExecStop=/usr/bin/docker stop conga-$AGENT_NAME
-StandardOutput=append:/var/log/conga-$AGENT_NAME.log
-StandardError=append:/var/log/conga-$AGENT_NAME.log
-Restart=always
-RestartSec=10
-TimeoutStartSec=120
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-systemctl daemon-reload
-systemctl enable conga-$AGENT_NAME.service
-systemctl start conga-$AGENT_NAME.service
-
-# Apply iptables egress rules — always applied (validate mode: proxy logs+allows,
-# but iptables ensures nothing bypasses the proxy).
-for i in $(seq 1 10); do
-  AGENT_IP=$(docker inspect -f "{{`{{(index .NetworkSettings.Networks \"conga-$AGENT_NAME\").IPAddress}}`}}" "conga-$AGENT_NAME" 2>/dev/null || echo "")
-  [ -n "$AGENT_IP" ] && break
-  sleep 1
-done
-NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "conga-$AGENT_NAME" 2>/dev/null || echo "")
-if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
-  iptables -C DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -j DROP
-  iptables -C DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN
-  iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-  echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
-else
-  echo "ERROR: Could not apply egress iptables rules — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
-  exit 1
-fi
-
-# routing.json is generated in Go (loopback form) and the router is restarted by
-# ProvisionAgent after this script returns — see pkg/provider/managedhost +
-# AWSProvider.regenerateRoutingOnInstance/restartRouterOnInstance. The router runs
-# --network host and reaches each agent via 127.0.0.1:<hostPort>, so there is no
-# per-agent bridge attach here (that broke on Docker 25 + kernel 6.1.174 — see
-# specs/2026-06-11_bugfix_router-host-networking/).
+# The systemd unit, container start, and egress iptables are NOT written here.
+# ProvisionAgent calls RefreshAgent after this script: regenerateAgentConfigOnInstance
+# puts openclaw.json + env on disk (Go), then refresh-user.sh writes the unit (with
+# the ExecStartPost/ExecStopPost iptables lifecycle), starts the container, and
+# reconciles loopback routing.json + restarts the router. Keeping unit/start/iptables
+# in one place (refresh-user.sh) removes the divergent add-path copy (audit #8) and
+# the bridge attach. See slice 2 of
+# specs/2026-06-13_feature_managed-host-provisioning-engine/.
 
 # Update CloudWatch dashboard with all agents
 /opt/conga/bin/update-dashboard.sh || echo "WARNING: Dashboard update failed"
