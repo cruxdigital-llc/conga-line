@@ -1155,7 +1155,12 @@ for HASHFILE in /opt/conga/config/*-config.json.sha256; do
   # Verify the Conga-managed include layers (feature #31) against their deployed
   # baseline — detects on-host tampering of these Conga-owned files. The
   # admin-owned agent-custom.json is intentionally NOT hashed (admin drift is
-  # expected there; it is guarded only by the reserved-key check below).
+  # expected there). The reserved-key boundary is now enforced PREVENTIVELY by the
+  # per-agent fail-closed ExecStartPre guard (reserved-key-guard-<name>.sh,
+  # generated from common.ReservedCustomConfigKeys), which refuses to start an
+  # agent whose $include layers declare a Conga-owned key — so this periodic timer
+  # no longer re-scans for reserved keys (managed-host engine, integrity decision
+  # #2 / spec §8: prevention-first; this SHA256 backstop stays for on-host tampering).
   for MFILE in fleet-custom.json agent-managed-custom.json; do
     MBASE="/opt/conga/config/$AGENT_NAME-$MFILE.sha256"
     MPATH="/opt/conga/data/$AGENT_NAME/$MFILE"
@@ -1166,27 +1171,6 @@ for HASHFILE in /opt/conga/config/*-config.json.sha256; do
       MMSG="$TIMESTAMP CONFIG_INTEGRITY_VIOLATION agent=$AGENT_NAME file=$MFILE expected=$MEXP actual=$MCUR"
       echo "$MMSG" >> "$LOGFILE"
       echo "$MMSG" | systemd-cat -t conga-integrity -p warning
-    fi
-  done
-  # Guard EVERY $include layer: none may declare Conga-owned keys. OpenClaw
-  # deep-merges (unions) include objects, so an injected channels.* in ANY layer
-  # would extend the channel allowlist (a security boundary) undetected by the
-  # root hash above. Covers fleet + per-agent (managed) + admin-drift.
-  for IFILE in fleet-custom.json agent-managed-custom.json agent-custom.json; do
-    IPATH="/opt/conga/data/$AGENT_NAME/$IFILE"
-    [ -f "$IPATH" ] || continue
-    # Capture jq's exit status directly (not through a pipe — `paste` would mask a
-    # parse failure and the invalid-JSON branch would be dead code).
-    if KEYS=$(jq -r 'keys[]' "$IPATH" 2>/dev/null); then
-      RESERVED=$(printf '%s\n' "$KEYS" | grep -Ex '\$include|channels|gateway|plugins' | paste -sd, -)
-      if [ -n "$RESERVED" ]; then
-        CMSG="$TIMESTAMP CONFIG_INTEGRITY_VIOLATION agent=$AGENT_NAME $IFILE declares Conga-owned key(s)=$RESERVED"
-        echo "$CMSG" >> "$LOGFILE"
-        echo "$CMSG" | systemd-cat -t conga-integrity -p warning
-      fi
-    else
-      CMSG="$TIMESTAMP WARN agent=$AGENT_NAME $IFILE is not valid JSON; manual review advised"
-      echo "$CMSG" >> "$LOGFILE"
     fi
   done
 done

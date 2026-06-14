@@ -366,6 +366,18 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
     green. **Slices 4+3 production swap (B-1, B-2, B2.4, B-3) complete.** Optional remaining: B5
     (slim the periodic integrity backstop). Then slice 5 (boot reduction) / slice 6 (remote systemd).
 
+- **2026-06-13** — **B5 done: periodic integrity backstop slimmed (prevention-first complete).**
+  Removed the reserved-key `jq` loop from `check-config-integrity.sh` (`user-data.sh.tftpl`) — that
+  boundary is now enforced preventively by B-3's fail-closed `ExecStartPre` guard, so the timer no
+  longer re-scans `$include` layers for Conga-owned keys (integrity decision #2 / spec §8). Kept
+  (decision #6, "keep, slimmed"): the SHA256 hash checks (root + 2 managed includes) for on-host
+  tampering, and the CloudWatch metric-filter/SNS alarm (still fires on the hash-check
+  `CONFIG_INTEGRITY_VIOLATION`). terraform-only change → **no provider release**; deferred-effect
+  (lands on the next host cycle). bash `-n` clean; loop structure intact. audit-#4 baseline-writer
+  consolidation left to slice 5 (where `deploy-agents.sh` becomes the single baseline writer).
+  **Increment B (slices 4+3) complete: B-1, B-2, B2.4, B-3, B5.** Remaining feature work: slice 5
+  (boot-script reduction — highest risk, spike first) and slice 6 (remote systemd adoption).
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

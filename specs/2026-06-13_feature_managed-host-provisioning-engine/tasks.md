@@ -138,7 +138,7 @@ already does: Go-config-first, then unit+start).
 - Note: `add-user/add-team.sh.tmpl` are scripts/ (no provider release); the `ProvisionAgent` change is
   `pkg/` → release. Boot tftpl heredoc reduction stays in slice 5.
 
-## Slices 4+3 — engine (decision: build together) — ✅ ENGINE CORE + production swap DONE (B-1, B-2, B2.4, B-3 all live-verified); B5 integrity-backstop slim optional
+## Slices 4+3 — engine (decision: build together) — ✅ COMPLETE (B-1, B-2, B2.4, B-3 live-verified; B5 integrity-backstop slim done)
 
 Chosen to build slices 4 (systemd-unit-via-supervisor) + 3 (static-IP egress) together because the
 egress iptables lives in the unit, so the clean home for a deterministic egress command is a
@@ -269,7 +269,18 @@ are left untouched this step (their auto-subnet network is migrated by the first
 generated guard (0755) + add as the first `PreStart`. Live-verify it blocks an injected `channels`
 include and WARN+allows an unparseable JSON5 include.
 
-- [ ] **B-? — Slim the periodic integrity backstop** (drop audit-#4 dual-baseline coupling) — or defer.
+- [x] **B5 — Slim the periodic integrity backstop — DONE (terraform-only; deferred to next host cycle).**
+  Removed the reserved-key `jq` loop from `check-config-integrity.sh` (in `user-data.sh.tftpl`): that
+  boundary is now enforced **preventively** by B-3's fail-closed `ExecStartPre` guard, so the periodic
+  timer no longer re-scans `$include` layers for Conga-owned keys. Kept (decision #6 — "keep, slimmed"):
+  the SHA256 hash checks (root `openclaw.json` + the two managed include layers) as the on-host-tampering
+  detective backstop, and the CloudWatch metric-filter/SNS alarm (still fires on the `CONFIG_INTEGRITY_
+  VIOLATION` the hash checks emit). bash `-n` clean; reserved-key code gone (only the explanatory comment
+  remains); loop structure intact. **No provider release** (terraform/ only, not pkg/). The audit-#4
+  baseline-writer consolidation (boot vs deploy-agents both write baselines) is left to **slice 5** (boot
+  reduction), where `deploy-agents.sh` becomes the single baseline writer.
+
+### ✅ Increment B complete (B-1, B-2, B2.4, B-3, B5). Remaining feature work: slice 5 (boot reduction — highest risk, spike first) + slice 6 (remote systemd).
 
 ## Slice 5 — boot-script reduction (audit #3) — HIGHEST RISK
 Reconstitute-from-persisted-EBS-artifacts; shrink `user-data.sh.tftpl` to install+secret-fetch+
