@@ -130,7 +130,9 @@ Changes to `pkg/` affect the external Terraform provider (`cruxdigital-llc/terra
 | `pkg/channels/` | Channel interface, registry, shared types (`ChannelBinding`, `SecretDef`, `RoutingEntry`) | Channel-specific implementation |
 | `pkg/channels/{name}/` | Platform-specific implementation for one channel (validation, config, routing, secrets) | Cross-channel logic |
 | `pkg/provider/` | Provider interface, registry, shared types (`AgentConfig`, `AgentStatus`) | Provider-specific implementation |
-| `pkg/provider/{name}provider/` | Transport-specific code for one provider | Shared logic, cross-provider behavior |
+| `pkg/provider/{name}provider/` | Transport-specific code for one provider (binds the managed-host engine to its transport — SSM for AWS, SSH/SFTP for remote) | Shared host-lifecycle orchestration (belongs in `managedhost`) |
+| `pkg/provider/managedhost/` | Provider-agnostic host orchestration behind a thin `Transport` seam: systemd unit render/install, deterministic per-agent network planning + fail-safe migration, egress wiring, reserved-key guard | Provider/transport specifics (SSM vs SSH), config-content generation (`common`) |
+| `pkg/provider/iptables/` | Deterministic egress iptables rule generation (subnet/established/DNS RETURNs + fail-closed DROP) | When/where rules are applied (the engine + provider units) |
 | `pkg/common/` | Config generation, routing, behavior composition, validation | Policy, provider interface, CLI commands |
 | `pkg/policy/` | Policy schema, parsing, validation, enforcement reporting | Enforcement logic (that's in providers) |
 | `internal/cmd/` | CLI commands, flag parsing, user interaction | Business logic (delegate to providers/packages) |

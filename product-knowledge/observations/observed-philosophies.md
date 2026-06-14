@@ -47,7 +47,7 @@
 - **Source**: Explicit, repeated operator statements across the managed-host-provisioning-engine session ("be opinionated about where we contain logic, how we test it, and how consistently it is reused"; "remove as much bash as possible because it is hard to test and error prone").
 - **Context**: Choosing the convergence strategy for AWS provisioning (Theme 3 of the codebase audit). The operator consistently favored moving host-provisioning logic out of hand-maintained, untestable templated bash into shared Go exercised by unit tests, with provider-specific concerns isolated behind minimal seams (transport, host-supervisor).
 - **Proposed Philosophy**: "Host/provisioning logic belongs in shared, unit-tested Go behind thin provider seams — not in templated bash. Bash on a host should place files and run short commands, never carry logic that can drift or fail untested. Generating an artifact (emit a struct/typed value, assert on it) is preferred over emitting bash strings, because it is testable without a host."
-- **Suggested Weight**: preferred
+- **Suggested Weight**: core
 - **Suggested Domain**: architecture, testing
 - **Confidence**: High
-- **Status**: pending
+- **Status**: adopted — realized by the managed-host engine (`pkg/provider/managedhost/`, PR #67) and its hardening (PR #68). AWS + remote now provision through the same tested Go engine over a `Transport` seam; `refresh-user.sh.tmpl` was deleted; the network migration moved from a shell string to `ReconcileAgentNetwork` (unit-tested). The C5b live reboot acceptance validated the result end-to-end.

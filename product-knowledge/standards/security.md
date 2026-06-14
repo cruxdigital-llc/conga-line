@@ -32,13 +32,14 @@ These controls apply identically regardless of provider. They happen automatical
 | Resource limits | `--memory 2g`, `--cpus 0.75`, `--pids-limit 256` | Prevents resource starvation across agents |
 | Non-root container | Explicit `--user 1000:1000` on all containers | Limits blast radius of container compromise; independent of image USER directive |
 | Seccomp profile | Docker default seccomp (~44 dangerous syscalls blocked) | Restricts syscalls available to the container |
-| Isolated Docker networks | Each agent on its own bridge network | Prevents lateral movement between agents |
+| Isolated Docker networks | Each agent on its own bridge network. On the managed-host providers (AWS, remote) it is a **deterministic static subnet** `10.99.<idx>.0/24` with the agent pinned to `.2` and the egress proxy to `.3` (`docker run --ip`) | Prevents lateral movement between agents; static IPs make egress iptables auditable/generatable *before* container start (no unfiltered-egress race) and keep the fleet reboot-safe (proxy can't grab the agent's IP on a simultaneous restart) |
 | Localhost-only port binding | `-p 127.0.0.1:<port>:<port>` | Gateway not exposed to network |
-| Secrets via env vars | Env file (mode 0400), never in openclaw.json | Prevents secret exposure via config (Issue #9627) |
+| Secrets via env vars | Env file (mode 0400), never in openclaw.json (`--env-file`, never inline `-e`) | Prevents secret exposure via config (Issue #9627) and via the process table |
 | Config integrity monitoring | SHA256 hash baseline, periodic check, alert on mismatch | Detects tampering that bypasses other controls |
+| Reserved-key config guard | Fail-closed check (AWS: systemd `ExecStartPre` guard; local/remote: integrity check) that blocks start if an agent `$include` layer declares a Conga-owned key (`$include`/`channels`/`gateway`/`plugins`) | Prevention-first: operator misconfiguration of the channel/gateway boundary never reaches a running container |
 | Router event signing | HMAC-SHA256 on forwarded Slack events | Prevents event forgery between router and containers |
 | Gateway token auth | Random token + device pairing | Prevents unauthorized web UI access |
-| Pinned image | Known-good OpenClaw version (currently v2026.5.26) | Avoids regressions; pinning a specific minor (not `:latest`) keeps deploys bisectable across upstream releases |
+| Pinned image | Known-good OpenClaw version (currently `2026.6.5`) | Avoids regressions; pinning a specific minor (not `:latest`) keeps deploys bisectable across upstream releases |
 
 ## Enforcement Escalation by Provider
 

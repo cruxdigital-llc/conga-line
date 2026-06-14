@@ -127,6 +127,21 @@ Use `cidr = "vpc"` to scope a rule to the VPC CIDR. All other rules default to `
 
 Both security group egress rules and NACL rules are generated from this list. NACL ingress rules for return traffic are created automatically based on which protocols are in the list.
 
+### Per-agent network & egress (inside the host)
+
+Layered beneath the host-level SG/NACL rules, each agent runs on a **deterministic static Docker
+network** `10.99.<idx>.0/24` (where `idx = gateway_port − 18789`): the agent container is pinned to
+`.2` and its per-agent Envoy egress proxy to `.3`. Egress is fail-closed in all modes — an iptables
+`DOCKER-USER` rule set allows only the agent's own subnet, established responses, and DNS (port 53),
+then DROPs everything else; per-domain allowlisting is enforced at the proxy (see `conga-policy.yaml`).
+Because the IPs are deterministic, these rules are generated and applied **before** the container
+starts (no unfiltered-egress race), and a host reboot brings the whole fleet back unattended without
+IP collisions. This per-agent isolation is managed by the conga provider, not Terraform — you don't
+configure it in tfvars.
+
+> **Reboot behavior:** `conga admin cycle-host` (or any EC2 reboot) restarts every agent via its
+> systemd unit; the fleet returns automatically with no operator intervention.
+
 ## Secrets
 
 Never put real secret values in `.tf` files or commit them to git. Use `terraform.tfvars` (gitignored) or pass them via environment variables:
