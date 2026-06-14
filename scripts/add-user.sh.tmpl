@@ -75,7 +75,12 @@ else
   done
 fi
 
-docker network create --driver bridge "conga-$AGENT_NAME" || true
+# Create the per-agent network with its deterministic static subnet ({{.SubnetCIDR}})
+# so the agent (.2) and egress proxy (.3) can bind fixed IPs — the proxy pin below
+# requires the static subnet to exist. (If the network already exists on an old
+# auto-subnet, the RefreshAgent network reconcile migrates it; for a fresh agent
+# this creates it correctly up front, avoiding migration churn.)
+docker network create --driver bridge --subnet "{{.SubnetCIDR}}" --gateway "{{.GatewayIP}}" "conga-$AGENT_NAME" 2>/dev/null || true
 
 # Deploy egress proxy (deny-all when no policy, enforce by default)
 EGRESS_MODE="{{.EgressMode}}"
@@ -109,6 +114,7 @@ docker rm -f "$EGRESS_PROXY" 2>/dev/null || true
 docker run -d \
   --name "$EGRESS_PROXY" \
   --network "conga-$AGENT_NAME" \
+  --ip "{{.ProxyIP}}" \
   --restart always \
   --cap-drop ALL \
   --security-opt no-new-privileges \

@@ -108,6 +108,7 @@ func TestSystemdRenderUnit(t *testing.T) {
 		"StandardOutput=append:/var/log/conga-test.log",
 		"Restart=always",
 		"RestartSec=10",
+		"TimeoutStartSec=120", // backend default when StartTimeoutSec is unset
 		"WantedBy=multi-user.target",
 	} {
 		if !strings.Contains(u, w) {
@@ -121,6 +122,12 @@ func TestSystemdRenderUnit(t *testing.T) {
 	post := strings.Index(u, "ExecStartPost=/sbin/iptables-apply")
 	if !(pre < start && start < post) {
 		t.Errorf("hook ordering wrong: pre=%d start=%d post=%d", pre, start, post)
+	}
+
+	// R4: an explicit StartTimeoutSec overrides the default.
+	spec.StartTimeoutSec = 300
+	if u300 := s.RenderUnit(spec); !strings.Contains(u300, "TimeoutStartSec=300") {
+		t.Errorf("StartTimeoutSec=300 not honored:\n%s", u300)
 	}
 }
 

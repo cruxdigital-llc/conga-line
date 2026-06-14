@@ -439,7 +439,15 @@ No new Conga data-model concept.
   `/glados:spec-feature`. `pkg/` change → `terraform-provider-conga` release required. See
   `specs/2026-06-13_feature_managed-host-provisioning-engine/`.
 
-### 33. Managed-Host Migration Hardening (reboot/restart safety) — 📋 Specified (`/glados:spec-feature` done, gate PASS; next: `/glados:implement-feature`)
+### 33. Managed-Host Migration Hardening (reboot/restart safety) — 🔨 Implemented (R1-R4 code-complete + unit-verified; live verify + rollout release-gated)
+> **Update 2026-06-14**: All four requirements coded + unit-tested on branch `plan/managed-host-migration-hardening`:
+> R1 proxy pinned to `.3` at all creation sites (+ add-user/add-team static-subnet create); R2
+> `managedhost.ReconcileAgentNetwork` (prepare-then-commit, fail-safe — replaces the shell-string
+> migration); R4 `flock -w 240` in pre-start.sh + `ServiceSpec.StartTimeoutSec`=300; R3 `refresh-all`
+> per-agent timeout. build/vet/gofmt + `go test ./...` green. **Remaining: provider release →
+> remediate the 3 reboot-fragile migrated agents → migrate the held 3 → C5b reboot acceptance →
+> `/glados:verify-feature`.** Live verify is release-gated (CLI exercises branch `pkg/`, but the
+> deployed path needs the release).
 - **Goal**: make the static-IP managed-host engine (#32, PR #67) actually **unattended-reboot/restart-safe**
   (parent criterion 5b). A live-fleet migration (2026-06-14) proved the engine works per-agent but is not
   safe under a whole-fleet bounce (host reboot, Docker daemon restart, `refresh-all`).

@@ -38,6 +38,30 @@ func TestDeployAgentsManagedIncludes(t *testing.T) {
 	}
 }
 
+// TestPreStartSerializesSync is the R4 guard: pre-start.sh must serialize its S3
+// sync behind a bounded flock so a simultaneous fleet start (host reboot / docker
+// daemon restart) doesn't run N concurrent syncs and blow the unit start timeout.
+// The wait must be bounded (-w) so a stuck holder can't deadlock the fleet.
+func TestPreStartSerializesSync(t *testing.T) {
+	b, err := os.ReadFile("pre-start.sh.tmpl")
+	if err != nil {
+		t.Fatalf("read pre-start.sh.tmpl: %v", err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "exec 9>/var/lock/conga-prestart.lock") {
+		t.Error("pre-start.sh must open the host-wide prestart lock fd")
+	}
+	if !strings.Contains(s, "flock -w 240 9") {
+		t.Error("pre-start.sh must acquire the lock with a BOUNDED wait (flock -w 240) so a stuck holder can't deadlock the fleet")
+	}
+	// The flock must guard the S3 sync (lock acquired before the sync command runs).
+	lock := strings.Index(s, "flock -w 240 9")
+	sync := strings.Index(s, `aws s3 sync "s3://$STATE_BUCKET`)
+	if lock < 0 || sync < 0 || lock > sync {
+		t.Errorf("flock must be acquired before the aws s3 sync command (lock=%d sync=%d)", lock, sync)
+	}
+}
+
 func TestDeployEgressScriptTemplateRender(t *testing.T) {
 	tmpl, err := template.New("deploy-egress").Parse(DeployEgressScript)
 	if err != nil {
@@ -51,6 +75,7 @@ func TestDeployEgressScriptTemplateRender(t *testing.T) {
 		EnvoyConfig      string
 		ProxyBootstrapJS string
 		ManifestJSON     string
+		ProxyIP          string
 	}{
 		AgentName: "testagent",
 		Mode:      "enforce",
@@ -63,6 +88,7 @@ egress:
 		EnvoyConfig:      "static_resources:\n  listeners:\n    - name: main\n",
 		ProxyBootstrapJS: "const http = require('http');\n",
 		ManifestJSON:     `{"schema_version":1,"policy_hash":"abc","egress":{"mode":"enforce"}}`,
+		ProxyIP:          "10.99.7.3",
 	}
 
 	var buf strings.Builder
@@ -94,6 +120,11 @@ egress:
 	if !strings.Contains(output, "egress-$AGENT_NAME.manifest.json") {
 		t.Error("expected manifest file path in rendered output")
 	}
+	// R1: the proxy must be pinned to its reserved static IP so a simultaneous
+	// restart can't let it grab the agent's .2 (exit-125 collision).
+	if !strings.Contains(output, `--ip "10.99.7.3"`) {
+		t.Error("expected the egress proxy to be pinned via --ip <ProxyIP> (R1)")
+	}
 }
 
 // TestDeployEgressScriptDelegatesEgressToUnit is the B2.4 guard: deploy-egress.sh
@@ -115,6 +146,7 @@ func TestDeployEgressScriptDelegatesEgressToUnit(t *testing.T) {
 		EnvoyConfig      string
 		ProxyBootstrapJS string
 		ManifestJSON     string
+		ProxyIP          string
 	}{
 		AgentName: "testagent",
 		Mode:      "validate",
@@ -126,6 +158,7 @@ egress:
 		EnvoyConfig:      "static_resources:\n  listeners:\n    - name: main\n",
 		ProxyBootstrapJS: "const http = require('http');\n",
 		ManifestJSON:     `{"schema_version":1,"egress":{"mode":"validate"}}`,
+		ProxyIP:          "10.99.7.3",
 	}
 
 	var buf strings.Builder
@@ -191,8 +224,9 @@ func TestProvisionScriptsDropBridgeRouterWiring(t *testing.T) {
 		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
 		GatewayPort                                                    int
 		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
+		SubnetCIDR, GatewayIP, ProxyIP                                 string
 	}
-	pd := provData{AgentName: "testuser", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "x", EgressMode: "enforce", ProxyBootstrapJS: "y"}
+	pd := provData{AgentName: "testuser", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "x", EgressMode: "enforce", ProxyBootstrapJS: "y", SubnetCIDR: "10.99.0.0/24", GatewayIP: "10.99.0.1", ProxyIP: "10.99.0.3"}
 
 	scripts := map[string]string{
 		"add-user": render("add-user", AddUserScript, pd),
@@ -244,7 +278,8 @@ func TestProvisionScriptsAreInfraOnly(t *testing.T) {
 			AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
 			GatewayPort                                                    int
 			EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
-		}{AgentName: "t", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "static_resources:\n", EgressMode: "enforce", ProxyBootstrapJS: "x"}
+			SubnetCIDR, GatewayIP, ProxyIP                                 string
+		}{AgentName: "t", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "static_resources:\n", EgressMode: "enforce", ProxyBootstrapJS: "x", SubnetCIDR: "10.99.0.0/24", GatewayIP: "10.99.0.1", ProxyIP: "10.99.0.3"}
 		if err := tmpl.Execute(&buf, data); err != nil {
 			t.Fatalf("execute %s: %v", name, err)
 		}
@@ -284,6 +319,7 @@ func TestAddUserScriptTemplateRender(t *testing.T) {
 		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
 		GatewayPort                                                    int
 		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
+		SubnetCIDR, GatewayIP, ProxyIP                                 string
 	}{
 		AgentName:        "testuser",
 		SlackMemberID:    "U1234",
@@ -293,6 +329,9 @@ func TestAddUserScriptTemplateRender(t *testing.T) {
 		EnvoyConfig:      "static_resources:\n  listeners:\n    - port: 3128\n",
 		EgressMode:       "enforce",
 		ProxyBootstrapJS: "const http = require('http');\n",
+		SubnetCIDR:       "10.99.0.0/24",
+		GatewayIP:        "10.99.0.1",
+		ProxyIP:          "10.99.0.3",
 	}
 
 	var buf strings.Builder
@@ -313,7 +352,8 @@ func TestAddUserScriptTemplateRender(t *testing.T) {
 		"envoy config":             "static_resources",
 		"proxy bootstrap":          "require('http')",
 		"egress proxy run":         "conga-egress-proxy",
-		"network create":           `docker network create --driver bridge "conga-$AGENT_NAME"`,
+		"network create (static)":  `docker network create --driver bridge --subnet "10.99.0.0/24" --gateway "10.99.0.1" "conga-$AGENT_NAME"`,
+		"proxy pinned (R1)":        `--ip "10.99.0.3"`,
 		"agent type metadata":      `echo "user" > /opt/conga/config/$AGENT_NAME.type`,
 		"managed include fallback": `for MF in fleet-custom.json agent-managed-custom.json; do`,
 	}
@@ -334,6 +374,7 @@ func TestAddTeamScriptTemplateRender(t *testing.T) {
 		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
 		GatewayPort                                                    int
 		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
+		SubnetCIDR, GatewayIP, ProxyIP                                 string
 	}{
 		AgentName:        "testteam",
 		SlackChannel:     "C5678",
@@ -343,6 +384,9 @@ func TestAddTeamScriptTemplateRender(t *testing.T) {
 		EnvoyConfig:      "static_resources:\n  listeners:\n    - port: 3128\n",
 		EgressMode:       "enforce",
 		ProxyBootstrapJS: "const http = require('http');\n",
+		SubnetCIDR:       "10.99.1.0/24",
+		GatewayIP:        "10.99.1.1",
+		ProxyIP:          "10.99.1.3",
 	}
 
 	var buf strings.Builder
@@ -361,7 +405,8 @@ func TestAddTeamScriptTemplateRender(t *testing.T) {
 		"egress mode":              `EGRESS_MODE="enforce"`,
 		"envoy config":             "static_resources",
 		"egress proxy run":         "conga-egress-proxy",
-		"network create":           `docker network create --driver bridge "conga-$AGENT_NAME"`,
+		"network create (static)":  `docker network create --driver bridge --subnet "10.99.1.0/24" --gateway "10.99.1.1" "conga-$AGENT_NAME"`,
+		"proxy pinned (R1)":        `--ip "10.99.1.3"`,
 		"agent type metadata":      `echo "team" > /opt/conga/config/$AGENT_NAME.type`,
 		"managed include fallback": `for MF in fleet-custom.json agent-managed-custom.json; do`,
 	}

@@ -130,3 +130,34 @@ the core philosophy *"Logic in tested Go behind thin seams, not templated bash"*
 **Gate decision: PASS** — all `must` standards pass; no violations; no core-philosophy conflict. Two
 non-blocking flags logged (add-user/add-team static-subnet consumer check; schedule the C5b reboot
 window). Ready for `/glados:implement-feature`.
+
+## Session Log (implement phase)
+
+- **2026-06-14** — `/glados:implement-feature` started (branch `plan/managed-host-migration-hardening`).
+  Drafted `tasks.md` (order R1→R2→R4→R3; live-verify release-gated). **R1 implemented, code-complete +
+  unit-verified.** Pinned the egress proxy to its reserved `ProxyIP` (`.3`) at all three creation sites
+  (`deploy-egress.sh.tmpl`, `add-user.sh.tmpl`, `add-team.sh.tmpl`), which required `add-user`/`add-team`
+  to create the per-agent network on its **static subnet** (`--subnet/--gateway`) so the proxy can bind
+  `.3`. `DeployEgress` now resolves the agent → `PlanAgentNetwork` → threads `ProxyIP`; `ProvisionAgent`
+  threads `SubnetCIDR`/`GatewayIP`/`ProxyIP` into `provisionData`; `network.go` `ProxyIP` doc is now
+  "enforced" with the reboot-collision rationale. Tests: all six render-test structs in `scripts_test.go`
+  gained the fields + new assertions (proxy `--ip` pin at all sites; static-subnet create). build/vet/
+  gofmt + `go test ./...` green. T1.8 live verify + the 3-agent remediation are **release-gated**
+  (post `terraform-provider-conga` release). **Next: R2** (the robust `ReconcileAgentNetwork` Go
+  orchestration — the core).
+- **2026-06-14** — **R2, R4, R3 implemented; all four requirements code-complete + unit-verified.**
+  - **R2** (the core): new `managedhost/network_reconcile.go` `ReconcileAgentNetwork` — prepare-then-commit,
+    transport-driven. Clears foreign/dangling endpoints (the stale `conga-router` bridge that downed
+    `congaline-team`) BEFORE touching the agent; aborts with an actionable error if a ghost persists,
+    leaving the agent **running on its old net** (fail-safe). Step-verified COMMIT. Wired into
+    `defineAndStartAgentService`; deleted the shell-string `agentNetworkMigrationCmd`. New
+    `network_reconcile_test.go` (fake-transport `responder`): no-op / create-only / **fail-safe-abort
+    (no agent stop/rm on ghost)** / happy-path ordering.
+  - **R4**: `pre-start.sh.tmpl` bounded `flock -w 240` around the S3 sync; new
+    `ServiceSpec.StartTimeoutSec` → `RenderUnit` (engine sets 300). Tests for the flock + the timeout.
+  - **R3**: `RefreshAll` per-agent `perAgentRefreshCtx` (deadline-free parent, 6m each) + explicit
+    operator-cancel guard. Decoupling test added.
+  - build/vet/gofmt + `go test ./...` all green. **Live verify (T1.8 + R2/R3/R4 throwaway + the C5b
+    reboot) and the 3-agent remediation are release-gated** (post `terraform-provider-conga` release),
+    per the rollout (§11). Implementation complete; ready for the provider release + staged rollout +
+    `/glados:verify-feature`.

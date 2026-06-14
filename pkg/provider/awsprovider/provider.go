@@ -22,6 +22,7 @@ import (
 	"github.com/cruxdigital-llc/conga-line/pkg/discovery"
 	"github.com/cruxdigital-llc/conga-line/pkg/policy"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/pkg/provider/managedhost"
 	"github.com/cruxdigital-llc/conga-line/pkg/tunnel"
 	"github.com/cruxdigital-llc/conga-line/pkg/ui"
 	"github.com/cruxdigital-llc/conga-line/scripts"
@@ -185,12 +186,21 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 		}
 	}
 
+	// Deterministic network plan so the infra-only provision script creates the
+	// per-agent network on its static subnet and pins the egress proxy to .3 (R1 —
+	// reboot-collision safety). The agent itself binds .2 later via the Go unit.
+	provNet, err := managedhost.PlanAgentNetwork(cfg.GatewayPort, common.BaseGatewayPort)
+	if err != nil {
+		return fmt.Errorf("failed to plan network for %s: %w", cfg.Name, err)
+	}
+
 	var scriptTemplate string
 	var templateData interface{}
 	type provisionData struct {
 		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
 		GatewayPort                                                    int
 		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
+		SubnetCIDR, GatewayIP, ProxyIP                                 string
 	}
 	switch cfg.Type {
 	case provider.AgentTypeUser:
@@ -199,6 +209,7 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 			AgentName: cfg.Name, SlackMemberID: slackID, AWSRegion: p.region,
 			StateBucket: stateBucket, GatewayPort: cfg.GatewayPort,
 			EnvoyConfig: envoyConfig, EgressMode: string(egressMode), ProxyBootstrapJS: proxyBootstrapJS,
+			SubnetCIDR: provNet.SubnetCIDR, GatewayIP: provNet.GatewayIP, ProxyIP: provNet.ProxyIP,
 		}
 	case provider.AgentTypeTeam:
 		scriptTemplate = scripts.AddTeamScript
@@ -206,6 +217,7 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 			AgentName: cfg.Name, SlackChannel: slackID, AWSRegion: p.region,
 			StateBucket: stateBucket, GatewayPort: cfg.GatewayPort,
 			EnvoyConfig: envoyConfig, EgressMode: string(egressMode), ProxyBootstrapJS: proxyBootstrapJS,
+			SubnetCIDR: provNet.SubnetCIDR, GatewayIP: provNet.GatewayIP, ProxyIP: provNet.ProxyIP,
 		}
 	default:
 		return fmt.Errorf("unknown agent type: %s", cfg.Type)
@@ -666,6 +678,21 @@ func loadRefreshPolicy(ctx context.Context, policyPath string) (*policy.PolicyFi
 	return pf, string(data), nil
 }
 
+// perAgentRefreshTimeout bounds a single agent's refresh during `refresh-all`. A
+// full refresh (config-gen + network reconcile + unit + restart-with-plugin-install
+// + routing + egress) runs ~3-4m; 6m is headroom. It is applied PER AGENT, not once
+// across the fleet (R3).
+const perAgentRefreshTimeout = 6 * time.Minute
+
+// perAgentRefreshCtx derives a per-agent refresh context with a fresh deadline that
+// is independent of the parent's global --timeout. context.WithoutCancel strips the
+// parent's deadline (and cancellation — the RefreshAll loop guards operator cancel
+// separately via ctx.Err()), so one slow agent can't starve the rest and the whole
+// fleet isn't capped by a single --timeout window.
+func perAgentRefreshCtx(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), perAgentRefreshTimeout)
+}
+
 func (p *AWSProvider) RefreshAll(ctx context.Context) error {
 	agents, err := discovery.ListAgents(ctx, p.clients.SSM)
 	if err != nil {
@@ -690,12 +717,27 @@ func (p *AWSProvider) RefreshAll(ctx context.Context) error {
 	// Secrets Manager. The old approach used a bulk shell script that only
 	// restarted systemd units without regenerating env files, causing stale
 	// secrets after secret changes.
+	//
+	// Each agent gets its OWN timeout (perAgentRefreshCtx), not the single global
+	// --timeout shared across the whole fleet — otherwise a fleet larger than one
+	// --timeout window dies partway through with `context deadline exceeded` on the
+	// unprocessed agents (managed-host migration hardening, R3). An explicit operator
+	// cancel (Ctrl-C → context.Canceled) still stops the loop; the global deadline
+	// (DeadlineExceeded) deliberately does NOT bound the fleet.
 	var failed []string
 	spin := ui.NewSpinner("Refreshing all agents...")
 	for _, a := range activeAgents {
 		spin.Stop()
-		if err := p.RefreshAgent(ctx, a.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to refresh %s: %v\n", a.Name, err)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			fmt.Fprintln(os.Stderr, "refresh-all cancelled; remaining agents not refreshed")
+			failed = append(failed, a.Name)
+			continue
+		}
+		aCtx, cancel := perAgentRefreshCtx(ctx)
+		refreshErr := p.RefreshAgent(aCtx, a.Name)
+		cancel()
+		if refreshErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to refresh %s: %v\n", a.Name, refreshErr)
 			failed = append(failed, a.Name)
 		}
 		spin = ui.NewSpinner("Refreshing all agents...")
@@ -726,6 +768,19 @@ func (p *AWSProvider) DeployEgress(ctx context.Context, agentName, policyContent
 		return err
 	}
 
+	// Resolve the agent's deterministic network plan so the proxy can be pinned to
+	// its reserved static IP (.3). Pinning prevents the --restart-always proxy from
+	// grabbing the agent's .2 on a simultaneous restart (reboot / docker daemon
+	// restart) → exit-125 crash-loop (managed-host migration hardening, R1).
+	agent, err := discovery.ResolveAgent(ctx, p.clients.SSM, agentName)
+	if err != nil {
+		return fmt.Errorf("failed to resolve agent %s for egress deploy: %w", agentName, err)
+	}
+	agentNet, err := managedhost.PlanAgentNetwork(agent.GatewayPort, common.BaseGatewayPort)
+	if err != nil {
+		return fmt.Errorf("failed to plan network for %s: %w", agentName, err)
+	}
+
 	tmpl, err := template.New("deploy-egress").Parse(scripts.DeployEgressScript)
 	if err != nil {
 		return fmt.Errorf("failed to parse deploy-egress template: %w", err)
@@ -750,7 +805,8 @@ func (p *AWSProvider) DeployEgress(ctx context.Context, agentName, policyContent
 		EnvoyConfig      string
 		ProxyBootstrapJS string
 		ManifestJSON     string
-	}{agentName, string(mode), policyContent, envoyConfig, policy.ProxyBootstrapJS(), manifestJSON}); err != nil {
+		ProxyIP          string
+	}{agentName, string(mode), policyContent, envoyConfig, policy.ProxyBootstrapJS(), manifestJSON, agentNet.ProxyIP}); err != nil {
 		return fmt.Errorf("failed to render deploy-egress script: %w", err)
 	}
 

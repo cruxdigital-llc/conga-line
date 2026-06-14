@@ -49,6 +49,10 @@ type ServiceSpec struct {
 	Restart     RestartPolicy
 	Hooks       LifecycleHooks
 	LogTarget   string // file path for stdout/stderr (empty = backend default)
+	// StartTimeoutSec bounds how long the backend waits for start (incl. PreStart).
+	// 0 = backend default. Set generously when PreStart does slow/serialized work
+	// (e.g. a flock'd S3 sync under a simultaneous fleet start — R4).
+	StartTimeoutSec int
 }
 
 // ServiceState is a backend-agnostic service status.
@@ -137,7 +141,11 @@ func (s *systemdSupervisor) RenderUnit(spec ServiceSpec) string {
 	if spec.Restart.DelaySec > 0 {
 		fmt.Fprintf(&b, "RestartSec=%d\n", spec.Restart.DelaySec)
 	}
-	b.WriteString("TimeoutStartSec=120\nTimeoutStopSec=30\n")
+	startTimeout := spec.StartTimeoutSec
+	if startTimeout <= 0 {
+		startTimeout = 120 // backend default
+	}
+	fmt.Fprintf(&b, "TimeoutStartSec=%d\nTimeoutStopSec=30\n", startTimeout)
 	b.WriteString("\n[Install]\nWantedBy=multi-user.target\n")
 	return b.String()
 }
