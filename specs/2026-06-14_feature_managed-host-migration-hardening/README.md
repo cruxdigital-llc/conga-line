@@ -177,3 +177,23 @@ window). Ready for `/glados:implement-feature`.
   **Remaining rollout:** re-refresh aaron/nathan/congaline-team (migrated *pre-fix* → proxies NOT pinned
   → still reboot-fragile until re-refreshed); migrate nextgen-delivery + nvidia-team (still on
   auto-subnet); then the C5b host-reboot acceptance — all coordinated with the provider release.
+
+- **2026-06-14** — **Provider released + full-fleet rollout + C5b reboot acceptance — feature operationally
+  complete.** PR #68 merged to main. **Provider release:** `terraform-provider-conga` go.mod
+  conga-line `v0.0.30`→`v0.0.31`, tagged `v0.1.9` (GoReleaser → registry); terraform pin bumped
+  `0.1.8`→`0.1.9` in `production/main.tf` + `modules/congaline/main.tf` (PR #69).
+  **Staged fleet rollout** (one agent at a time, no `refresh-all --force`): re-refreshed the 3
+  pre-fix-migrated agents (aaron/nathan/congaline-team) to pin their proxies; migrated the 2 held
+  auto-subnet agents (nextgen-delivery 172.20→`10.99.3`, nvidia-team 172.21→`10.99.5`). End state
+  pre-reboot: **all 6 agents on static `10.99.x.2`, every proxy `IPAMConfig`-pinned `.3`.**
+  **C5b — PASSED (the acceptance gate):** controlled `systemctl reboot` of prod host
+  `i-024bf3a55563f9e88` → the entire fleet returned **completely unattended**: boot time moved
+  `2026-06-11`→`2026-06-14 16:30`; **all 6 agents `active`/`running` with `restarts=0`** (R1 proven — no
+  proxy-IP collision loop; R4 proven — no `pre-start.sh` thundering-herd timeout), each agent on `.2`,
+  each proxy pinned `.3`, egress fail-closed re-applied (30 `10.99.x` rules, **0 `172.x`**, 6 `DROP`-last),
+  router back up, DNS OK (user + team). The one-time **`172.x` DOCKER-USER orphan sweep** ran first
+  (4 inert pre-migration DNS rules → 0). **Residual (cosmetic, out-of-scope):** `conga-session-metrics.service`
+  (a timer-triggered CloudWatch publisher) logged one boot-race failure at `16:31` because it polled
+  agent gateways before the flock-serialized fleet finished starting; it is `TriggeredBy` its timer and
+  self-heals on the next tick — unrelated to agent reboot-safety. **All four requirements (R1–R4) +
+  the umbrella criterion C5b are satisfied on the live fleet. Ready for `/glados:verify-feature`.**

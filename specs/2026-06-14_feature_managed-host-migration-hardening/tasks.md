@@ -27,9 +27,10 @@ proxy-creation time, so `add-user`/`add-team` also move to static-subnet creatio
   add-user (`10.99.0.3`) + add-team (`10.99.1.3`); add-user/add-team network create asserts
   `--subnet/--gateway` (replaced the old auto-create marker).
 - [x] **T1.7 — build/vet/gofmt + `go test ./...`** all green (full suite).
-- [ ] **T1.8 — Live verify (release-gated)**: on a throwaway, agent `.2` + proxy `.3`; restart the
-  docker daemon → no collision (agent reclaims `.2`, proxy stays `.3`). Then remediate aaron/nathan/
-  congaline-team (one `conga refresh` each).
+- [x] **T1.8 — Live verify (release-gated)**: ✅ DONE. `zach` migrated 172.22→`10.99.2` with proxy
+  `IPAMConfig`-pinned `10.99.2.3`; agent stayed up through migration. Then remediated aaron/nathan/
+  congaline-team (re-refresh → proxies pinned). **Proven fleet-wide by the C5b reboot below**
+  (all 6 proxies pinned `.3`, agents `.2`, `restarts=0`).
 
 ---
 
@@ -59,7 +60,11 @@ is handled separately; the global `DeadlineExceeded` deliberately does NOT bound
 
 ---
 
-## Release + rollout (after the code lands; spec §11)
-1. provider release (`pkg/`: managedhost + awsprovider). 2. Remediate the 3 migrated agents (R1 refresh).
-3. Migrate the held 3 (nextgen-delivery/nvidia-team/zach). 4. **C5b**: controlled host reboot + docker
-daemon restart → unattended full-fleet return; then the one-time `172.x` DOCKER-USER sweep.
+## Release + rollout (after the code lands; spec §11) — ✅ ALL DONE
+1. ✅ provider release (`terraform-provider-conga` v0.1.9 / conga-line v0.0.31; terraform pin 0.1.8→0.1.9, PR #69).
+2. ✅ Remediated the 3 pre-fix-migrated agents (aaron/nathan/congaline-team re-refreshed → proxies pinned).
+3. ✅ Migrated the held agents (zach 172.22→10.99.2 as the R2 live test; nextgen-delivery 172.20→10.99.3;
+   nvidia-team 172.21→10.99.5). All 6 on static `10.99.x`, every proxy pinned `.3`.
+4. ✅ One-time `172.x` DOCKER-USER sweep (4 inert orphans → 0). ✅ **C5b PASSED**: controlled host reboot →
+   unattended full-fleet return — all 6 `active`/`running`, `restarts=0`, agents `.2`, proxies pinned `.3`,
+   egress re-applied (0 `172.x` rules), DNS OK. Feature operationally complete; ready for `/glados:verify-feature`.
