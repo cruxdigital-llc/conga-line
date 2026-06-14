@@ -199,6 +199,17 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   on a new agent) is the remaining live check, deferred to `/glados:verify-feature` (throwaway agent).
   `aaron` left on opus-4.8 (desired); egress in `validate` (local-policy redeploy during refresh).
 
+- **2026-06-13** — **Fresh-provision path live-verified (throwaway `slice2test`, no release).** Built
+  `./bin/conga` from the branch, `admin add-user slice2test` (gateway-only) on the live fleet. Host
+  checks: openclaw.json model.primary `anthropic/claude-opus-4-8` (Go gen on first provision),
+  `$include` 3-layer array, `hasChannels:false`; systemd unit **bridge-attach count 0** + **egress
+  `ExecStartPost` iptables present** (the unified refresh-user unit — slice 1 strip + slice 2a
+  `ProvisionAgent`→`RefreshAgent`); routing.json had no `conga-router`/bridge refs; container running.
+  Then **fully torn down**: `remove-agent --force --delete-secrets` (container/unit/egress/SSM param
+  gone; roster back to the 6 real agents) + manual sweep of the persisted data dir + `config/slice2test*`
+  leftovers (data preserved by default per Agent Data Safety — expected). Slices 1 + 2a now verified on
+  **both** the refresh path (aaron) and the fresh-provision path (slice2test).
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

@@ -53,9 +53,12 @@ skeleton + `Transport` interface + fake test, and routes AWS routing.json genera
   (`WriteRoutingJSON`), `transport_test.go` (in-memory fake + tests). `awsprovider/transport.go`
   (`ssmTransport` adapter, `var _ managedhost.Transport`). `regenerateRoutingOnInstance` refactored
   through the seam.
-- [ ] **T1.6 — Live verify (isolated AWS agent).** DEFERRED to verify/release phase (needs the
-  provider release first for the deployed path). Provision a throwaway agent; confirm on-host
-  `routing.json` loopback, unit has no `network connect`, router delivers, no bridge attach; tear down.
+- [x] **T1.6 — Live verify — DONE (no release needed).** Verified via the branch-built `./bin/conga`
+  against the live fleet on both paths: `refresh aaron` (model→4-8 + overlay preserved, routing
+  loopback, unit bridge-attach 1→0, ready) and fresh `add-user slice2test` (Go config 4-8, unit
+  bridge-attach 0 + egress ExecStartPost present, no bridge refs), then slice2test torn down clean.
+  The CLI binary + SSM-pushed embedded scripts exercise the branch `pkg/` directly — a public provider
+  release is a *ship* step, not a test gate.
 - [ ] **T1.7 — Provider release checkpoint.** `pkg/` changed (`awsprovider` + new `managedhost`) →
   `terraform-provider-conga` release before deployed-path verify. Batch with later slices.
 
