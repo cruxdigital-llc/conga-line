@@ -285,3 +285,28 @@ reduction (parent slice 5); remote systemd (parent slice 6); any new user surfac
 remediation) → R2 (the robustness core) → R4 → R3, each unit-tested; then the provider release + the
 staged rollout (§11) + the C5b reboot acceptance. Reminder: `pkg/` change → `terraform-provider-conga`
 release.
+
+## 15. Post-implementation reconciliation (verify-feature, 2026-06-14)
+
+As-built divergences from the design above — all originate from the PR #68 code-review pass (4 findings,
+fixed in `84b87a3`); the design intent is unchanged, these are refinements:
+
+1. **`ReconcileAgentNetwork` signature** — designed as `(...) error` (§ line 81); **as-built is
+   `(migrated bool, err error)`.** The `migrated` bool lets the caller distinguish a structural migration
+   (proxy torn down + recreated) from a steady-state no-op. `RefreshAgent` uses it to make the
+   post-migration **egress redeploy fatal when `migrated==true`** (an agent must never be left proxy-less)
+   while keeping it non-fatal in steady state. (Review #2.)
+2. **`add-user`/`add-team` static-subnet create bails on a pre-existing network** — to avoid a no-op
+   `docker network create` over a *legacy auto-subnet* leaving the proxy `--ip` exit-125 (and removing the
+   proxy on re-provision). On collision the script errors with an actionable `conga refresh <name>`
+   message instead of silently proceeding. (Review #1.)
+3. **`pre-start.sh` flock fd opened guarded under `set -e`** — `exec 9>… || true` so a lock-open failure
+   can't abort the start script before the bounded `flock -w 240`. (Review #3.)
+4. **`RefreshAll` Ctrl-C semantics** — comment corrected: explicit operator cancel is honored at the
+   next-iteration boundary (the per-agent `WithoutCancel` context deliberately does not propagate the
+   global deadline, only operator cancel breaks the loop). (Review #4.)
+
+**Acceptance:** R1–R4 unit-verified; **C5b reboot acceptance PASSED live** (2026-06-14, host
+`i-024bf3a55563f9e88`): full reboot → all 6 agents `active`/`running`, `restarts=0`, agents `.2`,
+proxies `IPAMConfig`-pinned `.3`, egress re-applied (0 `172.x` rules), DNS OK — completely unattended.
+See the README session log for the full release + rollout + acceptance trace.

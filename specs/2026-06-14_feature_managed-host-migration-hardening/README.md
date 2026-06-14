@@ -197,3 +197,79 @@ window). Ready for `/glados:implement-feature`.
   agent gateways before the flock-serialized fleet finished starting; it is `TriggeredBy` its timer and
   self-heals on the next tick — unrelated to agent reboot-safety. **All four requirements (R1–R4) +
   the umbrella criterion C5b are satisfied on the live fleet. Ready for `/glados:verify-feature`.**
+
+## Verification (`/glados:verify-feature`, 2026-06-14)
+
+### 1. Automated verification — ✅ ALL GREEN
+- `go build ./...` OK · `go vet ./...` OK · `gofmt -l` clean · **`go test ./...` ALL PASS** (full-suite regression).
+- Per-requirement test functions confirmed present + passing:
+  - **R1** (proxy pin): `managedhost` `TestAgentContainer_EgressProxyWiring`; `awsprovider`
+    `TestBuildAgentServiceSpec_UnitEquivalence` / `_ReservedKeyGuardWiring`; render assertions for
+    `--ip`/`--subnet`/`10.99.0.3`/`IPAMConfig` across `engine_test.go` + `container_test.go`.
+  - **R2** (`ReconcileAgentNetwork`): `network_reconcile_test.go` —
+    `TestReconcile_{NoOpWhenSubnetMatches,CreateOnlyWhenAbsent,FailSafeAbortOnGhost,HappyPathOrdering}`
+    (`migrated` asserted 12×; fail-safe-abort asserts **no** agent stop/rm on a persistent ghost).
+  - **R3** (`refresh-all` per-agent timeout): `TestPerAgentRefreshCtx_DecoupledFromParentDeadline`.
+  - **R4** (flock + `StartTimeoutSec`): `supervisor_test` (`StartTimeoutSec` ×4, `TimeoutStartSec` ×3);
+    `pre-start` flock render assertion; `iptables` suite (DNS `dport 53` ×4, `DROP`-last ×6).
+- **Live acceptance (the definitive check): C5b PASSED** on the prod fleet (recorded above) — the
+  unit tests cover the seams; the reboot proved the whole behavior end-to-end.
+
+### 2. Persona verification — all APPROVE
+- **Architect** — **APPROVE.** R2 lands in `pkg/provider/managedhost` (the engine's transport seam),
+  replacing the shell-string migration with tested Go — a direct application of the core philosophy
+  ("logic in tested Go behind thin seams, not templated bash"). No new external dep; `ProxyIP`-enforced
+  + `ServiceSpec.StartTimeoutSec` are in-memory/infra (no persisted schema, no `Provider`-interface
+  change). **Open checkpoint #5 (the add-user/add-team static-subnet consumer concern) is resolved** by
+  review #1's bail-on-existing-network. Fits the architecture cleanly.
+- **QA** — **APPROVE.** The central promise — unattended reboot survival — is **empirically proven**
+  (`restarts=0` across a real reboot, not just unit-mocked). Failure modes covered: fail-safe-abort
+  (agent stays up on ghost), happy-path ordering (disconnect→stop→rm→network rm→create, step-verified),
+  no-op, create-only. Both spec-gate QA amendments shipped (step-verified COMMIT; bounded `flock -w 240`
+  < `TimeoutStartSec 300`). The `migrated` bool → fatal post-migration egress redeploy (review #2) closes
+  the proxy-less window. Data-safety: reconcile touches only networks/containers; C5b confirmed agents
+  returned **serving** (data mount intact). The `conga-session-metrics` boot-race is cosmetic +
+  self-healing + out-of-scope — not an agent-reliability regression.
+- **Product Manager** — **APPROVE.** Why/Who delivered (a reboot-trustworthy fleet); scope held tight
+  (exactly the 4 defects; Slack `operator.write` deferred as planned). Success is measurable and **met**
+  (C5b acceptance). The prioritized sequencing (remediate the 3 reboot-fragile agents first, then migrate
+  the held 2, then the disruptive reboot in a controlled step) was honored; the interim
+  "avoid-reboot-until-release" risk is now closed.
+
+### 3. Standards Gate (post-implementation) — PASS
+| Standard | Severity | Verdict |
+|---|---|---|
+| Agent Data Safety (architecture.md) | must | ✅ PASSES — reconcile touches networks/containers only; C5b confirmed agents returned serving (data intact) |
+| Interface Parity (architecture.md) | must | ✅ PASSES — no new CLI/JSON/MCP surface; R3 internal per-agent default |
+| Module Structure / Boundaries (architecture.md) | must | ✅ PASSES — R2 in `pkg/provider/managedhost`; `pkg/`→provider release shipped (v0.1.9) |
+| Provider contract / Channel abstraction (architecture.md) | must | ✅ PASSES — AWS-internal; no interface/channel change |
+| Egress: iptables all-modes, fail-closed (egress-controls.md) | must | ✅ STRENGTHENED — R1 removes the collision that left an agent crash-looping (= egress never applied); C5b showed 6 `DROP`-last + 0 `172.x` rules |
+| Immutable config / perms (security.md P2) | must | ✅ PASSES — root:root 0444 unchanged |
+| Secrets via env / #9627 (security.md) | must | ✅ PASSES — `--env-file` unchanged |
+| Own the box, not behavior (security.md P8) | must | ✅ PASSES — infra reliability hardening |
+| Config taxonomy (config-taxonomy.md) | should | ✅ PASSES — no new persisted config locus |
+
+**Philosophy cross-check:** R2 (Go orchestration replacing the shell-string migration) **applies** the
+core philosophy *"logic in tested Go behind thin seams, not templated bash."* No conflicts.
+**Gate decision: PASS** — all `must` pass; no violations.
+
+### 4. Spec retrospection + test synchronization
+- **Spec alignment:** added **spec.md §15 (Post-implementation reconciliation)** recording the 4 as-built
+  divergences from the design (the PR #68 review fixes), notably `ReconcileAgentNetwork`'s signature
+  `(...) error` → **`(migrated bool, err error)`**.
+- **Stale-reference scan:** clean. Every `agentNetworkMigrationCmd` mention in docs/specs correctly
+  describes it as *deleted/replaced*; the only code hit is an intentional `// NOTE:` comment in
+  `engine_test.go` documenting the replacement. The symbol itself is gone from `pkg/`. No standards file
+  carries a stale code example for the changed symbols.
+- **Fake alignment:** the `responder` fake-transport models `RunCommand` outputs; the fail-safe-abort
+  test asserts the real prepare-then-commit invariant (no agent teardown on a persistent ghost).
+- **New-method coverage:** `ReconcileAgentNetwork`, `RenderSystemdUnit`, `ServiceSpec.StartTimeoutSec`,
+  `perAgentRefreshCtx` each have a corresponding test. No gaps vs. the sibling (parent-engine
+  `BuildAgentServiceSpec` transport-driven tests).
+- **Suite + lint re-run:** green.
+
+### 5. Completion
+**Feature COMPLETE.** R1–R4 implemented, unit-verified, merged (PR #68 `84b87a3`), provider-released
+(v0.1.9), rolled out fleet-wide, and **C5b live-accepted**. Trace docs committed (PR #70). Status moved to
+PROJECT_STATUS "Recent Changes"; ROADMAP updated. Remaining out-of-scope follow-up: the Slack
+`operator.write` delegation-scope gap (its own future spec).
