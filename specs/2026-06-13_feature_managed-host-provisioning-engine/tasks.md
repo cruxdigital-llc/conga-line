@@ -138,14 +138,40 @@ already does: Go-config-first, then unit+start).
 - Note: `add-user/add-team.sh.tmpl` are scripts/ (no provider release); the `ProvisionAgent` change is
   `pkg/` → release. Boot tftpl heredoc reduction stays in slice 5.
 
-## Slice 3 — egress: Envoy config + static-IP iptables via engine (audit #7)
-Static per-agent IP at network create → deterministic egress command (no discovery loop); reuse
-`pkg/provider/iptables` via the Transport-derived `ExecFunc`. *(Detailed at slice start.)*
+## Slices 4+3 — engine (decision: build together) — 🔨 ENGINE CORE DONE (unwired); production swap next
 
-## Slice 4 — systemd unit text via `systemdSupervisor` + preventive guard (audit #8 + integrity)
-`ServiceSpec`/`HostSupervisor` + systemd backend (whole-unit write, no `sed`); reserved-key guard as
-fail-closed `PreStart` (key list generated from `common.ReservedCustomConfigKeys`); guard-on-unparseable
-= WARN+allow (spec §8); slim the periodic backstop. *(Detailed at slice start.)*
+Chosen to build slices 4 (systemd-unit-via-supervisor) + 3 (static-IP egress) together because the
+egress iptables lives in the unit, so the clean home for a deterministic egress command is a
+Go-generated `ServiceSpec.Hooks.PostStart`.
+
+**Increment A — engine core (done, 2026-06-13; pure Go, unit-tested, ZERO production wiring):**
+- [x] `pkg/provider/managedhost/supervisor.go` — `ServiceSpec`, `LifecycleHooks`, `RestartPolicy`,
+  `HostSupervisor` interface, `systemdSupervisor` (RenderUnit + DefineService[**daemon-reload+enable**,
+  the slice-2b reboot-survival fix baked in]/Start/Stop/Restart/RemoveService/Status), reserved
+  `openrcSupervisor` stub (`ErrUnsupportedSupervisor`). Boundary rule honored: no systemd-ism in `ServiceSpec`.
+- [x] `network.go` — `PlanAgentNetwork(hostPort, base)` → deterministic `10.99.<idx>.0/24` per agent
+  (agent `.2`, proxy `.3`); collision-free vs VPC `10.0.0.0/24` + Docker's `172.x` pool. (slice 3 foundation)
+- [x] `guard.go` — `ReservedKeyGuardScript(includePaths)` → fail-closed reserved-key `PreStart` guard,
+  key list generated from `common.ReservedCustomConfigKeys` (single source of truth); WARN+allow on
+  unparseable JSON5 (spec §8). (integrity decision #2)
+- [x] `supervisor_test.go` — 5 tests: network plan (idx/collision/VPC-avoid/range), guard (all keys +
+  fail-closed + WARN), RenderUnit (shape + hook ordering), DefineService-enables-unit (regression
+  guard), OpenRC-reserved. build/vet/gofmt + `go test ./...` (21 pkgs) green.
+
+**Increment B — production swap (NEXT, live-verified):**
+- [ ] B1 — AWS network create with `--subnet`/`--gateway` (PlanAgentNetwork); agent `docker run --ip`
+  agentIP; proxy `--ip` proxyIP. (add-user/add-team + refresh-user's EXEC_START)
+- [ ] B2 — Replace `refresh-user.sh`'s bash unit generation with the Go `systemdSupervisor`:
+  `regenerateAgentConfigOnInstance` (or a new engine entrypoint) builds the `ServiceSpec` (RunCmd from
+  the canonical container args, PreStart=[guard, plugin-seed, rm -f], PostStart=`iptables.AddRulesCmd(
+  agentIP, subnet)`, PostStop=remove) and calls `DefineService` + `Start` via the `ssmTransport`.
+  Retires the refresh-user.sh bash unit + the 10-retry IP-discovery race (audit #7/#8).
+- [ ] B3 — Deploy the guard script to the host (PutFile, 0755) + wire as PreStart.
+- [ ] B4 — Live-verify on a throwaway: static IP applied, egress iptables deterministic (no discovery
+  loop), guard blocks an injected `channels` include, unit enabled + running; tear down.
+- [ ] B5 — Slim the periodic integrity backstop (drop audit-#4 dual-baseline coupling) — or defer.
+- Note: B is the production-unit swap (highest risk so far). Build on the proven RefreshAgent path;
+  the engine core's RenderUnit is the equivalence reference vs the current refresh-user.sh unit.
 
 ## Slice 5 — boot-script reduction (audit #3) — HIGHEST RISK
 Reconstitute-from-persisted-EBS-artifacts; shrink `user-data.sh.tftpl` to install+secret-fetch+

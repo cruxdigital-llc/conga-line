@@ -223,6 +223,19 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   re-verified `enabled` + `running` live, then torn down clean (roster back to 6). `go test ./...`
   (21 pkgs)/vet/gofmt green. Audit #2 (heredoc dedup) + #8 (unit divergence) retired on the add path.
 
+- **2026-06-13** — **Slices 4+3 engine core built (operator chose to build them together).** Pure Go,
+  unit-tested, **zero production wiring** (the AWS path still uses refresh-user.sh until the swap, so
+  no production risk yet). New in `pkg/provider/managedhost/`: `supervisor.go` (`ServiceSpec` +
+  `LifecycleHooks` + `RestartPolicy` + `HostSupervisor` interface + `systemdSupervisor` with
+  RenderUnit/DefineService[daemon-reload+**enable**]/Start/Stop/Restart/Remove/Status + reserved
+  `openrcSupervisor` stub returning `ErrUnsupportedSupervisor`); `network.go`
+  (`PlanAgentNetwork` → deterministic `10.99.<idx>.0/24`, collision-free vs VPC `10.0.0.0/24` + Docker
+  `172.x` — slice 3); `guard.go` (`ReservedKeyGuardScript`, fail-closed reserved-key PreStart guard
+  generated from `common.ReservedCustomConfigKeys`, WARN+allow on JSON5 — integrity #2). 5 unit tests
+  (network/guard/RenderUnit/enable-regression/openrc-reserved). build/vet/gofmt + `go test ./...`
+  (21 pkgs) green. **Next: increment B — the production swap** (network `--subnet`/`--ip`, replace
+  refresh-user.sh's bash unit with the Go supervisor, deploy the guard, live-verify on a throwaway).
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review
