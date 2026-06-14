@@ -186,6 +186,19 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   provision; removal also drops `systemctl start` from the scripts (RefreshAgent does first start).
   Live verify release-gated.
 
+- **2026-06-13** — **Live-verified slices 1 + 2a + opus-4.8 on `aaron` (no release).** Built the
+  branch `./bin/conga` and ran `conga refresh --agent aaron` against the live AWS fleet (host
+  `i-024bf3a55563f9e88`) — confirming a public provider release is NOT needed to test (the CLI binary
+  + SSM-pushed embedded scripts exercise the branch `pkg/` code directly). Before→after on the host:
+  model.primary `claude-opus-4-7`→**`claude-opus-4-8`** (qwen36 subagent overlay **preserved** in the
+  models allowlist — Go gen honors per-agent overlays); `$include` 3-layer array intact; `routing.json`
+  stayed loopback (no regression from the slice-1 seam refactor); **unit bridge-attach count 1→0**
+  (slice-1 strip cleaned the deprecated `network connect conga-router` ExecStartPost on unit rewrite);
+  container returned **ready** (clean restart). Covers the RefreshAgent path (= the substance of
+  slices 1/2a/model-bump); a fresh `add-user` (ProvisionAgent→RefreshAgent wiring + stripped add-user.sh
+  on a new agent) is the remaining live check, deferred to `/glados:verify-feature` (throwaway agent).
+  `aaron` left on opus-4.8 (desired); egress in `validate` (local-policy redeploy during refresh).
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review
