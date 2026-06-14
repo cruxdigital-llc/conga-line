@@ -25,27 +25,33 @@ import (
 // network is absent, and re-runnable after an abort. It never touches the agent's
 // data directory.
 //
+// It returns migrated=true ONLY when it ran the destructive COMMIT (removed the
+// agent + egress proxy and recreated the network) — i.e. the proxy is now gone and
+// MUST be recreated by the caller's egress step. The caller should treat a
+// subsequent egress-redeploy failure as fatal when migrated is true (the proxy is
+// known-absent, not merely stale). No-op and create-only return migrated=false.
+//
 // The `{{range …}}` in the inspect commands are docker --format templates (literal
 // braces in the emitted command), not Go templates.
-func ReconcileAgentNetwork(ctx context.Context, t Transport, name string, net AgentNetwork) error {
+func ReconcileAgentNetwork(ctx context.Context, t Transport, name string, net AgentNetwork) (migrated bool, err error) {
 	netName := "conga-" + name
 	proxyName := "conga-egress-" + name
 
 	cur, err := t.RunCommand(ctx, fmt.Sprintf(
 		"docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' %q 2>/dev/null || true", netName))
 	if err != nil {
-		return fmt.Errorf("inspect network %s: %w", netName, err)
+		return false, fmt.Errorf("inspect network %s: %w", netName, err)
 	}
 	cur = strings.TrimSpace(cur)
 
 	switch cur {
 	case net.SubnetCIDR:
 		// Steady state — already on the deterministic subnet. No churn, no egress gap.
-		return nil
+		return false, nil
 	case "":
 		// Network absent (defensive — the provision scripts create it). Create only;
 		// the agent isn't attached to anything, so there's nothing to tear down.
-		return createAgentNetwork(ctx, t, netName, net)
+		return false, createAgentNetwork(ctx, t, netName, net)
 	}
 
 	// Subnet mismatch (legacy auto-subnet agent) → migrate.
@@ -58,7 +64,7 @@ func ReconcileAgentNetwork(ctx context.Context, t Transport, name string, net Ag
 	// blockers and are left in place here.
 	attached, err := listAttached(ctx, t, netName)
 	if err != nil {
-		return fmt.Errorf("list endpoints on %s: %w", netName, err)
+		return false, fmt.Errorf("list endpoints on %s: %w", netName, err)
 	}
 	for _, c := range attached {
 		if c == netName || c == proxyName {
@@ -69,13 +75,13 @@ func ReconcileAgentNetwork(ctx context.Context, t Transport, name string, net Ag
 	// Verify no foreign endpoint survived the disconnect (a persisted ghost would).
 	remaining, err := listAttached(ctx, t, netName)
 	if err != nil {
-		return fmt.Errorf("re-inspect endpoints on %s: %w", netName, err)
+		return false, fmt.Errorf("re-inspect endpoints on %s: %w", netName, err)
 	}
 	for _, c := range remaining {
 		if c == netName || c == proxyName {
 			continue
 		}
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"network %s has an unclearable endpoint %q (likely a persisted Docker ghost); "+
 				"left agent %s running on its old subnet — clear it with `systemctl restart docker` "+
 				"in a maintenance window, then re-run `conga refresh %s`", netName, c, name, name)
@@ -102,11 +108,14 @@ func ReconcileAgentNetwork(ctx context.Context, t Transport, name string, net Ag
 	// reappeared, or a transient docker fault), abort; ReconcileAgentNetwork is
 	// re-runnable and the next refresh completes once docker is healthy.
 	if _, err := t.RunCommand(ctx, fmt.Sprintf("docker network rm %q", netName)); err != nil {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"removing old network %s failed after clearing endpoints (unexpected): %w — "+
 				"re-run `conga refresh %s` once docker is healthy", netName, err, name)
 	}
-	return createAgentNetwork(ctx, t, netName, net)
+	// Migrated: the agent + proxy were removed and the network recreated. The proxy
+	// is now ABSENT and the caller's egress step must recreate it — so a subsequent
+	// egress-redeploy failure should be treated as fatal (review #2).
+	return true, createAgentNetwork(ctx, t, netName, net)
 }
 
 // createAgentNetwork creates the per-agent bridge network on its static subnet.

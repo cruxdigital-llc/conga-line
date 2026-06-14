@@ -29,15 +29,18 @@ import (
 // the static-IP egress iptables in its ExecStartPost/StopPost) is written +
 // enabled, and only then is the service (re)started — so an agent is either
 // started-with-egress or not started, never running unfiltered.
-func (p *AWSProvider) defineAndStartAgentService(ctx context.Context, instanceID string, agent provider.AgentConfig) error {
+// defineAndStartAgentService returns migrated=true when the network reconcile ran
+// its destructive COMMIT (the egress proxy was torn down and must be recreated) —
+// the caller uses this to decide whether a failed egress redeploy is fatal.
+func (p *AWSProvider) defineAndStartAgentService(ctx context.Context, instanceID string, agent provider.AgentConfig) (migrated bool, err error) {
 	image, err := awsutil.GetParameter(ctx, p.clients.SSM, "/conga/config/image")
 	if err != nil {
-		return fmt.Errorf("failed to resolve container image: %w", err)
+		return false, fmt.Errorf("failed to resolve container image: %w", err)
 	}
 
 	spec, net, err := buildAgentServiceSpec(agent, image, p.region)
 	if err != nil {
-		return err
+		return false, err
 	}
 	containerName := spec.Name
 	t := p.transport(instanceID)
@@ -49,31 +52,33 @@ func (p *AWSProvider) defineAndStartAgentService(ctx context.Context, instanceID
 	// drift from the Go validator; 0755 so systemd can exec it.
 	guard := managedhost.ReservedKeyGuardScript(agentIncludePaths(agent.Name))
 	if err := t.PutFile(ctx, reservedKeyGuardPath(agent.Name), []byte(guard), 0o755); err != nil {
-		return fmt.Errorf("failed to deploy reserved-key guard for %s: %w", agent.Name, err)
+		return false, fmt.Errorf("failed to deploy reserved-key guard for %s: %w", agent.Name, err)
 	}
 
 	// 1) Reconcile the per-agent network to its deterministic static subnet via the
 	//    prepare-then-commit orchestration: it clears foreign/dangling endpoints
 	//    BEFORE touching the agent, so a ghost-endpoint failure leaves the agent
 	//    running on its old net (fail-safe) rather than down. No-op on a steady-state
-	//    refresh (subnet already correct), so no egress gap.
-	if err := managedhost.ReconcileAgentNetwork(ctx, t, agent.Name, net); err != nil {
-		return fmt.Errorf("failed to reconcile network for %s: %w", agent.Name, err)
+	//    refresh (subnet already correct), so no egress gap. migrated=true means the
+	//    proxy was torn down (COMMIT ran) → the egress redeploy is then fatal.
+	migrated, err = managedhost.ReconcileAgentNetwork(ctx, t, agent.Name, net)
+	if err != nil {
+		return false, fmt.Errorf("failed to reconcile network for %s: %w", agent.Name, err)
 	}
 
 	// 2) Define + enable the unit (write + daemon-reload + enable — survives reboot).
 	sup := managedhost.NewSystemdSupervisor()
 	if err := sup.DefineService(ctx, t, spec); err != nil {
-		return fmt.Errorf("failed to define service for %s: %w", agent.Name, err)
+		return migrated, fmt.Errorf("failed to define service for %s: %w", agent.Name, err)
 	}
 
 	// 3) (Re)start so the new unit takes effect on the (possibly migrated) network.
 	//    Restart starts a not-yet-running unit too. The unit's ExecStartPost applies
 	//    egress iptables synchronously, so on return the agent is filtered.
 	if err := sup.Restart(ctx, t, containerName); err != nil {
-		return fmt.Errorf("failed to start service for %s: %w", agent.Name, err)
+		return migrated, fmt.Errorf("failed to start service for %s: %w", agent.Name, err)
 	}
-	return nil
+	return migrated, nil
 }
 
 // buildAgentServiceSpec assembles the systemd ServiceSpec + network plan for an

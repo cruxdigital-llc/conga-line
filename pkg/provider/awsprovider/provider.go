@@ -581,7 +581,7 @@ func (p *AWSProvider) RefreshAgent(ctx context.Context, agentName string) error 
 	// container via `docker run --env-file` against the .env Step 1 just wrote
 	// from Secrets Manager, so a refresh still picks up fresh secrets.
 	spin := ui.NewSpinner(fmt.Sprintf("Applying unit + restarting %s...", agentName))
-	err = p.defineAndStartAgentService(ctx, instanceID, *agent)
+	migrated, err := p.defineAndStartAgentService(ctx, instanceID, *agent)
 	spin.Stop()
 	if err != nil {
 		return err
@@ -598,12 +598,19 @@ func (p *AWSProvider) RefreshAgent(ctx context.Context, agentName string) error 
 		common.Warn(ctx, "router restart failed after %s refresh: %v", agentName, err)
 	}
 
-	// Step 4: redeploy egress proxy with current policy. Non-fatal: warn
-	// + continue. The bootstrap-time Envoy config is empty (deny-all)
-	// until this step succeeds at least once, so it's important — but
-	// we don't want a transient policy-deploy failure to fail an
-	// otherwise-successful refresh.
+	// Step 4: redeploy egress proxy with current policy. The bootstrap-time Envoy
+	// config is empty (deny-all) until this step succeeds at least once.
+	//
+	// Fatality depends on whether the network reconcile migrated (review #2): on a
+	// migration, COMMIT tore down the proxy, so it is KNOWN-ABSENT here — a failed
+	// redeploy would leave the agent with no proxy (fail-closed iptables DROP =
+	// zero egress until the next refresh), so it's FATAL. On a steady-state refresh
+	// (no migration) the existing proxy is untouched, so a transient policy-deploy
+	// failure is non-fatal (warn + continue) and doesn't fail an otherwise-healthy refresh.
 	if err := p.redeployEgressDuringRefresh(ctx, agentName); err != nil {
+		if migrated {
+			return fmt.Errorf("egress proxy redeploy failed for %s after a network migration (the proxy was torn down and is now absent — re-run `conga refresh %s`): %w", agentName, agentName, err)
+		}
 		common.Warn(ctx, "egress redeploy failed for %s: %v", agentName, err)
 	}
 
@@ -722,8 +729,10 @@ func (p *AWSProvider) RefreshAll(ctx context.Context) error {
 	// --timeout shared across the whole fleet — otherwise a fleet larger than one
 	// --timeout window dies partway through with `context deadline exceeded` on the
 	// unprocessed agents (managed-host migration hardening, R3). An explicit operator
-	// cancel (Ctrl-C → context.Canceled) still stops the loop; the global deadline
-	// (DeadlineExceeded) deliberately does NOT bound the fleet.
+	// cancel (Ctrl-C → context.Canceled) stops the loop at the NEXT iteration
+	// boundary — it does not interrupt an in-flight agent's refresh (WithoutCancel
+	// deliberately decouples the per-agent ctx so a half-applied agent isn't aborted).
+	// The global deadline (DeadlineExceeded) deliberately does NOT bound the fleet.
 	var failed []string
 	spin := ui.NewSpinner("Refreshing all agents...")
 	for _, a := range activeAgents {

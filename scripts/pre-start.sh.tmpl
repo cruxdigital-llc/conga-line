@@ -28,8 +28,10 @@ fi
 # TimeoutStartSec=300) so a stuck holder can't deadlock the whole fleet; on a
 # lock-timeout we proceed with the on-disk behavior (the sync is a best-effort
 # refresh, not a start gate). The lock releases when this script exits (fd 9 closes).
-exec 9>/var/lock/conga-prestart.lock
-flock -w 240 9 || echo "WARNING: conga-prestart lock wait timed out after 240s; proceeding with on-disk behavior" >&2
+# Open the lock fd defensively: a failed redirect under `set -e` would otherwise
+# abort ExecStartPre (the opposite of this block's fail-soft intent).
+exec 9>/var/lock/conga-prestart.lock 2>/dev/null || true
+flock -w 240 9 2>/dev/null || echo "WARNING: conga-prestart lock unavailable/timed out; proceeding with on-disk behavior" >&2
 
 # Sync behavior files from S3
 aws s3 sync "s3://$STATE_BUCKET/conga/agents/" /opt/conga/agents/ --region "$AWS_REGION" 2>/dev/null || true

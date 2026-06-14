@@ -36,8 +36,12 @@ func TestReconcile_NoOpWhenSubnetMatches(t *testing.T) {
 		}
 		return "", nil
 	}
-	if err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t)); err != nil {
+	migrated, err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t))
+	if err != nil {
 		t.Fatalf("expected no-op nil, got: %v", err)
+	}
+	if migrated {
+		t.Error("no-op must report migrated=false")
 	}
 	for _, forbidden := range []string{"systemctl stop", "docker rm -f", "network rm", "network create"} {
 		if ft.ranCmd(forbidden) {
@@ -51,8 +55,12 @@ func TestReconcile_NoOpWhenSubnetMatches(t *testing.T) {
 func TestReconcile_CreateOnlyWhenAbsent(t *testing.T) {
 	ft := newFakeTransport()
 	ft.responder = func(cmd string) (string, error) { return "", nil } // inspect → "" (absent)
-	if err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t)); err != nil {
+	migrated, err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t))
+	if err != nil {
 		t.Fatalf("create-only: %v", err)
+	}
+	if migrated {
+		t.Error("create-only (no proxy torn down) must report migrated=false")
 	}
 	if !ft.ranCmd(`docker network create --driver bridge --subnet "10.99.2.0/24" --gateway "10.99.2.1" "conga-demo"`) {
 		t.Errorf("expected the network to be created; cmds=%v", ft.cmds)
@@ -80,9 +88,12 @@ func TestReconcile_FailSafeAbortOnGhost(t *testing.T) {
 			return "", nil
 		}
 	}
-	err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t))
+	migrated, err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t))
 	if err == nil {
 		t.Fatal("expected an abort error when a foreign endpoint can't be cleared")
+	}
+	if migrated {
+		t.Error("fail-safe abort must report migrated=false (no COMMIT ran)")
 	}
 	if !strings.Contains(err.Error(), "conga-router") || !strings.Contains(err.Error(), "unclearable") {
 		t.Errorf("error should name the unclearable foreign endpoint; got: %v", err)
@@ -119,8 +130,12 @@ func TestReconcile_HappyPathOrdering(t *testing.T) {
 			return "", nil
 		}
 	}
-	if err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t)); err != nil {
+	migrated, err := ReconcileAgentNetwork(context.Background(), ft, "demo", demoNet(t))
+	if err != nil {
 		t.Fatalf("happy path: %v", err)
+	}
+	if !migrated {
+		t.Error("a successful migration (COMMIT ran, proxy torn down) must report migrated=true so the caller makes egress redeploy fatal (review #2)")
 	}
 
 	disc := cmdIndex(ft.cmds, `docker network disconnect -f "conga-demo" "conga-router"`)
