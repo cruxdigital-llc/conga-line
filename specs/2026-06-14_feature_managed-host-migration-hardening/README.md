@@ -161,3 +161,19 @@ window). Ready for `/glados:implement-feature`.
     reboot) and the 3-agent remediation are release-gated** (post `terraform-provider-conga` release),
     per the rollout (§11). Implementation complete; ready for the provider release + staged rollout +
     `/glados:verify-feature`.
+
+- **2026-06-14** — **PR #68 opened + agent code-review pass; 4 findings fixed (commit `84b87a3`);
+  fixes live-validated on `zach`.** Reviewer: no blocking; core R2 fail-safe/ordering verified correct.
+  Fixed: **#1** add-user/add-team bail with an actionable `conga refresh` message if the network already
+  exists (was: no-op static-create → proxy `--ip` exit-125 + removed proxy on re-provision over a legacy
+  net); **#2** `ReconcileAgentNetwork` returns `migrated` bool → `RefreshAgent` makes the egress redeploy
+  **fatal when the proxy was torn down** (non-fatal on steady-state); **#3** guarded the `pre-start.sh`
+  flock fd open under `set -e`; **#4** corrected the `RefreshAll` Ctrl-C comment (next-iteration boundary).
+  Reconcile tests assert the `migrated` bool. **Live test (validate on a held agent): `conga refresh
+  zach`** migrated `172.22`→**`10.99.2`**, agent `.2`, **proxy `IPAMConfig` pinned `10.99.2.3`** (R1
+  proven — collision structurally impossible), agent stayed up through the migration (R2 fail-safe),
+  refresh succeeded with the now-fatal post-migration egress redeploy (#2), old-`172.22` rules flushed
+  (0 orphans), 5-rule egress + DNS OK, unit enabled+active. `zach` is now migrated + reboot-safe.
+  **Remaining rollout:** re-refresh aaron/nathan/congaline-team (migrated *pre-fix* → proxies NOT pinned
+  → still reboot-fragile until re-refreshed); migrate nextgen-delivery + nvidia-team (still on
+  auto-subnet); then the C5b host-reboot acceptance — all coordinated with the provider release.
