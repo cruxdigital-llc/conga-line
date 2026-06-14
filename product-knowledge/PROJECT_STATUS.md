@@ -379,6 +379,57 @@ No new Conga data-model concept.
 - **Remaining**: **R1** `terraform-provider-conga` release (post-merge, `pkg/` changed); **T2.4** AWS bash
   boot-path de-embed unification (tracked follow-up). See `specs/2026-06-10_feature_fleet-baseline-configuration/`.
 
+### 32. Managed-Host Provisioning Engine (AWS → shared-Go convergence) — 🔨 Implementing (slices 1+2 done, live-verified; slices 3-6 pending)
+- **Goal**: provision AWS agents by running Conga's **shared Go logic** (the code the remote provider
+  already uses) over a minimal host transport, eliminating the hand-maintained bash provisioning
+  scripts (`scripts/*.sh.tmpl`) and shrinking the 1,384-line boot `user-data.sh.tftpl`. Simplify +
+  harden the infra so it can be relied on without heavy maintenance; put logic in Go (tested), not
+  untestable templated bash; reuse one engine across managed-host providers.
+- **Origin**: `audit/` scope-and-simplification review (2026-06-13), **Theme 3** — the surface of most
+  recently chased bugs (router host-networking, `$include` self-heal drift, chown). Operator chose
+  the "spirit of Option C, delivered safely" over a literal `AWS = remote-over-SSM` provider merge.
+- **Approach (anchor)**: generalize the already-shipped `pkg/provider/iptables` `ExecFunc` seam (pure
+  logic behind `type ExecFunc func(cmd string) error`; remote injects SSH, AWS doesn't use it) to all
+  host orchestration. Shared logic sits above a minimal `{PutFile, RunCommand}` transport contract;
+  the transport (SSM for AWS, SFTP+SSH for remote) is the **only** provider-specific seam. **Not** a
+  provider merge and **not** an SSH≡SSM interface unification (real impedance mismatch). Most "derived
+  artifacts" (`openclaw.json`, `routing.json`, `$include` layers, Envoy config) are already shared Go
+  that AWS re-derives in bash — converging is mostly deletion. AWS transport primitives (`uploadFile`,
+  `runOnInstance`) already exist.
+- **First slice / live bug**: fix `audit` #1 — AWS add/refresh still write bridge-form routing.json +
+  `docker network connect conga-router` + `ExecStartPost`, contradicting the v0.1.8 host-networking
+  router migration. Slice 1 = Go-generated loopback routing.json via `PutFile`, dropping the bash.
+- **Lifecycle decision RESOLVED**: systemd is THE managed-host lifecycle for **all non-local
+  providers** (remote + AWS), generated once in shared Go — unattended, reboot-survivable,
+  host-resident egress. Deployment taxonomy: managed-host (systemd: remote+AWS) vs local (Docker, dev).
+  This is an *upgrade* for remote (no unattended story today; already requires systemd) and folds in
+  audit #7 (static IP → deterministic egress `ExecStartPost`).
+- **Three-seams architecture + reserved init seam**: engine talks to three abstractions —
+  transport (SSH/SSM), **HostSupervisor** (init system), secrets/discovery. Engine emits a
+  provider-agnostic `ServiceSpec`; **systemd is the only built backend**, `openrcSupervisor` reserved
+  as a stub so a future lightweight-host (Alpine/OpenRC) scenario is additive. Extension guide:
+  `specs/.../extension-host-supervisor.md`. YAGNI guard: build seam + systemd + stub + doc only.
+- **Integrity decision RESOLVED (prevention-first)**: reserved-key guard → fail-closed `PreStart`
+  hook (key list generated from `common.ReservedCustomConfigKeys`); perms stay; periodic SHA256
+  backstop slimmed (drop audit-#4 dual-baseline coupling); preventive control converges across
+  managed-host providers, detective/alerting provider-appropriate.
+- **Config ownership = Model C + visibility**: `$include` deep-merge + admin-survival stays (code is
+  the authoritative *record*, no clobbering reconcile). Super-admin "what's running" view =
+  in-container `openclaw config get` (ground truth) + Conga provenance overlay → **follow-on**
+  `show-config` enhancement (NOT this feature); `conga agent pull` optional. `ReadFile` promoted to a
+  core transport method. Transport contract is now `{PutFile, RunCommand, ReadFile}`.
+- **Spec resolved (2026-06-13)**: transport = Go interface `{PutFile, RunCommand, ReadFile}`; shared
+  package = new `pkg/provider/managedhost`; boot reduction = reconstitute-from-persisted-EBS-artifacts
+  (keeps no-host-binary + unattended replacement; highest-risk slice, gated on a replacement-recovery
+  test); integrity guard-on-unparseable = WARN+allow; partial-failure = idempotent, no half-egress.
+  **6-slice migration** (slice 1 = routing.json loopback proof + audit-#1 fix). Persona review APPROVE,
+  standards gate PASS (2 non-blocking: egress-controls.md doc-sync on bash-parser deletion;
+  config-taxonomy unit-artifact check). Next: `/glados:implement-feature`. See
+  `specs/2026-06-13_feature_managed-host-provisioning-engine/spec.md`.
+- **Status**: `/glados:plan-feature` complete (current-state verified directly). Next:
+  `/glados:spec-feature`. `pkg/` change → `terraform-provider-conga` release required. See
+  `specs/2026-06-13_feature_managed-host-provisioning-engine/`.
+
 ### Backlog / Upcoming
 - [ ] Horizon 2: Operational maturity (secret rotation, backups, dashboards)
 - [ ] Horizon 3: Advanced hardening (GuardDuty, Config rules)

@@ -42,3 +42,12 @@
 - **Suggested Domain**: architecture, ux
 - **Confidence**: Medium
 - **Status**: pending
+
+### 2026-06-13 - Logic in tested Go behind thin seams, not templated bash
+- **Source**: Explicit, repeated operator statements across the managed-host-provisioning-engine session ("be opinionated about where we contain logic, how we test it, and how consistently it is reused"; "remove as much bash as possible because it is hard to test and error prone").
+- **Context**: Choosing the convergence strategy for AWS provisioning (Theme 3 of the codebase audit). The operator consistently favored moving host-provisioning logic out of hand-maintained, untestable templated bash into shared Go exercised by unit tests, with provider-specific concerns isolated behind minimal seams (transport, host-supervisor).
+- **Proposed Philosophy**: "Host/provisioning logic belongs in shared, unit-tested Go behind thin provider seams — not in templated bash. Bash on a host should place files and run short commands, never carry logic that can drift or fail untested. Generating an artifact (emit a struct/typed value, assert on it) is preferred over emitting bash strings, because it is testable without a host."
+- **Suggested Weight**: preferred
+- **Suggested Domain**: architecture, testing
+- **Confidence**: High
+- **Status**: pending

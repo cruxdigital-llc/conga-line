@@ -96,7 +96,13 @@ egress:
 	}
 }
 
-func TestDeployEgressScriptValidateModeAppliesIptables(t *testing.T) {
+// TestDeployEgressScriptDelegatesEgressToUnit is the B2.4 guard: deploy-egress.sh
+// no longer touches iptables, sed-injects the unit, or attaches the router. Egress
+// enforcement is owned by the agent's Go-generated systemd unit (deterministic
+// static-IP rules in ExecStartPost/ExecStopPost); deploy-egress recreates the
+// proxy + `systemctl restart`s the agent, which cycles those rules. Asserting the
+// absence of the old discovery-loop/sed/router-connect prevents them creeping back.
+func TestDeployEgressScriptDelegatesEgressToUnit(t *testing.T) {
 	tmpl, err := template.New("deploy-egress").Parse(DeployEgressScript)
 	if err != nil {
 		t.Fatalf("failed to parse deploy-egress template: %v", err)
@@ -131,109 +137,139 @@ egress:
 	if !strings.Contains(output, `EGRESS_MODE="validate"`) {
 		t.Error("expected EGRESS_MODE=validate in rendered output")
 	}
-	// iptables rules are always applied (even in validate mode) to force all traffic
-	// through the proxy. The proxy itself handles validate vs enforce behavior.
-	if !strings.Contains(output, "iptables -I DOCKER-USER") {
-		t.Error("expected iptables rules in validate mode output")
+	// The agent restart cycles the unit's deterministic egress iptables.
+	if !strings.Contains(output, `systemctl restart "conga-$AGENT_NAME"`) {
+		t.Error("expected deploy-egress to restart the agent (cycles the unit's egress iptables)")
 	}
-	// Verify cleanup section (iptables -D) is NOT guarded — it should always run
-	if !strings.Contains(output, "iptables -D DOCKER-USER") {
-		t.Error("expected iptables cleanup rules (iptables -D) in all modes")
+	// The egress controls now live in the Go-generated unit, NOT in deploy-egress.
+	forbidden := map[string]string{
+		"direct iptables apply":    "iptables -I DOCKER-USER",
+		"direct iptables removal":  "iptables -D DOCKER-USER",
+		"10-retry discovery loop":  "seq 1 10",
+		"runtime IP inspect":       "NetworkSettings.Networks",
+		"in-place sed on the unit": "sed -i",
+		"router bridge attach":     "docker network connect",
 	}
-}
-
-func TestRefreshUserScriptTemplateRender(t *testing.T) {
-	tmpl, err := template.New("refresh-user").Parse(RefreshUserScript)
-	if err != nil {
-		t.Fatalf("failed to parse refresh-user template: %v", err)
-	}
-
-	data := struct {
-		AWSRegion string
-		AgentName string
-	}{
-		AWSRegion: "us-east-1",
-		AgentName: "testagent",
-	}
-
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, data); err != nil {
-		t.Fatalf("failed to execute refresh-user template: %v", err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "testagent") {
-		t.Error("expected agent name in rendered output")
-	}
-	if !strings.Contains(output, "us-east-1") {
-		t.Error("expected AWS region in rendered output")
-	}
-
-	// v2026.5.18 compat: the rebuilt systemd unit must seed @openclaw/slack
-	// before the persistent container starts (the plugin is no longer
-	// bundled in the OpenClaw image starting v2026.5.x).
-	want := "openclaw plugins install @openclaw/slack"
-	if !strings.Contains(output, want) {
-		t.Errorf("missing %q ExecStartPre — fresh refresh on v2026.5.18+ leaves channel WARNing", want)
-	}
-	// Regression: --yes is not a valid plugins-install flag and causes
-	// the systemd ExecStartPre to silently fail.
-	if strings.Contains(output, "plugins install @openclaw/slack --yes") {
-		t.Error(`plugins install line still passes --yes; v2026.5.18 rejects it as unrecognized`)
+	for desc, marker := range forbidden {
+		if strings.Contains(output, marker) {
+			t.Errorf("deploy-egress.sh still contains %s (%q) — egress is owned by the systemd unit now (B2.4)", desc, marker)
+		}
 	}
 }
 
-// assertOpenClawV5Shape exercises the assertions a rendered OpenClaw config
-// heredoc must satisfy on v2026.5.18+. Shared across add-user / add-team
-// tests because the gateway / streaming / update / plugin-install shape is
-// identical between the two agent types. Type-specific assertions
-// (allowFrom vs channels) live in the per-test bodies.
-func assertOpenClawV5Shape(t *testing.T, rendered string) {
-	t.Helper()
+// NOTE: refresh-user.sh.tmpl was retired in B-2 — RefreshAgent now builds the
+// agent's docker-run command + systemd unit in Go via the managed-host engine
+// (pkg/provider/managedhost). The unit shape, the deterministic static-IP egress
+// iptables, the @openclaw/slack plugin seed, `systemctl enable` (reboot
+// survival), and the absence of any router bridge attach are now asserted in
+// pkg/provider/managedhost (container_test.go + supervisor_test.go) and the
+// awsprovider engine test, not against a bash template here.
 
-	// Positive: every v2026.5.18-mandatory shape must be present.
-	positives := map[string]string{
-		"GATEWAY_TOKEN generation":    "GATEWAY_TOKEN=$(openssl rand -hex 32)",
-		"gateway.auth.token block":    `"auth": { "mode": "token", "token": "$GATEWAY_TOKEN" }`,
-		"streaming object form":       `"streaming": { "mode": "partial", "nativeTransport": true }`,
-		"update.checkOnStart false":   `"update": { "checkOnStart": false, "auto": { "enabled": false } }`,
-		"plugin install ExecStartPre": "openclaw plugins install @openclaw/slack",
-		// gateway.bind=lan is what gives us 0.0.0.0 binding for Docker port
-		// forwarding (the round-2 commit doc was wrong about mode controlling
-		// this); without it the gateway falls back to loopback and Docker
-		// `-p 127.0.0.1:<host>:18789` can't proxy traffic in.
-		"gateway.bind=lan": `"bind": "lan"`,
-		// gateway.mode=local — the round-2 migration. mode=remote is the
-		// split-transport topology which we are not; the new image rejects
-		// it without --allow-unconfigured.
-		"gateway.mode=local": `"mode": "local"`,
-		// allowedOrigins must include BOTH the container port (18789, for
-		// in-container CLI tools that call the gateway via localhost) AND
-		// the published host port (for browser/tunnel access). CLAUDE.md
-		// line 88 is explicit about this. Missing the container-port entry
-		// produces "origin not allowed" from any in-container HTTP caller.
-		"allowedOrigins includes container port": `"http://localhost:18789"`,
-		"allowedOrigins includes host port":      `"http://localhost:${GATEWAY_PORT}"`,
+// TestProvisionScriptsDropBridgeRouterWiring is the slice-1 regression guard
+// (audit #1; specs/2026-06-13_feature_managed-host-provisioning-engine/): the
+// provision/refresh scripts must NOT mutate routing.json (node -e) or attach the
+// router to per-agent bridge networks (docker network connect conga-router).
+// routing.json is now generated in Go (loopback form) and the router runs
+// --network host; ProvisionAgent/RefreshAgent reconcile routing + restart the
+// router after these scripts run. The bridge attach broke on Docker 25 +
+// kernel 6.1.174 (specs/2026-06-11_bugfix_router-host-networking/).
+func TestProvisionScriptsDropBridgeRouterWiring(t *testing.T) {
+	render := func(name, tmplStr string, data any) string {
+		t.Helper()
+		tmpl, err := template.New(name).Parse(tmplStr)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		var buf strings.Builder
+		if err := tmpl.Execute(&buf, data); err != nil {
+			t.Fatalf("execute %s: %v", name, err)
+		}
+		return buf.String()
 	}
-	for desc, want := range positives {
-		if !strings.Contains(rendered, want) {
-			t.Errorf("missing %s: want %q in rendered template", desc, want)
+
+	type provData struct {
+		AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
+		GatewayPort                                                    int
+		EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
+	}
+	pd := provData{AgentName: "testuser", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "x", EgressMode: "enforce", ProxyBootstrapJS: "y"}
+
+	scripts := map[string]string{
+		"add-user": render("add-user", AddUserScript, pd),
+		"add-team": render("add-team", AddTeamScript, pd),
+		// refresh-user.sh retired in B-2 (unit now built in Go); the engine never
+		// emits a router bridge attach — covered by the managedhost unit test.
+	}
+	// Unambiguous markers of the removed bash routing/bridge wiring. (`/slack/events`
+	// is NOT a marker — it legitimately appears as the openclaw.json webhookPath.)
+	forbidden := []string{"docker network connect", "node -e", "cfg.members", "cfg.channels"}
+	for name, out := range scripts {
+		for _, f := range forbidden {
+			if strings.Contains(out, f) {
+				t.Errorf("%s still contains removed bridge/router wiring %q", name, f)
+			}
 		}
 	}
 
-	// Negative: every legacy v2026.3.x shape must be absent. These produced
-	// real production agent crashes during the v2026.5.18 rollout and the
-	// fixes are what this PR is about — assert they can't regress.
-	negatives := map[string]string{
-		`legacy streaming string form`: `"streaming": "partial"`,
-		`legacy nativeStreaming key`:   `"nativeStreaming"`,
-		`legacy gateway.remote block`:  `"remote": { "url"`,
-		`legacy --yes install flag`:    "plugins install @openclaw/slack --yes",
-		`gateway.mode=remote`:          `"mode": "remote"`,
+	// refresh-all legitimately references conga-router in its skip-list and the
+	// cleanup sed (which DELETES deprecated lines from old units). Assert it neither
+	// re-injects the ExecStartPost connect nor runs `docker network connect`.
+	refreshAll := render("refresh-all", RefreshAllScript, struct{ Agents []struct{ Name string } }{
+		Agents: []struct{ Name string }{{Name: "testuser"}},
+	})
+	if strings.Contains(refreshAll, `docker network connect "conga-`) {
+		t.Error("refresh-all still runs docker network connect for agents")
 	}
-	for desc, banned := range negatives {
-		if strings.Contains(rendered, banned) {
-			t.Errorf("legacy shape still present (%s): %q must not appear in rendered template", desc, banned)
+	if strings.Contains(refreshAll, "/ExecStop=/i ExecStartPost") {
+		t.Error("refresh-all still re-injects the deprecated ExecStartPost router connect")
+	}
+}
+
+// TestProvisionScriptsAreInfraOnly is the slice-2b guard: add-user.sh and
+// add-team.sh provision per-agent INFRASTRUCTURE ONLY. They must NOT generate
+// openclaw.json, the $include layers, the integrity baseline, the systemd unit,
+// start the container, or apply egress iptables — RefreshAgent (Go config gen +
+// refresh-user.sh) owns all of that after the script runs. Asserting their absence
+// prevents the heredoc/unit duplication (audit #2/#8) from creeping back in. The
+// openclaw.json v5 shape is covered by pkg/runtime/openclaw/config_test.go now.
+func TestProvisionScriptsAreInfraOnly(t *testing.T) {
+	render := func(name, tmplStr string) string {
+		t.Helper()
+		tmpl, err := template.New(name).Parse(tmplStr)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		var buf strings.Builder
+		data := struct {
+			AgentName, SlackMemberID, SlackChannel, AWSRegion, StateBucket string
+			GatewayPort                                                    int
+			EnvoyConfig, EgressMode, ProxyBootstrapJS                      string
+		}{AgentName: "t", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "static_resources:\n", EgressMode: "enforce", ProxyBootstrapJS: "x"}
+		if err := tmpl.Execute(&buf, data); err != nil {
+			t.Fatalf("execute %s: %v", name, err)
+		}
+		return buf.String()
+	}
+	// Markers of config/unit/start generation that must no longer appear in the
+	// provision scripts (moved to the Go path + refresh-user.sh).
+	forbidden := map[string]string{
+		"openclaw config heredoc":  "OCCONFIG",
+		"gateway token generation": "GATEWAY_TOKEN=$(openssl rand",
+		"$include injection":       `"$include"`,
+		"systemd unit write":       "/etc/systemd/system/conga-",
+		"systemctl start":          "systemctl start",
+		"egress iptables apply":    "iptables -I DOCKER-USER",
+		"config hash baseline":     "-config.json.sha256",
+	}
+	for _, sc := range []struct{ name, tmpl string }{
+		{"add-user", AddUserScript},
+		{"add-team", AddTeamScript},
+	} {
+		out := render(sc.name, sc.tmpl)
+		for desc, marker := range forbidden {
+			if strings.Contains(out, marker) {
+				t.Errorf("%s is no longer infra-only: found %s (%q) — config/unit/start must come from RefreshAgent, not the provision script", sc.name, desc, marker)
+			}
 		}
 	}
 }
@@ -265,33 +301,26 @@ func TestAddUserScriptTemplateRender(t *testing.T) {
 	}
 
 	output := buf.String()
-	checks := map[string]string{
-		"agent name":            "testuser",
-		"egress mode":           `EGRESS_MODE="enforce"`,
-		"envoy config":          "static_resources",
-		"proxy bootstrap":       "require('http')",
-		"HTTPS_PROXY":           "HTTPS_PROXY=http://",
-		"proxy bootstrap mount": "$BOOTSTRAP_PATH:/opt/proxy-bootstrap.js",
-		"iptables rules":        "iptables -I DOCKER-USER",
-		"egress proxy run":      "conga-egress-proxy",
-		// Feature #31: 3-element $include array (order = precedence).
-		"layered $include": `"$include": ["fleet-custom.json", "agent-managed-custom.json", "agent-custom.json"]`,
-		// Feature #31: managed $include targets are seeded as {} if deploy-agents.sh
-		// is unavailable, so a missing target never invalidates the config.
+	// add-user.sh is INFRA-ONLY (slice 2b): env, data dir, metadata, behavior deploy,
+	// network, egress proxy. openclaw.json + the systemd unit + container start +
+	// egress iptables are produced by RefreshAgent (Go config gen + refresh-user.sh)
+	// after this script. Absence of the old config/unit/start is asserted in
+	// TestProvisionScriptsAreInfraOnly; the openclaw.json v5 shape is covered in
+	// pkg/runtime/openclaw/config_test.go (the Go generator now owns it).
+	present := map[string]string{
+		"agent name":               "testuser",
+		"egress mode":              `EGRESS_MODE="enforce"`,
+		"envoy config":             "static_resources",
+		"proxy bootstrap":          "require('http')",
+		"egress proxy run":         "conga-egress-proxy",
+		"network create":           `docker network create --driver bridge "conga-$AGENT_NAME"`,
+		"agent type metadata":      `echo "user" > /opt/conga/config/$AGENT_NAME.type`,
 		"managed include fallback": `for MF in fleet-custom.json agent-managed-custom.json; do`,
 	}
-	for desc, want := range checks {
+	for desc, want := range present {
 		if !strings.Contains(output, want) {
-			t.Errorf("expected %s (%q) in rendered output", desc, want)
+			t.Errorf("expected %s (%q) in rendered add-user output", desc, want)
 		}
-	}
-
-	// v2026.5.18-mandatory shape (shared with add-team).
-	assertOpenClawV5Shape(t, output)
-
-	// User-agent-specific: DM allowlist tied to the slack member ID.
-	if !strings.Contains(output, `"allowFrom": ["$SLACK_MEMBER_ID"]`) {
-		t.Error("user agent must emit allowFrom bound to SLACK_MEMBER_ID")
 	}
 }
 
@@ -322,36 +351,23 @@ func TestAddTeamScriptTemplateRender(t *testing.T) {
 	}
 
 	output := buf.String()
-	checks := map[string]string{
-		"agent name":       "testteam",
-		"egress mode":      `EGRESS_MODE="enforce"`,
-		"envoy config":     "static_resources",
-		"HTTPS_PROXY":      "HTTPS_PROXY=http://",
-		"iptables rules":   "iptables -I DOCKER-USER",
-		"egress proxy run": "conga-egress-proxy",
-		"channel routing":  "channels",
-		// Feature #31: 3-element $include array (order = precedence).
-		"layered $include": `"$include": ["fleet-custom.json", "agent-managed-custom.json", "agent-custom.json"]`,
-		// Feature #31: managed $include targets are seeded as {} if deploy-agents.sh
-		// is unavailable, so a missing target never invalidates the config.
+	// add-team.sh is INFRA-ONLY (slice 2b) — same as add-user; the team's
+	// channels.slack config + unit + start are produced by RefreshAgent
+	// (Go config gen + refresh-user.sh) after this script. The team channel
+	// shape (channels.<id>.{enabled,requireMention}) is covered by the Go
+	// generator's tests in pkg/runtime/openclaw/config_test.go.
+	present := map[string]string{
+		"agent name":               "testteam",
+		"egress mode":              `EGRESS_MODE="enforce"`,
+		"envoy config":             "static_resources",
+		"egress proxy run":         "conga-egress-proxy",
+		"network create":           `docker network create --driver bridge "conga-$AGENT_NAME"`,
+		"agent type metadata":      `echo "team" > /opt/conga/config/$AGENT_NAME.type`,
 		"managed include fallback": `for MF in fleet-custom.json agent-managed-custom.json; do`,
 	}
-	for desc, want := range checks {
+	for desc, want := range present {
 		if !strings.Contains(output, want) {
-			t.Errorf("expected %s (%q) in rendered output", desc, want)
+			t.Errorf("expected %s (%q) in rendered add-team output", desc, want)
 		}
-	}
-
-	// v2026.5.18-mandatory shape (shared with add-user).
-	assertOpenClawV5Shape(t, output)
-
-	// Team-agent-specific: per-channel binding must use the new "enabled"
-	// key. v2026.5.x rejects the legacy "allow" key with
-	//   channels.slack.channels.<id>: must NOT have additional properties
-	if !strings.Contains(output, `"$SLACK_CHANNEL": { "enabled": true, "requireMention": false }`) {
-		t.Error(`team agent must emit channels.<id>.{enabled:true,requireMention:false} (the v2026.5.x canonical shape)`)
-	}
-	if strings.Contains(output, `"$SLACK_CHANNEL": { "allow": true`) {
-		t.Error(`team agent still emits legacy channels.<id>.allow:true — v2026.5.x rejects it`)
 	}
 }

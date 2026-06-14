@@ -37,6 +37,53 @@ func baseParams() runtime.ConfigParams {
 	}
 }
 
+func TestGenerateConfig_GatewayV5Shape(t *testing.T) {
+	// Regression coverage the bash heredoc used to provide (assertOpenClawV5Shape in
+	// scripts/scripts_test.go): the gateway block must be the v2026.5.18 shape. Slice
+	// 2b moved config generation off the provision-script heredoc onto this Go
+	// generator, so the assertion lives here now.
+	p := baseParams()
+	p.Agent.GatewayPort = 18792 // host port differs from the in-container 18789
+	r := &Runtime{}
+	out, err := r.GenerateConfig(p)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	gw, ok := decodeJSON(t, out)["gateway"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing gateway block")
+	}
+	// bind=lan gives the 0.0.0.0 bind that Docker -p 127.0.0.1:<host>:18789 needs;
+	// mode=local is the supported topology (the image rejects mode=remote).
+	if gw["bind"] != "lan" {
+		t.Errorf("gateway.bind: want lan, got %v", gw["bind"])
+	}
+	if gw["mode"] != "local" {
+		t.Errorf("gateway.mode: want local, got %v", gw["mode"])
+	}
+	auth, _ := gw["auth"].(map[string]any)
+	if auth["mode"] != "token" || auth["token"] != "fixed-token-for-tests" {
+		t.Errorf("gateway.auth: want token mode with the supplied token, got %+v", gw["auth"])
+	}
+	// allowedOrigins must include BOTH the in-container port (18789, for CLI tools
+	// calling the gateway via localhost) and the published host port (browser/tunnel).
+	ui, _ := gw["controlUi"].(map[string]any)
+	origins, _ := ui["allowedOrigins"].([]any)
+	want := map[string]bool{"http://localhost:18789": false, "http://localhost:18792": false}
+	for _, o := range origins {
+		if s, ok := o.(string); ok {
+			if _, tracked := want[s]; tracked {
+				want[s] = true
+			}
+		}
+	}
+	for origin, found := range want {
+		if !found {
+			t.Errorf("gateway.controlUi.allowedOrigins missing %q; got %v", origin, origins)
+		}
+	}
+}
+
 func TestGenerateConfig_NoOverlay_PreservesDefaults(t *testing.T) {
 	r := &Runtime{}
 	out, err := r.GenerateConfig(baseParams())
@@ -59,8 +106,8 @@ func TestGenerateConfig_NoOverlay_PreservesDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing agents.defaults.model")
 	}
-	if got := model["primary"]; got != "anthropic/claude-opus-4-7" {
-		t.Fatalf("want anthropic/claude-opus-4-7, got %v", got)
+	if got := model["primary"]; got != "anthropic/claude-opus-4-8" {
+		t.Fatalf("want anthropic/claude-opus-4-8, got %v", got)
 	}
 
 	// models allowlist unchanged
@@ -68,7 +115,7 @@ func TestGenerateConfig_NoOverlay_PreservesDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing agents.defaults.models")
 	}
-	if _, ok := models["anthropic/claude-opus-4-7"]; !ok {
+	if _, ok := models["anthropic/claude-opus-4-8"]; !ok {
 		t.Fatalf("anthropic entry missing from allowlist: %+v", models)
 	}
 
@@ -131,9 +178,9 @@ func TestGenerateConfig_OllamaOverlay(t *testing.T) {
 	if _, ok := allow["ollama/qwen3:6b"]; !ok {
 		t.Fatalf("allowlist missing ollama/qwen3:6b: %+v", allow)
 	}
-	// The runtime default (anthropic/claude-opus-4-7 from openclaw-defaults.json)
+	// The runtime default (anthropic/claude-opus-4-8 from openclaw-defaults.json)
 	// must be preserved so operators can /model into it mid-conversation.
-	if _, ok := allow["anthropic/claude-opus-4-7"]; !ok {
+	if _, ok := allow["anthropic/claude-opus-4-8"]; !ok {
 		t.Fatalf("allowlist should preserve anthropic default for /model switching: %+v", allow)
 	}
 
@@ -395,7 +442,7 @@ func TestGenerateConfig_OverlayAndChannelsCoexist(t *testing.T) {
 
 func TestGenerateConfig_SubagentsOverlay_Basic(t *testing.T) {
 	// Subagent-only overlay (no primary model block) — primary stays at the
-	// runtime default (anthropic/claude-opus-4-7) and the subagent is Qwen
+	// runtime default (anthropic/claude-opus-4-8) and the subagent is Qwen
 	// via LiteLLM. Mirrors the role-code-dev shape.
 	params := baseParams()
 	params.Overlay = &runtime.AgentOverlay{
@@ -440,7 +487,7 @@ func TestGenerateConfig_SubagentsOverlay_Basic(t *testing.T) {
 		t.Fatalf("allowlist missing subagent model: %+v", allow)
 	}
 	// Runtime default preserved (no overlay primary → defaults stay).
-	if _, ok := allow["anthropic/claude-opus-4-7"]; !ok {
+	if _, ok := allow["anthropic/claude-opus-4-8"]; !ok {
 		t.Fatalf("allowlist should preserve runtime default: %+v", allow)
 	}
 
@@ -594,7 +641,7 @@ func TestGenerateConfig_SubagentsOverlay_AllowlistMergePreservesPrimary(t *testi
 	cfg := decodeJSON(t, out)
 
 	allow := cfg["agents"].(map[string]any)["defaults"].(map[string]any)["models"].(map[string]any)
-	for _, modelRef := range []string{"ollama/qwen3:6b", "openai/qwen-2.5-72b-instruct", "anthropic/claude-opus-4-7"} {
+	for _, modelRef := range []string{"ollama/qwen3:6b", "openai/qwen-2.5-72b-instruct", "anthropic/claude-opus-4-8"} {
 		if _, ok := allow[modelRef]; !ok {
 			t.Fatalf("allowlist missing %q: %+v", modelRef, allow)
 		}
@@ -863,7 +910,7 @@ func TestGenerateConfig_RuntimeDefaults(t *testing.T) {
 			t.Fatalf("generate: %v", err)
 		}
 		// Embedded baseline's model.primary (see openclaw-defaults.json).
-		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-7" {
+		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-8" {
 			t.Fatalf("embedded fallback not used: model.primary = %q", got)
 		}
 	})
@@ -875,7 +922,7 @@ func TestGenerateConfig_RuntimeDefaults(t *testing.T) {
 		if err != nil {
 			t.Fatalf("generate should fall back, not error: %v", err)
 		}
-		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-7" {
+		if got := modelPrimary(t, out); got != "anthropic/claude-opus-4-8" {
 			t.Fatalf("malformed input should fall back to embedded: model.primary = %q", got)
 		}
 	})

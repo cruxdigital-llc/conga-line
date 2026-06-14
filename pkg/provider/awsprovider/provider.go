@@ -232,6 +232,25 @@ func (p *AWSProvider) ProvisionAgent(ctx context.Context, cfg provider.AgentConf
 		fmt.Fprintf(os.Stderr, "Setup output:\n%s\n%s\n", result.Stdout, result.Stderr)
 		return fmt.Errorf("provisioning agent %s failed on instance", cfg.Name)
 	}
+
+	// Generate config + start the agent via the proven refresh path. The provision
+	// scripts now set up per-agent INFRASTRUCTURE ONLY (env, data dir, behavior,
+	// network, egress proxy) — they no longer generate openclaw.json or create/start
+	// the systemd unit (managed-host engine, slice 2b). RefreshAgent does that:
+	// regenerateAgentConfigOnInstance writes openclaw.json + the $include layers +
+	// env in Go (canonical model + per-agent agent.yaml overlay), then
+	// defineAndStartAgentService builds the docker-run command + systemd unit in Go
+	// (with the ExecStartPost/ExecStopPost egress-iptables lifecycle), starts the
+	// container, reconciles loopback routing.json, and deploys egress policy.
+	//
+	// FATAL: RefreshAgent is now the only thing that produces a running agent, so a
+	// failure means provisioning failed (no config/unit/container). It errors hard if
+	// the agents/ overlay dir isn't resolvable — the correct contract: provisioning
+	// requires the overlay to generate config. The infra above is idempotent, so the
+	// operator can fix the cwd/overlay and re-run `conga admin add-user`.
+	if err := p.RefreshAgent(ctx, cfg.Name); err != nil {
+		return fmt.Errorf("agent %s infrastructure was provisioned, but config generation + container start (via refresh) failed: %w", cfg.Name, err)
+	}
 	return nil
 }
 
@@ -283,6 +302,18 @@ func (p *AWSProvider) RemoveAgent(ctx context.Context, name string, deleteSecret
 
 	if _, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, "/opt/conga/bin/update-dashboard.sh", 30*time.Second); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Sprintf("dashboard update: %v", err))
+	}
+
+	// Reconcile routing.json now that the agent's SSM param is deleted: the engine
+	// regenerates it (loopback form) from the remaining agents, dropping the removed
+	// agent's entry, then restarts the router. The removal script no longer edits
+	// routing.json itself — its jq used the stale bridge-URL form, which never
+	// matched the loopback routing, so the entry was left dangling until some other
+	// refresh happened to rebuild it. Non-fatal (mirrors RefreshAgent step 3).
+	if err := p.regenerateRoutingOnInstance(ctx, instanceID); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Sprintf("routing reconcile: %v", err))
+	} else if err := p.restartRouterOnInstance(ctx, instanceID); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Sprintf("router restart: %v", err))
 	}
 
 	if len(cleanupErrs) > 0 {
@@ -465,8 +496,9 @@ func (p *AWSProvider) UnpauseAgent(ctx context.Context, name string) error {
 // RefreshAgent brings an agent's runtime state in sync with SSM:
 //
 //  1. Regenerate openclaw.json + .env via the Go path → upload via SSM
-//  2. Run refresh-user.sh.tmpl on the instance: refetch secrets, write
-//     systemd unit (recreates if missing), restart container.
+//  2. Build the docker-run command + systemd unit in Go (managed-host engine)
+//     and apply via SSM: reconcile the static-IP network, write+enable the unit,
+//     restart the container.
 //  3. Reconcile routing.json from current SSM agent state + restart
 //     router so changed bindings take effect. Refresh used to skip
 //     routing.json, leaving the router with stale routes after a
@@ -528,23 +560,19 @@ func (p *AWSProvider) RefreshAgent(ctx context.Context, agentName string) error 
 		return fmt.Errorf("failed to regenerate config for %s: %w", agentName, err)
 	}
 
-	// Step 2: run refresh-user.sh.tmpl — refetch secrets + write unit + restart.
-	tmpl, err := template.New("refresh").Parse(scripts.RefreshUserScript)
-	if err != nil {
-		return fmt.Errorf("failed to parse refresh template: %w", err)
-	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct{ AgentName, AWSRegion string }{agentName, p.region}); err != nil {
-		return fmt.Errorf("failed to render refresh script: %w", err)
-	}
-	spin := ui.NewSpinner(fmt.Sprintf("Refreshing secrets for %s...", agentName))
-	result, err := awsutil.RunCommand(ctx, p.clients.SSM, instanceID, buf.String(), 120*time.Second)
+	// Step 2: build the agent's docker-run command + systemd unit in Go and apply
+	// them via the managed-host engine (shared container builder + systemd
+	// supervisor). This replaced refresh-user.sh's bash unit generation: the unit
+	// can no longer drift from the run command or the egress hooks, there's no
+	// in-place `sed` on the unit (audit #8), and the static-IP egress iptables are
+	// deterministic (no 10-retry discovery loop, audit #7). Secrets reach the
+	// container via `docker run --env-file` against the .env Step 1 just wrote
+	// from Secrets Manager, so a refresh still picks up fresh secrets.
+	spin := ui.NewSpinner(fmt.Sprintf("Applying unit + restarting %s...", agentName))
+	err = p.defineAndStartAgentService(ctx, instanceID, *agent)
 	spin.Stop()
 	if err != nil {
 		return err
-	}
-	if result.Status != "Success" {
-		return fmt.Errorf("refresh failed:\n%s\n%s", result.Stdout, result.Stderr)
 	}
 
 	// Step 3: reconcile routing.json from current SSM agent state, then

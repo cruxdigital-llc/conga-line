@@ -318,7 +318,7 @@ func TestRefreshAgent_StepsDocumented(t *testing.T) {
 		snippet string
 	}{
 		{"step 1 (config regen)", "regenerateAgentConfigOnInstance"},
-		{"step 2 (refresh-user.sh)", "RefreshUserScript"},
+		{"step 2 (Go unit build + start)", "defineAndStartAgentService"},
 		{"step 3a (routing.json reconcile)", "regenerateRoutingOnInstance"},
 		{"step 3b (router restart)", "restartRouterOnInstance"},
 		{"step 4 (egress redeploy)", "redeployEgressDuringRefresh"},

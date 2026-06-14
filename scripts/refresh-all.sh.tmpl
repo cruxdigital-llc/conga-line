@@ -26,10 +26,9 @@ for UNIT_FILE in /etc/systemd/system/conga-*.service; do
   CURRENT_IMG=$(grep '^ExecStart=' "$UNIT_FILE" | grep -oE '[^ ]+$')
   sed -i "s|\${CONGA_IMAGE}|$CURRENT_IMG|g" "$UNIT_FILE"
 
-  # Add ExecStartPost for router network if missing
-  if ! grep -q 'ExecStartPost' "$UNIT_FILE"; then
-    sed -i "/ExecStop=/i ExecStartPost=-/usr/bin/docker network connect conga-$AGENT conga-router" "$UNIT_FILE"
-  fi
+  # Strip any deprecated router bridge-attach ExecStartPost left over from older
+  # units — the router runs --network host (loopback delivery), no bridge attach.
+  sed -i '/ExecStartPost=.*network connect.*conga-router/d' "$UNIT_FILE"
 done
 systemctl daemon-reload
 
@@ -45,7 +44,6 @@ if systemctl restart conga-{{.Name}}; then
     fi
     sleep 2
   done
-  docker network connect "conga-{{.Name}}" conga-router 2>/dev/null || true
 else
   echo "FAILED: conga-{{.Name}}"
   FAILED="$FAILED {{.Name}}"

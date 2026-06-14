@@ -18,6 +18,7 @@ import (
 	"github.com/cruxdigital-llc/conga-line/pkg/discovery"
 	"github.com/cruxdigital-llc/conga-line/pkg/policy"
 	"github.com/cruxdigital-llc/conga-line/pkg/provider"
+	"github.com/cruxdigital-llc/conga-line/pkg/provider/managedhost"
 	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 )
 
@@ -606,15 +607,12 @@ func (p *AWSProvider) regenerateRoutingOnInstance(ctx context.Context, instanceI
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// The router runs with --network host (see routerRestartScript), so events
-	// are delivered to each agent's published 127.0.0.1:<hostPort> rather than
-	// over a per-agent Docker bridge network.
-	routingJSON, err := common.GenerateRoutingJSON(agents, common.LoopbackWebhookResolver(""))
-	if err != nil {
-		return fmt.Errorf("failed to generate routing: %w", err)
-	}
-
-	return p.uploadFile(ctx, instanceID, "/opt/conga/config/routing.json", routingJSON, "0644")
+	// Generate routing.json in Go and ship it through the managed-host transport
+	// seam. The router runs with --network host (see routerRestartScript), so the
+	// loopback resolver targets each agent's published 127.0.0.1:<hostPort> rather
+	// than a per-agent Docker bridge network.
+	return managedhost.WriteRoutingJSON(ctx, p.transport(instanceID),
+		"/opt/conga/config/routing.json", agents, common.LoopbackWebhookResolver(""))
 }
 
 // restartRouterOnInstance restarts the router container on the EC2 instance.
