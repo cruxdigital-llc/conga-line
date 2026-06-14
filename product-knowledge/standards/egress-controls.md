@@ -105,9 +105,24 @@ The proxy's Lua filter handles the mode distinction:
 
 | Mode | Proxy Behavior | iptables Behavior |
 |------|---------------|-------------------|
-| **No policy** | Deny all (empty allowlist) | DROP all non-subnet traffic |
-| **Validate** | Log violations, allow through | DROP all non-subnet traffic |
-| **Enforce** | Block non-allowlisted (403) | DROP all non-subnet traffic |
+| **No policy** | Deny all (empty allowlist) | DROP all egress except subnet + DNS + established |
+| **Validate** | Log violations, allow through | DROP all egress except subnet + DNS + established |
+| **Enforce** | Block non-allowlisted (403) | DROP all egress except subnet + DNS + established |
+
+The rule set is generated deterministically in Go (`pkg/provider/iptables/egressRuleSpecs`) from the
+agent's static IP, and is identical in all modes — only the proxy's behavior changes with the mode. In
+precedence order, the `DOCKER-USER` chain RETURNs (allows) traffic to the agent's own bridge subnet
+(where the proxy lives), RETURNs `ESTABLISHED,RELATED` responses, RETURNs **`udp`/`tcp` dport 53 (DNS)**,
+then DROPs everything else.
+
+### DNS resolution through the fail-closed chain
+
+The two `dport 53` RETURN rules are **load-bearing on AWS**, not an optimization. Docker's embedded
+resolver forwards container DNS queries to the VPC resolver, which lives **outside** the per-agent
+`10.99.<idx>.0/24` subnet — so the forwarded query is sourced from the container IP to a non-subnet
+address and would otherwise hit the terminal DROP. Without these rules the agent cannot resolve any
+name (including its allowed domains), so the container never becomes healthy. They allow only port 53
+itself; the resolved destination is still subject to the proxy + the DROP.
 
 ### Defense in depth layers
 
@@ -135,7 +150,8 @@ egress controls:
 
 2. **iptables DROP rules** — Network-layer enforcement. Ensures all
    outbound traffic from the agent container can only reach the local
-   Docker subnet (where the proxy lives). Any direct internet-bound
+   Docker subnet (where the proxy lives), plus DNS (port 53) and
+   established-connection responses. Any other direct internet-bound
    connection is dropped.
 
 ### Per-agent isolation

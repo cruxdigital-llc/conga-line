@@ -35,7 +35,7 @@ To modify: Edit directly.
 ## Application
 | Component | Technology |
 |---|---|
-| OpenClaw | `ghcr.io/openclaw/openclaw:2026.5.26` Docker image |
+| OpenClaw | `ghcr.io/openclaw/openclaw:2026.6.5` Docker image |
 | Runtime | Node.js ≥22 (inside container) |
 | Container engine | Docker (host-level, containers run as uid 1000) |
 | Messaging | Slack via HTTP webhook (optional — gateway-only mode supported) |
@@ -54,6 +54,8 @@ Module: `github.com/cruxdigital-llc/conga-line` (go.mod at repo root)
 | `pkg/provider/awsprovider/` | AWS implementation (wraps SSM, Secrets Manager, EC2, STS) |
 | `pkg/provider/localprovider/` | Local Docker implementation (Docker CLI, file secrets) |
 | `pkg/provider/remoteprovider/` | Remote SSH implementation (SSH + Docker CLI, file secrets, tunneling) |
+| `pkg/provider/managedhost/` | Provider-agnostic host engine (shared by AWS + remote): systemd units, deterministic per-agent networks, fail-safe migration, egress wiring, reserved-key guard — behind a thin `Transport` seam |
+| `pkg/provider/iptables/` | Deterministic egress iptables rule generation (fail-closed DROP + subnet/DNS/established RETURNs) |
 | `pkg/policy/` | Portable policy schema: YAML parsing, validation, enforcement reporting |
 | `pkg/channels/` | Channel abstraction, registry, platform integrations |
 | `pkg/common/` | Shared logic: config gen, routing, behavior composition, validation |
