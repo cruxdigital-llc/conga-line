@@ -96,7 +96,13 @@ egress:
 	}
 }
 
-func TestDeployEgressScriptValidateModeAppliesIptables(t *testing.T) {
+// TestDeployEgressScriptDelegatesEgressToUnit is the B2.4 guard: deploy-egress.sh
+// no longer touches iptables, sed-injects the unit, or attaches the router. Egress
+// enforcement is owned by the agent's Go-generated systemd unit (deterministic
+// static-IP rules in ExecStartPost/ExecStopPost); deploy-egress recreates the
+// proxy + `systemctl restart`s the agent, which cycles those rules. Asserting the
+// absence of the old discovery-loop/sed/router-connect prevents them creeping back.
+func TestDeployEgressScriptDelegatesEgressToUnit(t *testing.T) {
 	tmpl, err := template.New("deploy-egress").Parse(DeployEgressScript)
 	if err != nil {
 		t.Fatalf("failed to parse deploy-egress template: %v", err)
@@ -131,66 +137,33 @@ egress:
 	if !strings.Contains(output, `EGRESS_MODE="validate"`) {
 		t.Error("expected EGRESS_MODE=validate in rendered output")
 	}
-	// iptables rules are always applied (even in validate mode) to force all traffic
-	// through the proxy. The proxy itself handles validate vs enforce behavior.
-	if !strings.Contains(output, "iptables -I DOCKER-USER") {
-		t.Error("expected iptables rules in validate mode output")
+	// The agent restart cycles the unit's deterministic egress iptables.
+	if !strings.Contains(output, `systemctl restart "conga-$AGENT_NAME"`) {
+		t.Error("expected deploy-egress to restart the agent (cycles the unit's egress iptables)")
 	}
-	// Verify cleanup section (iptables -D) is NOT guarded — it should always run
-	if !strings.Contains(output, "iptables -D DOCKER-USER") {
-		t.Error("expected iptables cleanup rules (iptables -D) in all modes")
+	// The egress controls now live in the Go-generated unit, NOT in deploy-egress.
+	forbidden := map[string]string{
+		"direct iptables apply":    "iptables -I DOCKER-USER",
+		"direct iptables removal":  "iptables -D DOCKER-USER",
+		"10-retry discovery loop":  "seq 1 10",
+		"runtime IP inspect":       "NetworkSettings.Networks",
+		"in-place sed on the unit": "sed -i",
+		"router bridge attach":     "docker network connect",
 	}
-}
-
-func TestRefreshUserScriptTemplateRender(t *testing.T) {
-	tmpl, err := template.New("refresh-user").Parse(RefreshUserScript)
-	if err != nil {
-		t.Fatalf("failed to parse refresh-user template: %v", err)
-	}
-
-	data := struct {
-		AWSRegion string
-		AgentName string
-	}{
-		AWSRegion: "us-east-1",
-		AgentName: "testagent",
-	}
-
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, data); err != nil {
-		t.Fatalf("failed to execute refresh-user template: %v", err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "testagent") {
-		t.Error("expected agent name in rendered output")
-	}
-	if !strings.Contains(output, "us-east-1") {
-		t.Error("expected AWS region in rendered output")
-	}
-
-	// v2026.5.18 compat: the rebuilt systemd unit must seed @openclaw/slack
-	// before the persistent container starts (the plugin is no longer
-	// bundled in the OpenClaw image starting v2026.5.x).
-	want := "openclaw plugins install @openclaw/slack"
-	if !strings.Contains(output, want) {
-		t.Errorf("missing %q ExecStartPre — fresh refresh on v2026.5.18+ leaves channel WARNing", want)
-	}
-	// Regression: --yes is not a valid plugins-install flag and causes
-	// the systemd ExecStartPre to silently fail.
-	if strings.Contains(output, "plugins install @openclaw/slack --yes") {
-		t.Error(`plugins install line still passes --yes; v2026.5.18 rejects it as unrecognized`)
-	}
-
-	// Slice 2b: refresh-user.sh is now the only place the unit gets enabled (the
-	// provision scripts are infra-only). Without `systemctl enable`, a freshly
-	// provisioned agent runs but does NOT survive a host reboot — breaking the
-	// unattended managed-host guarantee. A live throwaway-provision test caught
-	// exactly this; this assertion guards the regression.
-	if !strings.Contains(output, "systemctl enable conga-$AGENT_NAME") {
-		t.Error("refresh-user.sh must `systemctl enable` the unit so it survives a host reboot (slice 2b)")
+	for desc, marker := range forbidden {
+		if strings.Contains(output, marker) {
+			t.Errorf("deploy-egress.sh still contains %s (%q) — egress is owned by the systemd unit now (B2.4)", desc, marker)
+		}
 	}
 }
+
+// NOTE: refresh-user.sh.tmpl was retired in B-2 — RefreshAgent now builds the
+// agent's docker-run command + systemd unit in Go via the managed-host engine
+// (pkg/provider/managedhost). The unit shape, the deterministic static-IP egress
+// iptables, the @openclaw/slack plugin seed, `systemctl enable` (reboot
+// survival), and the absence of any router bridge attach are now asserted in
+// pkg/provider/managedhost (container_test.go + supervisor_test.go) and the
+// awsprovider engine test, not against a bash template here.
 
 // TestProvisionScriptsDropBridgeRouterWiring is the slice-1 regression guard
 // (audit #1; specs/2026-06-13_feature_managed-host-provisioning-engine/): the
@@ -222,9 +195,10 @@ func TestProvisionScriptsDropBridgeRouterWiring(t *testing.T) {
 	pd := provData{AgentName: "testuser", SlackMemberID: "U1", SlackChannel: "C1", AWSRegion: "us-east-1", StateBucket: "b", GatewayPort: 18789, EnvoyConfig: "x", EgressMode: "enforce", ProxyBootstrapJS: "y"}
 
 	scripts := map[string]string{
-		"add-user":     render("add-user", AddUserScript, pd),
-		"add-team":     render("add-team", AddTeamScript, pd),
-		"refresh-user": render("refresh-user", RefreshUserScript, struct{ AWSRegion, AgentName string }{"us-east-1", "testuser"}),
+		"add-user": render("add-user", AddUserScript, pd),
+		"add-team": render("add-team", AddTeamScript, pd),
+		// refresh-user.sh retired in B-2 (unit now built in Go); the engine never
+		// emits a router bridge attach — covered by the managedhost unit test.
 	}
 	// Unambiguous markers of the removed bash routing/bridge wiring. (`/slack/events`
 	// is NOT a marker — it legitimately appears as the openclaw.json webhookPath.)

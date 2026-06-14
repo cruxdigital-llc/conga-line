@@ -7,17 +7,36 @@ package iptables
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
-// AddRulesCmd returns a shell command that idempotently inserts egress DROP rules
-// into DOCKER-USER for the given container IP. Rules are inserted in reverse order
-// (iptables -I pushes to top) so the final chain order is:
+// egressRuleSpecs returns the DOCKER-USER rule specifications (everything after
+// `-A DOCKER-USER`) for the given container IP + subnet, in priority order: every
+// RETURN (allow) first, the terminal DROP last. All RETURNs MUST precede the DROP.
 //
-//  1. ESTABLISHED,RELATED → RETURN (allow response traffic)
-//  2. dst=subnet → RETURN (allow proxy + Docker DNS)
-//  3. DROP (block everything else from this source)
-//
-// Returns an error if containerIP or subnetCIDR are not well-formed.
+//  1. dst=subnet → RETURN (the per-agent Envoy proxy + Docker's in-subnet bits)
+//  2. ESTABLISHED,RELATED → RETURN (response traffic)
+//  3. udp/tcp dport 53 → RETURN (DNS). REQUIRED on AWS: Docker's embedded resolver
+//     forwards to the VPC resolver, which lives OUTSIDE the per-agent subnet, so the
+//     forwarded query is sourced from the container IP to a non-subnet address and
+//     would otherwise hit the DROP. Without these the agent cannot resolve names.
+//  4. DROP (block all other egress from this source — fail-closed)
+func egressRuleSpecs(containerIP, subnetCIDR string) []string {
+	s := "-s " + containerIP
+	return []string{
+		s + " -d " + subnetCIDR + " -j RETURN",
+		s + " -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN",
+		s + " -p udp --dport 53 -j RETURN",
+		s + " -p tcp --dport 53 -j RETURN",
+		s + " -j DROP",
+	}
+}
+
+// AddRulesCmd returns a shell command that idempotently inserts the egress rules
+// into DOCKER-USER for the given container IP (check-before-insert per rule).
+// Rules are inserted in reverse spec order — iptables -I pushes to the top, so
+// inserting the terminal DROP first leaves it at the bottom with every RETURN above
+// it. Returns an error if containerIP or subnetCIDR are not well-formed.
 func AddRulesCmd(containerIP, subnetCIDR string) (string, error) {
 	if err := validateIP(containerIP); err != nil {
 		return "", fmt.Errorf("invalid container IP: %w", err)
@@ -25,16 +44,16 @@ func AddRulesCmd(containerIP, subnetCIDR string) (string, error) {
 	if err := validateCIDR(subnetCIDR); err != nil {
 		return "", fmt.Errorf("invalid subnet CIDR: %w", err)
 	}
-	return fmt.Sprintf(
-		"iptables -C DOCKER-USER -s %s -j DROP 2>/dev/null || iptables -I DOCKER-USER -s %s -j DROP; "+
-			"iptables -C DOCKER-USER -s %s -d %s -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s %s -d %s -j RETURN; "+
-			"iptables -C DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || iptables -I DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN",
-		containerIP, containerIP,
-		containerIP, subnetCIDR, containerIP, subnetCIDR,
-		containerIP, containerIP), nil
+	specs := egressRuleSpecs(containerIP, subnetCIDR)
+	cmds := make([]string, 0, len(specs))
+	for i := len(specs) - 1; i >= 0; i-- {
+		r := specs[i]
+		cmds = append(cmds, fmt.Sprintf("iptables -C DOCKER-USER %s 2>/dev/null || iptables -I DOCKER-USER %s", r, r))
+	}
+	return strings.Join(cmds, "; "), nil
 }
 
-// RemoveRulesCmd returns a shell command that removes egress iptables rules
+// RemoveRulesCmd returns a shell command that removes the egress iptables rules
 // for the given container IP. Idempotent — each deletion is wrapped with || true.
 // Returns ("", nil) if containerIP is empty (no-op).
 // Returns an error if containerIP or subnetCIDR are not well-formed.
@@ -48,17 +67,16 @@ func RemoveRulesCmd(containerIP, subnetCIDR string) (string, error) {
 	if err := validateCIDR(subnetCIDR); err != nil {
 		return "", fmt.Errorf("invalid subnet CIDR: %w", err)
 	}
-	return fmt.Sprintf(
-		"iptables -D DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || true; "+
-			"iptables -D DOCKER-USER -s %s -d %s -j RETURN 2>/dev/null || true; "+
-			"iptables -D DOCKER-USER -s %s -j DROP 2>/dev/null || true",
-		containerIP,
-		containerIP, subnetCIDR,
-		containerIP), nil
+	specs := egressRuleSpecs(containerIP, subnetCIDR)
+	cmds := make([]string, 0, len(specs))
+	for _, r := range specs {
+		cmds = append(cmds, fmt.Sprintf("iptables -D DOCKER-USER %s 2>/dev/null || true", r))
+	}
+	return strings.Join(cmds, "; "), nil
 }
 
-// CheckRulesCmd returns a shell command that checks whether all three egress rules
-// exist for the given container IP. Exits 0 only if all rules are present.
+// CheckRulesCmd returns a shell command that checks whether all egress rules exist
+// for the given container IP. Exits 0 only if every rule is present.
 // Returns an error if containerIP or subnetCIDR are not well-formed.
 func CheckRulesCmd(containerIP, subnetCIDR string) (string, error) {
 	if err := validateIP(containerIP); err != nil {
@@ -67,13 +85,12 @@ func CheckRulesCmd(containerIP, subnetCIDR string) (string, error) {
 	if err := validateCIDR(subnetCIDR); err != nil {
 		return "", fmt.Errorf("invalid subnet CIDR: %w", err)
 	}
-	return fmt.Sprintf(
-		"iptables -C DOCKER-USER -s %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null && "+
-			"iptables -C DOCKER-USER -s %s -d %s -j RETURN 2>/dev/null && "+
-			"iptables -C DOCKER-USER -s %s -j DROP 2>/dev/null",
-		containerIP,
-		containerIP, subnetCIDR,
-		containerIP), nil
+	specs := egressRuleSpecs(containerIP, subnetCIDR)
+	checks := make([]string, 0, len(specs))
+	for _, r := range specs {
+		checks = append(checks, fmt.Sprintf("iptables -C DOCKER-USER %s 2>/dev/null", r))
+	}
+	return strings.Join(checks, " && "), nil
 }
 
 // ExecFunc executes a shell command string. Used by orchestration functions

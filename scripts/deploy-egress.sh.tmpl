@@ -12,7 +12,6 @@ if ! echo "$AGENT_NAME" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
 fi
 EGRESS_CONF="/opt/conga/config/egress-$AGENT_NAME.yaml"
 EGRESS_PROXY="conga-egress-$AGENT_NAME"
-AGENT_CONTAINER="conga-$AGENT_NAME"
 AGENT_NET="conga-$AGENT_NAME"
 
 # Write policy file to host (idempotent)
@@ -60,21 +59,15 @@ PROXYDF
   trap - EXIT
 fi
 
-# Stop existing proxy if running
+# Stop existing proxy if running (recreated below with the current Envoy config)
 docker rm -f "$EGRESS_PROXY" 2>/dev/null || true
 
-# Remove old iptables rules before restarting (need container IP while running)
-if docker inspect "$AGENT_CONTAINER" >/dev/null 2>&1; then
-  AGENT_IP=$(docker inspect -f "{{`{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}`}}" "$AGENT_CONTAINER" 2>/dev/null || echo "")
-  NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "$AGENT_NET" 2>/dev/null || echo "")
-  if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
-    iptables -D DOCKER-USER -s "$AGENT_IP" -p tcp --dport 53 -j RETURN 2>/dev/null || true
-    iptables -D DOCKER-USER -s "$AGENT_IP" -p udp --dport 53 -j RETURN 2>/dev/null || true
-    iptables -D DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || true
-    iptables -D DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || true
-    iptables -D DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || true
-  fi
-fi
+# NOTE: egress iptables are owned by the agent's systemd unit — deterministic
+# static-IP DROP/RETURN rules in its ExecStartPost/ExecStopPost (managed-host
+# engine, audit #7). The `systemctl restart` below cycles them (ExecStopPost
+# removes, ExecStartPost re-adds), so deploy-egress no longer discovers the
+# container IP or touches iptables directly. That retired the 10-retry
+# docker-inspect discovery loop and the orphaned port-53 rules it used to leave.
 
 # Verify config was written
 if [ ! -f "$EGRESS_CONF" ]; then
@@ -112,68 +105,22 @@ if ! docker inspect -f '{{`{{.State.Running}}`}}' "$EGRESS_PROXY" 2>/dev/null | 
 fi
 echo "Egress proxy started for $AGENT_NAME (mode=$EGRESS_MODE)"
 
-# Update agent container's systemd unit to include HTTPS_PROXY
+# Verify the agent is provisioned (the systemd unit must exist). The agent's
+# HTTPS_PROXY/HTTP_PROXY/NO_PROXY env, the proxy-bootstrap mount, and the
+# NODE_OPTIONS --require are baked into the Go-generated unit (managed-host
+# engine, B-2) — deploy-egress no longer `sed`-injects the unit (audit #8).
 UNIT_FILE="/etc/systemd/system/conga-$AGENT_NAME.service"
 if [ ! -f "$UNIT_FILE" ]; then
   echo "ERROR: systemd unit $UNIT_FILE not found — agent $AGENT_NAME may not be provisioned"
   exit 1
 fi
-# Add proxy env vars if not already present
-# NOTE: This sed pattern depends on '--pids-limit' appearing in the ExecStart line.
-# If the systemd unit template (user-data.sh.tftpl) changes, update this anchor.
-if ! grep -q "HTTPS_PROXY" "$UNIT_FILE"; then
-  sed -i "s|--pids-limit|-e HTTPS_PROXY=http://$EGRESS_PROXY:3128 -e HTTP_PROXY=http://$EGRESS_PROXY:3128 -e NO_PROXY=localhost,127.0.0.1 --pids-limit|" "$UNIT_FILE"
-  if ! grep -q "HTTPS_PROXY" "$UNIT_FILE"; then
-    echo "ERROR: Failed to inject HTTPS_PROXY into $UNIT_FILE — sed pattern '--pids-limit' not found"
-    exit 1
-  fi
-fi
-# Add proxy bootstrap mount + NODE_OPTIONS if not already present
-if ! grep -q "proxy-bootstrap" "$UNIT_FILE"; then
-  sed -i "s|--pids-limit|-v $BOOTSTRAP_PATH:/opt/proxy-bootstrap.js:ro --pids-limit|" "$UNIT_FILE"
-  sed -i 's|NODE_OPTIONS="--max-old-space-size=1536"|NODE_OPTIONS="--max-old-space-size=1536 --require /opt/proxy-bootstrap.js"|' "$UNIT_FILE"
-  if ! grep -q "proxy-bootstrap" "$UNIT_FILE"; then
-    echo "ERROR: Failed to inject proxy-bootstrap mount into $UNIT_FILE"
-    exit 1
-  fi
-fi
-systemctl daemon-reload
+
+# Restart the agent so it picks up the freshly-recreated proxy. The restart
+# deterministically cycles the unit's egress iptables (ExecStopPost removes,
+# ExecStartPost re-adds the static-IP rules) — always enforced, in every mode.
+# No router bridge attach: the router runs --network host and reaches the agent
+# via 127.0.0.1:<hostPort> (loopback topology).
 systemctl restart "conga-$AGENT_NAME"
-echo "Agent container restarted with HTTPS_PROXY"
-
-# Apply iptables IMMEDIATELY after restart.
-# Minimize the window between container start and network-level enforcement.
-# Always applied — in validate mode the proxy logs+allows, but iptables ensures
-# nothing bypasses the proxy (e.g. tools ignoring HTTP_PROXY).
-# ExecStartPost in the systemd unit may also apply these — belt and suspenders.
-# Wait for container to get an IP
-for i in $(seq 1 10); do
-  AGENT_IP=$(docker inspect -f "{{`{{(index .NetworkSettings.Networks \"conga-$AGENT_NAME\").IPAddress}}`}}" "$AGENT_CONTAINER" 2>/dev/null || echo "")
-  [ -n "$AGENT_IP" ] && break
-  sleep 1
-done
-NET_CIDR=$(docker network inspect -f '{{`{{range .IPAM.Config}}{{.Subnet}}{{end}}`}}' "$AGENT_NET" 2>/dev/null || echo "")
-if [ -n "$AGENT_IP" ] && [ -n "$NET_CIDR" ]; then
-  iptables -C DOCKER-USER -s "$AGENT_IP" -j DROP 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -j DROP
-  iptables -C DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -d "$NET_CIDR" -j RETURN
-  iptables -C DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-  # Allow DNS (Docker embedded resolver forwards to VPC resolver outside the subnet)
-  iptables -C DOCKER-USER -s "$AGENT_IP" -p udp --dport 53 -j RETURN 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -p udp --dport 53 -j RETURN
-  iptables -C DOCKER-USER -s "$AGENT_IP" -p tcp --dport 53 -j RETURN 2>/dev/null || \
-    iptables -I DOCKER-USER -s "$AGENT_IP" -p tcp --dport 53 -j RETURN
-  echo "Egress iptables: DROP rules applied for $AGENT_NAME ($AGENT_IP)"
-else
-  echo "ERROR: Could not apply egress iptables rules — container IP ($AGENT_IP) or subnet ($NET_CIDR) not found"
-  exit 1
-fi
-
-# Reconnect router to agent network (lost on container restart) — after iptables to minimize enforcement gap
-if docker inspect conga-router >/dev/null 2>&1; then
-  docker network connect "$AGENT_NET" conga-router 2>/dev/null || true
-fi
+echo "Agent container restarted (egress iptables cycled via the systemd unit)"
 
 echo "Egress policy deployed for $AGENT_NAME (mode=$EGRESS_MODE)"

@@ -37,6 +37,8 @@ rm -f "/opt/conga/config/${CONTAINER_ID}-agent-managed-custom.json.sha256"
 rm -f "/opt/conga/config/egress-$CONTAINER_ID.yaml"
 rm -f "/opt/conga/config/egress-$CONTAINER_ID.mode"
 rm -f "/opt/conga/config/egress-$CONTAINER_ID.manifest.json"
+# Per-agent reserved-key guard script (managed-host engine, B-3 PreStart).
+rm -f "/opt/conga/bin/reserved-key-guard-$CONTAINER_ID.sh"
 
 # Remove agent from routing.json
 if [ -f /opt/conga/config/routing.json ]; then

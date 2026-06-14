@@ -236,6 +236,136 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   (21 pkgs) green. **Next: increment B — the production swap** (network `--subnet`/`--ip`, replace
   refresh-user.sh's bash unit with the Go supervisor, deploy the guard, live-verify on a throwaway).
 
+- **2026-06-13** — **Increment B split into 3 live-verified steps** (operator decision: not a big-bang
+  B1–B5; converge the agent container to `--env-file` when the Go RunCmd lands in step B-2). Grounding
+  the production swap surfaced that "step 1 = small bash change" understated it — determinism is
+  duplicated across `refresh-user.sh`, `deploy-egress.sh`, `add-user.sh`, `add-team.sh`, and most of it
+  gets rewritten in Go in step B-2. So **B-1 was scoped tightly to `refresh-user.sh` + its Go wiring** —
+  the primary agent lifecycle path (provision→refresh, refresh, reboot via the unit's `ExecStartPost`).
+  **B-1 implemented, code-complete + unit-verified:**
+  - **Mod** `pkg/provider/awsprovider/provider.go`: `RefreshAgent` computes
+    `managedhost.PlanAgentNetwork(agent.GatewayPort, common.BaseGatewayPort)` + `iptables.AddRulesCmd`/
+    `RemoveRulesCmd` and threads `{SubnetCIDR, GatewayIP, AgentIP, IptablesAddCmd, IptablesRemoveCmd}`
+    into the refresh template (added `iptables` + `managedhost` imports).
+  - **Mod** `scripts/refresh-user.sh.tmpl`: ExecStart binds `--ip {{.AgentIP}}`; unit
+    `ExecStartPost`/`ExecStopPost` are the deterministic Go-generated `/bin/bash -c '<AddRulesCmd>'`/
+    `'<RemoveRulesCmd>'` (retiring the two 10-retry `docker inspect` blocks); the network create becomes
+    a subnet-migration block (recreate with `--subnet/--gateway` on mismatch — `systemctl stop` first so
+    `Restart=always` can't race the `network rm`; steady-state refresh is a no-op → no egress gap); the
+    inline post-restart iptables loop is now the deterministic one-liner.
+  - **Mod** `scripts/scripts_test.go`: `refreshUserData` helper renders through the **real**
+    `PlanAgentNetwork`/`AddRulesCmd`/`RemoveRulesCmd`; asserts `--ip 10.99.2.2`, subnet create, the
+    deterministic DROP rule, and the **absence** of the discovery loop (`for i in $(seq 1 10)` +
+    `NetworkSettings.Networks`).
+  - **Collision-safety reasoning (why no proxy `--ip` pin needed this step):** the agent always binds
+    explicit `--ip .2`; the egress proxy is only ever (re)created by `deploy-egress` *after* the agent is
+    up (RefreshAgent step 4), so it takes `.3`; on reboot the proxy (`--restart always`, not recreated)
+    keeps its IP — no race for `.2`. So `add-user`/`add-team`/`deploy-egress` are untouched this step.
+  - **DNS equivalence confirmed safe:** the Go `AddRulesCmd` omits the bash's explicit port-53 RETURN
+    rules, but the **remote provider runs this exact rule set in production** (`remoteprovider`
+    `addEgressIptablesRules` → `iptables.AddRules`) — the embedded resolver is loopback `127.0.0.11`,
+    never traversing DOCKER-USER. B-1.5 live-verify still checks DNS+egress explicitly.
+  - build/vet/gofmt + `go test ./...` green; rendered unit eyeballed (well-formed, literal IPs, correct
+    `/bin/bash -c` single-quoting).
+
+- **2026-06-13** — **B-1.5 live-verified on a throwaway (`b1test`, no release).** Built branch
+  `./bin/conga`, `admin add-user b1test` (gateway-only, port 18796 → subnet idx 7) on the live fleet.
+  Host (SSM `i-024bf3a55563f9e88`): container `--ip 10.99.7.2`, network `10.99.7.0/24 gw=10.99.7.1`,
+  unit `ExecStart` binds the static IP, `ExecStartPost`/`ExecStopPost` carry the deterministic Go
+  iptables (literal IP — no discovery loop, residue count 0), unit **enabled+active**. **Functional
+  egress proof:** DNS resolves (`api.anthropic.com`→`2607:6bc0::10`); proxied request connects
+  (`PROXY OK 401`); **direct non-proxy egress BLOCKED by the DROP rule** (`DIRECT BLOCKED (timeout)`).
+  The throwaway provision exercised the subnet-migration path end-to-end (add-user auto-subnet →
+  ProvisionAgent→RefreshAgent migration to 10.99.7.x). Operator opted **not** to also migrate a real
+  agent (`aaron`) this pass. Torn down clean (roster back to 6; swept data/config + 2 orphan DNS RETURN
+  rules). **B-2 cleanup note logged:** `deploy-egress.sh` still adds port-53 DNS RETURN rules that
+  `RemoveRulesCmd` doesn't clean (harmless orphans after teardown — the IP is gone); reconcile when
+  `deploy-egress`'s discovery-loop iptables is retired in B-2. **Step B-1 complete. Next: B-2** (replace
+  the bash unit-gen with the Go `systemdSupervisor`, converge to `--env-file`).
+
+- **2026-06-13** — **Step B-2 core implemented: bash unit-gen replaced by the Go systemd engine
+  (audit #8); code-complete + unit-verified.** `refresh-user.sh.tmpl` **deleted** — `RefreshAgent`
+  step 2 now builds the agent's docker-run command + systemd unit entirely in Go and applies them via
+  the `ssmTransport`. New/changed:
+  - **New** `pkg/provider/managedhost/container.go` — `AgentContainer` (the shared container-arg
+    builder the spec called for) → `Args()` argv + `SystemdExecStart(argv)`, which double-quotes any
+    whitespace-bearing arg. That's the load-bearing detail: the `NODE_OPTIONS=… --require …` value must
+    be one systemd arg or systemd would split it and docker would see a stray `--require` flag (the
+    exact thing the old bash unit's `NODE_OPTIONS="…"` quoting handled). Secrets travel via
+    **`--env-file`** (the operator's B-2 convergence decision), never inline `-e KEY=VALUE` (#9627).
+  - **New** `pkg/provider/awsprovider/engine.go` — pure `buildAgentServiceSpec(agent, image, region)`
+    assembles the `ServiceSpec` (After/Requires, PreStart=[pre-start.sh, `-docker rm -f`,
+    `-…plugins install @openclaw/slack`], ExecStart via the builder, PostStart/PostStop = the B-1
+    deterministic iptables, ExecStop, LogTarget, Restart=always/10, **no EnvironmentFile**);
+    `defineAndStartAgentService` fetches the image (SSM `/conga/config/image`), runs the Go
+    network-migration command (same recreate-on-subnet-mismatch logic as B-1, now in Go), then
+    `systemdSupervisor.DefineService` (write + daemon-reload + enable) + `Restart`.
+  - **Mod** `pkg/provider/awsprovider/provider.go` — `RefreshAgent` step 2 calls
+    `defineAndStartAgentService` (was: render+exec `RefreshUserScript`); dropped the now-unused
+    `iptables`/`managedhost` imports + stale comments.
+  - **Mod** `pkg/provider/awsprovider/transport.go` — `ssmTransport.RunCommand` ceiling 30s→**120s**:
+    `systemctl restart` blocks on the unit's plugin-install ExecStartPre, which runs full npm install
+    (~30-60s) on a fresh agent's empty data dir. The timeout is a completion ceiling (fast commands
+    still return immediately) and the payload stays a tiny command string, so SSM discipline holds.
+  - **Mod** `pkg/provider/managedhost/supervisor.go` — added exported `RenderSystemdUnit(spec)` (wraps
+    the backend's RenderUnit) for equivalence testing + future effective-config views.
+  - **Deleted** `scripts/refresh-user.sh.tmpl` + `RefreshUserScript` embed + the scripts_test refs;
+    `provider_test.go` step-2 snippet updated. **New** `engine_test.go` unit-equivalence test asserts
+    every directive the bash unit carried + the B-1 determinism, and the **absence** of
+    `EnvironmentFile=`, inline secrets, the `seq 1 10` discovery loop, `NetworkSettings.Networks`,
+    `sed -i`, and `docker network connect`. `container_test.go` covers the builder + the NODE_OPTIONS
+    quoting hazard.
+  - build/vet/gofmt + `go test ./...` green; rendered unit eyeballed — faithful equivalent of the
+    retired bash unit with the `--env-file` convergence.
+  - **Remaining in B-2:** `deploy-egress.sh` reconciliation (drop the dead `docker network connect
+    conga-router`; drop the now-dead `sed -i` unit injection — safely skipped against the Go unit since
+    its `grep -q HTTPS_PROXY` guard matches; make its iptables deterministic to stop orphaning the
+    port-53 rules). Non-blocking for the B-2 live verify (the sed is a no-op against the Go unit).
+    **Next gate: B-2 live verify on a throwaway** (Go unit on host, `--env-file`, deterministic egress,
+    enabled+running, DNS+egress functional, direct egress blocked), release-gated like prior slices.
+
+- **2026-06-13** — **B-2 core live-verified on a throwaway (`b2test`, no release).** Provisioned
+  `b2test` (port 18796 → 10.99.7.2) with the rebuilt branch binary. The deployed
+  `/etc/systemd/system/conga-b2test.service` is **exactly** the Go-built unit — `EnvironmentFile=`
+  count 0, `--env-file` present (count 1), `--ip 10.99.7.2`, `-p 127.0.0.1:18796:18789`, egress proxy
+  env + the double-quoted `NODE_OPTIONS`, deterministic `ExecStartPost`/`StopPost` iptables; container
+  running on 10.99.7.2; unit enabled+active. refresh-user.sh is gone, so the unit could only have come
+  from the Go systemdSupervisor — the swap is confirmed on a real host. Functional egress proof
+  unchanged from B-1.5: DNS resolves, proxied egress connects (`PROXY OK 401`), direct egress BLOCKED.
+  Torn down clean (roster back to 6; data/config/orphan-iptables swept). **Step B-2 core complete.**
+  Remaining: B2.4 `deploy-egress.sh` reconciliation (dead router-connect + dead sed + deterministic
+  iptables) — non-blocking polish; then Step B-3 (PreStart reserved-key guard).
+
+- **2026-06-13** — **B2.4 + B-3 implemented & live-verified; a real AWS DNS regression caught and
+  fixed.**
+  - **B2.4 (`deploy-egress.sh`):** removed the pre-restart iptables discovery/removal, both `sed -i`
+    unit injections (kept the unit-exists check), the post-restart 10-retry iptables block, the dead
+    `docker network connect conga-router`, and the unused `AGENT_CONTAINER`. Egress is now owned by the
+    Go unit's deterministic `ExecStartPost`/`ExecStopPost`; deploy-egress recreates the proxy +
+    `systemctl restart`s the agent, which cycles the rules. Test renamed to
+    `TestDeployEgressScriptDelegatesEgressToUnit` (asserts restart + absence of the old machinery).
+  - **B-3 (reserved-key guard):** `defineAndStartAgentService` PutFiles the generated guard
+    (`managedhost.ReservedKeyGuardScript`, 0755) and wires it as the 2nd PreStart hook (after
+    `pre-start.sh` syncs includes, before container create), fail-closed (no leading `-`).
+    `remove-agent.sh.tmpl` now removes the per-agent guard script too. `engine_test.go` asserts the
+    order + fail-closed.
+  - **DNS regression (the important catch):** the throwaway came up with exactly the 3 `AddRulesCmd`
+    rules and **DNS failed** — Docker's embedded resolver forwards to the VPC resolver *outside* the
+    per-agent subnet, so that query (sourced from the container IP to a non-subnet addr) hit the DROP.
+    The old deploy-egress discovery loop had always silently added the port-53 RETURN rules; b1/b2 only
+    passed because of it. Removing deploy-egress's iptables exposed the gap. **Fix:** added udp/tcp
+    `--dport 53 -j RETURN` to the shared `iptables` rule set (`egressRuleSpecs` →
+    `AddRulesCmd`/`RemoveRulesCmd`/`CheckRulesCmd`); the unit's `ExecStartPost` now supplies DNS
+    deterministically and the `RemoveRulesCmd` symmetry retires the B-1.5 orphan-DNS rules. This
+    corrects the B-1.5 README note's premise: the explicit DNS rules are **required** on AWS (not
+    legacy). `rules_test.go` updated (5 rules; DROP first/bottom).
+  - **Live verify (throwaway `b3test`):** guard deployed 0755 + 2nd PreStart; after the fix
+    DOCKER-USER = 5 rules in order and **DNS resolves**; the deployed guard exits 1 + FATAL on an
+    injected `{"channels":…}`, exits 0 + WARN on a JSON5 comment, exit 0 on `{}`. Torn down clean —
+    **iptables orphan-free** (the new `RemoveRulesCmd` covers DNS). build/vet/gofmt + `go test ./...`
+    green. **Slices 4+3 production swap (B-1, B-2, B2.4, B-3) complete.** Optional remaining: B5
+    (slim the periodic integrity backstop). Then slice 5 (boot reduction) / slice 6 (remote systemd).
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

@@ -70,6 +70,13 @@ type systemdSupervisor struct{}
 // NewSystemdSupervisor returns the systemd HostSupervisor backend.
 func NewSystemdSupervisor() HostSupervisor { return &systemdSupervisor{} }
 
+// RenderSystemdUnit renders a ServiceSpec to systemd unit text without a host or
+// Transport. Exported so callers can assert the exact unit a spec produces (e.g.
+// equivalence against the bash unit it replaced) and for effective-config views.
+func RenderSystemdUnit(spec ServiceSpec) string {
+	return (&systemdSupervisor{}).RenderUnit(spec)
+}
+
 func (s *systemdSupervisor) unitPath(name string) string {
 	return fmt.Sprintf("%s/%s.service", systemdUnitDir, name)
 }
