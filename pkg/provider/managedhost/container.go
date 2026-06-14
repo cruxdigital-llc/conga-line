@@ -84,6 +84,13 @@ func (c AgentContainer) Args() []string {
 // "ExecStart="). systemd splits an unquoted value on whitespace, so any element
 // containing whitespace (e.g. the NODE_OPTIONS value with its --require suffix)
 // is wrapped in double quotes — systemd treats a double-quoted run as one arg.
+//
+// PRECONDITION: argv elements must be free of systemd-significant metacharacters
+// other than spaces — specifically no embedded double quote ("), backslash,
+// percent specifier (%), or `$`/`${}` expansion. This holds for every element
+// AgentContainer.Args() produces (fixed flags, a validated IP/CIDR, fixed paths,
+// the bounded NODE_OPTIONS value). This helper only quotes spaces; it does NOT
+// escape those metacharacters, so do not feed it user-controlled values.
 func SystemdExecStart(argv []string) string {
 	parts := make([]string, len(argv))
 	for i, a := range argv {

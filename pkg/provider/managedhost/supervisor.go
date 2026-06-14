@@ -16,6 +16,13 @@ var ErrUnsupportedSupervisor = errors.New("host supervisor backend not implement
 type RestartPolicy struct {
 	Mode     string // "always" | "on-failure" (default "always")
 	DelaySec int    // seconds between restarts (0 = backend default)
+	// StartLimitIntervalSec + StartLimitBurst bound the restart loop: more than
+	// Burst starts within Interval seconds drives the unit to a terminal failed
+	// state instead of restarting forever. Both must be > 0 to take effect; 0
+	// leaves the backend default (unbounded). A backend maps these to its native
+	// rate-limit (systemd StartLimitIntervalSec/StartLimitBurst in [Unit]).
+	StartLimitIntervalSec int
+	StartLimitBurst       int
 }
 
 // LifecycleHooks are commands run around the main process. The engine populates
@@ -93,6 +100,14 @@ func (s *systemdSupervisor) RenderUnit(spec ServiceSpec) string {
 	}
 	if len(spec.Requires) > 0 {
 		fmt.Fprintf(&b, "Requires=%s\n", strings.Join(spec.Requires, " "))
+	}
+	// Start-rate limit lives in [Unit]: exceeding it drives the unit to `failed`
+	// rather than looping (e.g. a persistent fail-closed-guard rejection).
+	if spec.Restart.StartLimitIntervalSec > 0 {
+		fmt.Fprintf(&b, "StartLimitIntervalSec=%d\n", spec.Restart.StartLimitIntervalSec)
+	}
+	if spec.Restart.StartLimitBurst > 0 {
+		fmt.Fprintf(&b, "StartLimitBurst=%d\n", spec.Restart.StartLimitBurst)
 	}
 	b.WriteString("\n[Service]\nType=simple\n")
 	if spec.EnvFile != "" {

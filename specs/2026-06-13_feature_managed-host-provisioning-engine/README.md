@@ -378,6 +378,31 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   **Increment B (slices 4+3) complete: B-1, B-2, B2.4, B-3, B5.** Remaining feature work: slice 5
   (boot-script reduction — highest risk, spike first) and slice 6 (remote systemd adoption).
 
+- **2026-06-13** — **PR #67 opened + agent code-review pass; findings #1–#8 addressed.** Spawned the
+  `code-reviewer` agent on the merge-base diff (no blocking issues; core security properties confirmed:
+  secrets-via-`--env-file`, NODE_OPTIONS quoting, iptables DROP-at-bottom + symmetry, guard fail-closed
+  + ordering, partial-failure-leaves-stopped, SSM timeouts, loopback topology). Fixed:
+  - **#1** `agentNetworkMigrationCmd` now flushes DOCKER-USER rules keyed on the **old** container IP
+    before teardown — the auto-subnet→static migration of the 6 existing agents would otherwise orphan
+    rules on the old auto-assigned IP (the new unit's ExecStopPost only knows the static IP). The
+    throwaway verifies never hit this (born static); the flush is a no-op on fresh provision.
+  - **#2** dropped `2>/dev/null` on the migration's `docker network rm` so a "network has active
+    endpoints" failure surfaces in the SSM output.
+  - **#3** added `StartLimitIntervalSec=300`/`StartLimitBurst=5` to the unit so a fail-closed-guard
+    rejection lands in `failed` after 5 attempts instead of an indefinite 10s crash-loop (security
+    property unchanged; failure made legible). New `RestartPolicy` fields + RenderUnit `[Unit]` emit.
+  - **#4/#5** precondition comments on `SystemdExecStart` (metacharacter-free argv) and the
+    `/bin/bash -c '<iptables>'` hooks (validated IP/CIDR → single-quote-safe).
+  - **#6** clarified `AgentNetwork.ProxyIP` is an advisory reservation (proxy reached by Docker DNS, not
+    a pinned `--ip`).
+  - **#7** `agentNetworkMigrationCmd` takes `agentName` and builds both container + proxy names from it
+    (no `containerName[len("conga-"):]` prefix-slicing).
+  - **#8** `RemoveAgent` (Go) now reconciles routing.json (`regenerateRoutingOnInstance` +
+    `restartRouterOnInstance`) after deleting the SSM param; removed the dead bash `jq` from
+    `remove-agent.sh` (it matched the stale bridge-URL form, never the loopback routing → silent no-op).
+  Tests added: `TestAgentNetworkMigrationCmd` (flush + stderr + names) + StartLimit assertion in the
+  unit-equivalence test. build/vet/gofmt + `go test ./...` green.
+
 ## Spec Review & Standards Gate (pre-implementation)
 
 ### Persona Review

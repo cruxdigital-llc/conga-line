@@ -10,8 +10,14 @@ import "fmt"
 type AgentNetwork struct {
 	SubnetCIDR string // e.g. "10.99.3.0/24"
 	GatewayIP  string // .1 — the Docker bridge gateway
-	AgentIP    string // .2 — the agent container; the egress iptables DROP source
-	ProxyIP    string // .3 — the per-agent Envoy egress proxy
+	AgentIP    string // .2 — the agent container; the egress iptables DROP source (pinned via `docker run --ip`)
+	// ProxyIP (.3) is an ADVISORY reservation, not an enforced assignment: the
+	// egress proxy is started with --network (no --ip) and is reached by the agent
+	// through Docker DNS (conga-egress-<name>:3128), so it auto-assigns from the
+	// subnet — landing on .3 in practice because it's (re)created after the agent
+	// has already claimed .2. Reserved here to document the scheme and keep .3 free
+	// should a future change pin it.
+	ProxyIP string // .3 — reserved for the per-agent Envoy egress proxy (advisory)
 }
 
 // PlanAgentNetwork derives a collision-free per-agent network from the agent's

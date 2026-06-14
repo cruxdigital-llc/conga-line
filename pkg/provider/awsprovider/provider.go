@@ -304,6 +304,18 @@ func (p *AWSProvider) RemoveAgent(ctx context.Context, name string, deleteSecret
 		cleanupErrs = append(cleanupErrs, fmt.Sprintf("dashboard update: %v", err))
 	}
 
+	// Reconcile routing.json now that the agent's SSM param is deleted: the engine
+	// regenerates it (loopback form) from the remaining agents, dropping the removed
+	// agent's entry, then restarts the router. The removal script no longer edits
+	// routing.json itself — its jq used the stale bridge-URL form, which never
+	// matched the loopback routing, so the entry was left dangling until some other
+	// refresh happened to rebuild it. Non-fatal (mirrors RefreshAgent step 3).
+	if err := p.regenerateRoutingOnInstance(ctx, instanceID); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Sprintf("routing reconcile: %v", err))
+	} else if err := p.restartRouterOnInstance(ctx, instanceID); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Sprintf("router restart: %v", err))
+	}
+
 	if len(cleanupErrs) > 0 {
 		fmt.Fprintf(os.Stderr, "Agent %s removed, but %d cleanup operation(s) failed:\n", name, len(cleanupErrs))
 		for _, e := range cleanupErrs {

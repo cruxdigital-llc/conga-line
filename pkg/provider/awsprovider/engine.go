@@ -57,7 +57,7 @@ func (p *AWSProvider) defineAndStartAgentService(ctx context.Context, instanceID
 	//    stops the unit first so Restart=always can't race the network rm, then
 	//    recreates the net + frees the proxy (DeployEgress re-creates it). On a
 	//    steady-state refresh it's a no-op, so there's no egress gap.
-	if _, err := t.RunCommand(ctx, agentNetworkMigrationCmd(containerName, net)); err != nil {
+	if _, err := t.RunCommand(ctx, agentNetworkMigrationCmd(agent.Name, net)); err != nil {
 		return fmt.Errorf("failed to reconcile network for %s: %w", agent.Name, err)
 	}
 
@@ -127,7 +127,13 @@ func buildAgentServiceSpec(agent provider.AgentConfig, image, region string) (ma
 		// (in RunCmd), not via a systemd EnvironmentFile= directive.
 		After:    []string{"docker.service", "conga-router.service", "conga-image-refresh.service"},
 		Requires: []string{"docker.service"},
-		Restart:  managedhost.RestartPolicy{Mode: "always", DelaySec: 10},
+		// Restart=always for normal crashes, but bounded: if the fail-closed
+		// reserved-key guard (or any persistent start failure) keeps the unit from
+		// starting, the start-limit lands it in `failed` after 5 attempts in 5min
+		// instead of an indefinite 10s crash-loop — an operator-visible terminal
+		// state. The security property holds either way (the agent never starts
+		// unfiltered); this just makes the failure legible.
+		Restart: managedhost.RestartPolicy{Mode: "always", DelaySec: 10, StartLimitIntervalSec: 300, StartLimitBurst: 5},
 		Hooks: managedhost.LifecycleHooks{
 			PreStart: []string{
 				// Behavior-file sync (host helper). Must succeed before start. Runs
@@ -149,6 +155,11 @@ func buildAgentServiceSpec(agent provider.AgentConfig, image, region string) (ma
 			// applied by systemd on every (re)start incl. reboot, before the agent
 			// does any work. Best-effort so a transient iptables hiccup can't wedge
 			// the unit; a re-run / the periodic backstop re-converge.
+			//
+			// Single-quote safety: addCmd/removeCmd come from iptables.{Add,Remove}-
+			// RulesCmd, built only from a validated IP + CIDR + fixed flags — they
+			// contain no single quote (and no `$`), so wrapping in '…' is safe. Do
+			// not feed unvalidated/user-controlled strings into these hooks.
 			PostStart: []string{fmt.Sprintf("-/bin/bash -c '%s'", addCmd)},
 			PostStop:  []string{fmt.Sprintf("-/bin/bash -c '%s'", removeCmd)},
 		},
@@ -160,19 +171,31 @@ func buildAgentServiceSpec(agent provider.AgentConfig, image, region string) (ma
 // agentNetworkMigrationCmd returns a short shell command that ensures the
 // per-agent Docker network exists with the deterministic subnet, recreating it
 // (and detaching the agent + egress proxy first) only when the current subnet
-// doesn't match. The `{{range .IPAM.Config}}…` is a docker --format template, not
-// a Go template — these are literal braces in the emitted command.
-func agentNetworkMigrationCmd(containerName string, net managedhost.AgentNetwork) string {
-	proxyName := "conga-egress-" + containerName[len("conga-"):]
+// doesn't match. The `{{range …}}` are docker --format templates, not Go
+// templates — literal braces in the emitted command.
+//
+// Before tearing the old network down it flushes any DOCKER-USER rules keyed on
+// the OLD container IP: on the auto-subnet→static migration the old rules are
+// keyed on an auto-assigned IP that the new unit's ExecStopPost (which only knows
+// the new static IP) would never remove, leaving inert-but-accumulating cruft.
+// On a fresh provision the agent container doesn't exist yet, so the flush is a
+// no-op. `docker network rm` keeps its stderr (no 2>/dev/null) so a "network has
+// active endpoints" failure is visible in the SSM output rather than masked by
+// the subsequent `docker network create` failing opaquely.
+func agentNetworkMigrationCmd(agentName string, net managedhost.AgentNetwork) string {
+	containerName := "conga-" + agentName
+	proxyName := "conga-egress-" + agentName
 	return fmt.Sprintf(
 		`NET=%[1]q; DESIRED=%[2]q; `+
 			`CUR=$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$NET" 2>/dev/null || echo ""); `+
 			`if [ "$CUR" != "$DESIRED" ]; then `+
 			`echo "Migrating $NET subnet '${CUR:-<none>}' -> '$DESIRED' (deterministic static-IP egress)"; `+
+			`OLD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' %[1]q 2>/dev/null || echo ""); `+
+			`if [ -n "$OLD_IP" ]; then iptables -S DOCKER-USER 2>/dev/null | grep -- "-s $OLD_IP/" | sed 's/^-A /-D /' | while read -r r; do iptables $r 2>/dev/null || true; done; fi; `+
 			`systemctl stop %[1]q 2>/dev/null || true; `+
 			`docker rm -f %[1]q 2>/dev/null || true; `+
 			`docker rm -f %[3]q 2>/dev/null || true; `+
-			`docker network rm "$NET" 2>/dev/null || true; `+
+			`docker network rm "$NET" || true; `+
 			`docker network create --driver bridge --subnet "$DESIRED" --gateway %[4]q "$NET"; `+
 			`fi`,
 		containerName, net.SubnetCIDR, proxyName, net.GatewayIP)
