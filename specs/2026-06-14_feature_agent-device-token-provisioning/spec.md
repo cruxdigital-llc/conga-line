@@ -2,7 +2,7 @@
 
 - **Created**: 2026-06-14
 - **Status**: Specified (pre-implementation) — **mechanism spike required before build (see §3)**
-- **Reads first**: `requirements.md`, `plan.md`, `audit/openclaw-channel-subagent-spawn-regression.md`
+- **Reads first**: `requirements.md`, `plan.md`, `./root-cause-analysis.md`
 - **Restores**: `specs/2026-05-22_feature_delegation-routing/` for chat channels
 
 ## 1. Summary

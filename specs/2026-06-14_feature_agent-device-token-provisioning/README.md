@@ -7,7 +7,7 @@
 - **Status**: Planning (requirements + high-level plan)
 - **Spec dir**: `specs/2026-06-14_feature_agent-device-token-provisioning/`
 - **Parent / restores**: `specs/2026-05-22_feature_delegation-routing/` (the subagents/delegation feature this re-enables for chat channels)
-- **Origin analysis**: `audit/openclaw-channel-subagent-spawn-regression.md`
+- **Origin analysis**: `./root-cause-analysis.md`
 
 ## One-line
 
@@ -75,7 +75,7 @@ of approved roles and scopes"*) — we should adopt it.
 ## Session Log
 
 - **2026-06-14** — `/glados:plan-feature`. Feature created from the channel-subagent-spawn investigation
-  (audit/openclaw-channel-subagent-spawn-regression.md). Confirmed root cause = OpenClaw security fix
+  (./root-cause-analysis.md). Confirmed root cause = OpenClaw security fix
   #72418 (not a regression); Conga gap = no device pairing. Personas: Architect, QA, PM + Security
   (cross-cutting, no dedicated persona file). Drafted requirements.md + plan.md. Next:
   `/glados:spec-feature` — the spec must first **verify the exact pairing/token mechanism against the

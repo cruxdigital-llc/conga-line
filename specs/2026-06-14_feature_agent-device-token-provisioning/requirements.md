@@ -3,7 +3,7 @@
 - **Created**: 2026-06-14
 - **Owner**: Aaron Stone
 - **Status**: Planning
-- **Origin**: `audit/openclaw-channel-subagent-spawn-regression.md`; restores `specs/2026-05-22_feature_delegation-routing/`
+- **Origin**: `./root-cause-analysis.md`; restores `specs/2026-05-22_feature_delegation-routing/`
 
 ## Goal
 
