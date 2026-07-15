@@ -1,6 +1,6 @@
 <!--
 GLaDOS-MANAGED DOCUMENT
-Last Updated: 2026-05-27
+Last Updated: 2026-07-15
 To modify: Edit directly. Add new entries to "Active workarounds" as
 upstream bugs surface. Move entries to "Resolved upstream" when the fix
 ships in a version we've pinned to.
@@ -107,6 +107,32 @@ Until that spec ships, the Hermes side of the role catalog is intentionally Anth
 - Or per-agent in `agents/<name>/agent.yaml` once that overlay supports the field.
 
 **Watch:** Anthropic monthly spend on team-agent accounts. If the marginal cost is acceptable (thinking does measurably improve Opus output), do nothing; if not, apply the workaround above.
+
+---
+
+### #43767 — Heartbeat ignores `lightContext`, reloads full context every wake (cost)
+
+**Upstream:** [openclaw/openclaw#43767](https://github.com/openclaw/openclaw/issues/43767) — open. Related: [#61395](https://github.com/openclaw/openclaw/issues/61395) (`lightContext` also fails to filter workspace files).
+
+**Symptom.** With `agents.defaults.heartbeat.lightContext: true` set (expecting a cheap keep-alive), the heartbeat still loads the full agent context + accumulated conversation history on every wake. On a 55-minute interval that's ~26 full-context turns/day, 24/7. Each wake re-caches a large stable prefix that expires before the next wake (default 5-minute cache TTL), so the cost is almost entirely `input_cache_write` with near-zero `input_cache_read`.
+
+Real example (2026-07): a team agent's standup poster ran on the heartbeat and cost **~$24/day (~$700/mo)** — ~96% of the org's Anthropic bill — even on days with zero channel messages, to post a message a few times a week. Full investigation: [agent-cost-and-runtime-config.md](./agent-cost-and-runtime-config.md).
+
+**Conga workaround.** Don't use the heartbeat as a scheduler — use cron. For the affected team agent:
+1. Created a standup cron job via `openclaw cron create`, delivered via announce to the team's channel — a **command** payload that deterministically emits the templated message (only the date is computed). Not an agent-turn payload: that transcribes the fixed template and can corrupt it (it dropped a mention's `@` in testing).
+2. Emptied the agent's `HEARTBEAT.md` to comments-only so the heartbeat skips its API call (`reason=empty-heartbeat-file`).
+3. Added a "Scheduling recurring work" section to `agents/_defaults/openclaw/{user,team}/AGENTS.md` steering agents to prefer cron for scheduled tasks (the `cron` tool is in the `coding` profile our agents run).
+
+If a heartbeat is genuinely needed, do **not** rely on `lightContext` — use `isolatedSession: true` + `activeHours` + a longer `every`.
+
+**Validation.**
+- `openclaw cron list` shows the scheduled job with the expected next-run.
+- Per-API-key Anthropic usage shows the `input_cache_write` floor dropping after the heartbeat is neutered.
+- Agent `HEARTBEAT.md` is comments-only (or absent).
+
+**Escape conditions.** cron is the correct tool for *scheduled* work regardless of the bug, so this is effectively permanent for scheduled tasks. If a heartbeat-based task is ever wanted again, only rely on `lightContext` once a pinned version fixes filtering.
+
+**Note — non-declarative state.** The cron job and the emptied `HEARTBEAT.md` live only in the agent's data-dir/workspace, not in the repo. They survive `conga refresh` but are invisible to version control — see the runtime-state boundary in [agent-cost-and-runtime-config.md](./agent-cost-and-runtime-config.md).
 
 ---
 

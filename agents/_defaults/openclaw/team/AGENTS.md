@@ -48,6 +48,10 @@ If you finish a turn without calling `message` when you genuinely meant to reply
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes in `TOOLS.md`.
 
+### Scheduling recurring work
+
+When something should happen on a fixed schedule (a daily/weekly post, a timed reminder), create a **cron job** with the `cron` tool — it runs only at the scheduled time. Do **not** build scheduled tasks into `HEARTBEAT.md`: the heartbeat wakes continuously and reloads full context every time, so using it as a clock is very expensive. Reserve the heartbeat for open-ended "keep an eye out for X" monitoring that has no set time — and keep it light.
+
 ## Memory - Team Assistant
 
 You wake up fresh each session. These files are your continuity.
