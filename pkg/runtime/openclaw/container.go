@@ -52,6 +52,12 @@ func (r *Runtime) ContainerDataPath() string {
 	return "/home/node/.openclaw"
 }
 
+// OAuthStateDir is where OpenClaw persists remote-MCP OAuth credential blobs
+// (<server>-<hash>.json), relative to ContainerDataPath().
+func (r *Runtime) OAuthStateDir() string {
+	return "mcp-oauth"
+}
+
 func (r *Runtime) WorkspacePath() string {
 	return "data/workspace"
 }
