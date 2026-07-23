@@ -450,6 +450,20 @@ func (p *AWSProvider) saveAgentToSSM(ctx context.Context, a provider.AgentConfig
 	return awsutil.PutParameter(ctx, p.clients.SSM, paramName, string(agentConfigJSON))
 }
 
+// mcpOAuthExistsMarker is echoed by the on-instance existence probe only when the
+// target file is present.
+const mcpOAuthExistsMarker = "__conga_mcp_oauth_exists__"
+
+// mcpFileExists interprets the result of a `test -f … && printf MARKER` SSM probe.
+// It deliberately reads stdout, not the error: awsutil.RunCommand returns
+// (result, nil) for both "Success" and "Failed" invocation statuses, so a missing
+// file (non-zero exit) does not surface as a Go error. Reading err instead of
+// stdout here would make the probe always report "present", silently disabling
+// restore on AWS.
+func mcpFileExists(res *awsutil.RunCommandResult) bool {
+	return res != nil && strings.Contains(res.Stdout, mcpOAuthExistsMarker)
+}
+
 // regenerateAgentConfigOnInstance generates openclaw.json and .env in Go using
 // common.GenerateAgentFiles(), then uploads them to the EC2 instance via SSM.
 // This ensures the same config generation logic as local and remote providers.
@@ -578,8 +592,19 @@ func (p *AWSProvider) regenerateAgentConfigOnInstance(ctx context.Context, insta
 			} else {
 				n, rerr := common.RestoreMCPOAuth(perAgent,
 					func(f string) bool {
-						_, err := p.runOnInstance(ctx, instanceID, fmt.Sprintf("test -f '%s/%s'", targetDir, f), 30*time.Second)
-						return err == nil
+						// Presence must be read from stdout, NOT err: RunCommand
+						// returns (result, nil) for both "Success" and "Failed" SSM
+						// statuses, so a missing file (non-zero exit → "Failed")
+						// still yields err == nil. Echo a marker only when present.
+						res, err := p.runOnInstance(ctx, instanceID,
+							fmt.Sprintf("test -f '%s/%s' && printf '%%s' %s", targetDir, f, mcpOAuthExistsMarker), 30*time.Second)
+						if err != nil {
+							// Couldn't verify (transport error) — assume present so we
+							// never clobber a possibly-authoritative on-disk copy;
+							// best-effort, the next refresh retries.
+							return true
+						}
+						return mcpFileExists(res)
 					},
 					func(f string, d []byte) error {
 						return p.uploadFile(ctx, instanceID, targetDir+"/"+f, d, "0600")
