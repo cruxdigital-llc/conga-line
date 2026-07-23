@@ -62,7 +62,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done. Files are the expected to
 - [x] S7.1 Restart-restore integration tests: `TestMCPOAuthRestoreOnRefresh` (local, PR #77) +
   `TestMCPOAuthRestoreOnRefreshRemote` (SSH/SFTP, PR #78) — restore-into-container, no-env-leak,
   cold-only. AWS is unit/build-only (reuses unit-tested `common.RestoreMCPOAuth`) per `project_no_aws_ci_integration`.
-- [ ] S7.4 `terraform-provider-conga` release (S1/S4/S5 touch `pkg/`) per `reference_provider_release_flow` — **next**.
+- [x] S7.4 Released: congaline **v0.0.32** → `terraform-provider-conga` **v0.1.10** (GoReleaser, on the
+  registry); pin bumped 0.1.9 → 0.1.10 in `terraform/**/main.tf` *(PR #79)*. Per `reference_provider_release_flow`.
 - [ ] Deferred: re-capture on refresh (§4.4 freshness); `ListSecrets` blob-display polish (PR #77 review finding #3).
 
 ---
