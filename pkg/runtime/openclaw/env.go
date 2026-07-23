@@ -39,6 +39,9 @@ func (r *Runtime) GenerateEnvFile(params runtime.EnvParams) []byte {
 	appendEnv("NODE_OPTIONS", "--max-old-space-size=1536")
 
 	for name, value := range params.PerAgent {
+		if runtime.IsMCPOAuthSecret(name) {
+			continue // OAuth blobs are materialized as files, never env vars
+		}
 		appendEnv(runtime.SecretNameToEnvVar(name), value)
 	}
 

@@ -48,6 +48,9 @@ func (r *Runtime) GenerateEnvFile(params runtime.EnvParams) []byte {
 
 	// Per-agent secrets (ANTHROPIC_API_KEY, etc.)
 	for name, value := range params.PerAgent {
+		if runtime.IsMCPOAuthSecret(name) {
+			continue // OAuth blobs are materialized as files, never env vars
+		}
 		appendEnv(runtime.SecretNameToEnvVar(name), value)
 	}
 

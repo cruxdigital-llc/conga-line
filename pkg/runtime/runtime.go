@@ -66,6 +66,14 @@ type Runtime interface {
 	// data directory is mounted.
 	ContainerDataPath() string
 
+	// OAuthStateDir returns the directory, relative to ContainerDataPath(),
+	// where the runtime persists remote-MCP OAuth credential blobs — or "" if
+	// the runtime has no such state. OpenClaw stores one JSON blob per server at
+	// <ContainerDataPath>/mcp-oauth/<server>-<hash>.json; returns "mcp-oauth".
+	// Runtimes without remote-MCP OAuth (e.g. Hermes) return "", and all
+	// capture/restore logic no-ops for them.
+	OAuthStateDir() string
+
 	// WorkspacePath returns the relative path within the data directory
 	// to the agent's workspace (for behavior file deployment).
 	WorkspacePath() string
@@ -195,6 +203,18 @@ type ReadyPhase struct {
 // Example: "anthropic-api-key" -> "ANTHROPIC_API_KEY"
 func SecretNameToEnvVar(name string) string {
 	return strings.NewReplacer("-", "_").Replace(strings.ToUpper(name))
+}
+
+// MCPOAuthSecretPrefix namespaces per-agent secrets that hold a remote-MCP OAuth
+// credential blob (value = the runtime's <server>-<hash>.json verbatim). Secrets
+// under this prefix are materialized as files into the runtime's OAuthStateDir at
+// provision/refresh, NOT injected as environment variables.
+const MCPOAuthSecretPrefix = "mcp-oauth/"
+
+// IsMCPOAuthSecret reports whether a per-agent secret name holds an MCP OAuth
+// blob (and therefore must be excluded from env-file generation).
+func IsMCPOAuthSecret(name string) bool {
+	return strings.HasPrefix(name, MCPOAuthSecretPrefix)
 }
 
 // ResolveRuntime returns the effective runtime name for an agent.

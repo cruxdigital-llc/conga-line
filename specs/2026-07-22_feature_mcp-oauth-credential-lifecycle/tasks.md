@@ -9,15 +9,19 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done. Files are the expected to
 > Shared pure logic landed in a new `internal/mcpoauth` package (URL parse, code normalize, server
 > detect, log scan) — unit-tested and reused by both the CLI and the MCP server.
 
+> **Phase 2 progress (2026-07-23, branch `feat/mcp-oauth-persist-restore`, PR #77):** S1 ✅, S4 ✅
+> (capture, all providers via `conga mcp login`), S5 core ✅ + **local** restore wiring ✅. Prefix const +
+> `IsMCPOAuthSecret` live in `pkg/runtime` (not `pkg/common`) since common→runtime is the import
+> direction. **Remaining:** S5 remote/AWS restore wiring, re-capture on refresh (§4.4), S7 release.
+
 ---
 
-## S1 — `Runtime.OAuthStateDir()` + secret-prefix plumbing  *(DEFERRED → Phase 2; pkg/ → provider release)*
-- [ ] S1.1 Add `OAuthStateDir() string` to the `Runtime` interface (`pkg/runtime/runtime.go`).
-- [ ] S1.2 OpenClaw impl returns `"mcp-oauth"` (`pkg/runtime/openclaw/`); Hermes returns `""` (`pkg/runtime/hermes/`).
-- [ ] S1.3 `mcp-oauth/` secret-name prefix as a shared const (`pkg/common/`); make `SecretNameToEnvVar` /
-  env-file gen **skip** it so a blob can never become an env var. **(Architect impl-gate: audit every
-  `GenerateEnvFile` / `ListSecrets`-consumer.)**
-- [ ] S1.4 Unit tests: `OAuthStateDir()` per runtime; prefix-skip in env-var mapping.
+## S1 — `Runtime.OAuthStateDir()` + secret-prefix plumbing  *(pkg/ → provider release)* ✅
+- [x] S1.1 `OAuthStateDir() string` on the `Runtime` interface (`pkg/runtime/runtime.go`).
+- [x] S1.2 OpenClaw → `"mcp-oauth"`; Hermes → `""`.
+- [x] S1.3 `runtime.MCPOAuthSecretPrefix` + `runtime.IsMCPOAuthSecret`; both runtimes' `GenerateEnvFile`
+  skip the prefix (blob can never become an env var). Placed in `pkg/runtime` (common imports runtime).
+- [x] S1.4 Unit tests: `OAuthStateDir` per runtime; `IsMCPOAuthSecret`; env-file exclusion (blob value absent).
 
 ## S2 — `conga mcp login [server] --agent <name>`  *(CLI + JSON + MCP — Interface Parity MUST)* ✅
 - [x] S2.1 `loginCmd` on existing `mcpCmd` (`internal/cmd/mcp_login.go`); pattern from `secrets.go`.

@@ -32,6 +32,12 @@ func (r *Runtime) ContainerDataPath() string {
 	return "/opt/data"
 }
 
+// OAuthStateDir returns "" — Hermes has no remote-MCP OAuth credential state, so
+// MCP OAuth capture/restore no-ops for it.
+func (r *Runtime) OAuthStateDir() string {
+	return ""
+}
+
 func (r *Runtime) WorkspacePath() string {
 	return "workspace"
 }
