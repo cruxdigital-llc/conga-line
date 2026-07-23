@@ -9,10 +9,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done. Files are the expected to
 > Shared pure logic landed in a new `internal/mcpoauth` package (URL parse, code normalize, server
 > detect, log scan) — unit-tested and reused by both the CLI and the MCP server.
 
-> **Phase 2 progress (2026-07-23, branch `feat/mcp-oauth-persist-restore`, PR #77):** S1 ✅, S4 ✅
-> (capture, all providers via `conga mcp login`), S5 core ✅ + **local** restore wiring ✅. Prefix const +
-> `IsMCPOAuthSecret` live in `pkg/runtime` (not `pkg/common`) since common→runtime is the import
-> direction. **Remaining:** S5 remote/AWS restore wiring, re-capture on refresh (§4.4), S7 release.
+> **Phase 2 COMPLETE (2026-07-23):** S1 ✅, S4 ✅ (capture, all providers), S5 ✅ (cold-only restore on
+> local #77, remote + AWS #78), S7 ✅ (integration tests + release v0.1.10, PR #79). Prefix const +
+> `IsMCPOAuthSecret` live in `pkg/runtime` (common→runtime import direction). Live-verified on AWS
+> `team-b`. **Deferred (optional):** re-capture on refresh (§4.4), `ListSecrets` blob-display
+> polish, GitHub PAT→OAuth migration. Full trace in `README.md`.
 
 ---
 

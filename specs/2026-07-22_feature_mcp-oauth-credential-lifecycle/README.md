@@ -4,8 +4,10 @@
 
 - **Created**: 2026-07-22
 - **Owner**: <operator>
-- **Status**: Planning (requirements + high-level plan)
-- **Branch**: `plan/fleet-mcp-oauth-provisioning` (off `main` @ `03aec90`)
+- **Status**: ✅ **COMPLETE — shipped + released + live-verified** (2026-07-23). congaline `v0.0.32` /
+  `terraform-provider-conga` `v0.1.10` (on the registry). Merged via PRs #74, #75, #77, #78, #79.
+  Phase 1 (detect + re-auth) and Phase 2 (persist + restore, all 3 providers) both done. Optional
+  follow-ups deferred (see bottom).
 - **Spec dir**: `specs/2026-07-22_feature_mcp-oauth-credential-lifecycle/`
 - **Origin**: Live incident on `team-a` (this session). The agent reported "no access to
   Linear". Root cause was **not** the recent WireGuard-VPN-to-DGX-Spark egress change (the operator's
@@ -175,3 +177,75 @@ text + JSON) and `mcp login` (auto-detect + leg-1 + idempotent) confirmed.
 Phase 1 ready to ship (internal-only, no provider release). Next: `/glados:verify-feature` for Phase 1,
 or `/glados:implement-feature` again to build Phase 2 (S1/S4/S5/S7 — persist/restore, which *does* need
 a `terraform-provider-conga` release).
+
+---
+
+## Phase 1 shipped — PR #74 + #75 (2026-07-22)
+
+- **PR #74** — Phase 1 (`conga doctor` + `conga mcp login`, CLI+JSON+MCP) + the new **confidentiality
+  MUST standard** (`product-knowledge/standards/confidentiality.md`, CLAUDE.md, security.md principle).
+  Independent code review: no correctness bugs; fixed a finding-shape Interface-Parity gap (unified the
+  `doctor` finding via `mcpoauth.BuildFinding`) and documented the accepted single-use-auth-code-in-SSM
+  note. Merged (admin, CI green).
+- **PR #75** — repo-wide scrub of client/deployment/person names + the `Owner:` template leak +
+  operator paths, to generic placeholders (`team-a`/`user-a`/`<operator>`), per the new standard.
+  Merged. Tracked follow-up issue #76 for the ~36-file `aaron/zach/nathan` example-name tail.
+
+> **Confidentiality breach + fix (2026-07-22):** real client/agent names
+> leaked into the PR body, commit messages, and committed spec files before the operator caught it.
+> Remediated: branch history rewritten, PR text scrubbed, files scrubbed, and the MUST standard added +
+> saved as a durable feedback memory. All example names in this spec are now placeholders.
+
+## Phase 2 shipped — PR #77 + #78 (2026-07-23)
+
+- **PR #77** — Phase 2 core + **local** wiring: `Runtime.OAuthStateDir()`, `mcp-oauth/` secret prefix +
+  env-file exclusion (S1); `common.CaptureMCPOAuth` wired into `conga mcp login` (S4, all providers);
+  `common.RestoreMCPOAuth` cold-only (S5 core) + local `RefreshAgent` wiring. New integration test
+  `TestMCPOAuthRestoreOnRefresh` (`-tags integration`). Review: clean; confirmed no blob can reach the
+  env file on any provider. **CI caught a real non-root-Linux ownership bug** (blob `0600` unreadable by
+  uid 1000 when the host can't chown) → fixed to `0644`/dir `0755` matching the local provider's
+  container-read data-dir convention.
+- **PR #78** — **remote + AWS** restore wiring (S5): remote over SSH (`test -f` + `ssh.Upload` 0644),
+  AWS over SSM (`test -f` + `uploadFile` 0600, chown→1000 on encrypted EBS). New remote integration test.
+  Review found a **critical AWS bug**: the existence probe read `err`, but `awsutil.RunCommand` returns
+  `(result, nil)` for both Success and Failed SSM statuses → `exists()` always true → AWS restore was a
+  silent no-op. Fixed to read stdout via a marker (`mcpFileExists`) + unit test `TestMCPFileExists`.
+  A second CI round exposed the cold-only test fighting file ownership (opposite between local/remote/
+  cap-dropped container) → rewrote it to prove cold-only by **changing the stored secret** instead of
+  writing the file. CI green; merged.
+
+**Per-provider mode (as-built, resolves spec §7):** the restored blob is `0600` root→uid-1000 on the
+managed hosts (AWS/remote run as root / SSH-root; encrypted EBS) but `0644` on **local** — matching how
+the local provider already writes every container-read data-dir file (`openclaw.json` + the `$include`
+layers are 0644), because a non-root local host can't chown to uid 1000. The blob's confidentiality is
+bounded by the agent's private data dir on local (dev/personal; disk security is the operator's), and by
+Secrets Manager + encrypted EBS on AWS.
+
+## Release — PR #79 (2026-07-23)
+
+congaline tagged **`v0.0.32`** → `terraform-provider-conga` go.mod bumped → CI green → tagged **`v0.1.10`**
+→ GoReleaser published the signed GitHub release → **Terraform Registry has `0.1.10`**. Pin bumped
+`0.1.9 → 0.1.10` in `terraform/environments/production/main.tf` + `terraform/modules/congaline/main.tf`.
+Per `reference_provider_release_flow`.
+
+## Live verification — AWS `team-b` (2026-07-23)
+
+End-to-end recovery test with the freshly-built binary against the real fleet (validates the AWS restore
+path, which has no CI integration test):
+1. **Capture** — `conga mcp login linear --agent team-b` → "backed up 2 MCP OAuth credential(s)";
+   `mcp-oauth/linear-…` + `mcp-oauth/github-…` now in Secrets Manager.
+2. **Simulated loss** — deleted the on-disk `linear` blob (baseline sha256 `fa4cf233…ad37f`).
+3. **Restore** — `conga refresh --agent team-b` re-materialized it from Secrets Manager,
+   **byte-identical** (sha256 matched), `0600` `node`-owned.
+4. **Cold-only** — the present `github` blob was left untouched.
+5. **Health** — clean container startup, no `requires OAuth`, `conga doctor` exit 0.
+
+## Deferred (optional, tracked)
+
+- **Re-capture on refresh** (§4.4 freshness) — capture currently runs on `conga mcp login`; a stored
+  blob can go stale between logins if the provider rotates refresh tokens.
+- **`ListSecrets` blob-display polish** (PR #77 review finding #3) — `mcp-oauth/` secrets show
+  inconsistently across providers (display-only, no leak).
+- **`team-b` GitHub PAT → OAuth migration** (`spec.md` appendix) — its GitHub MCP still uses a
+  static PAT embedded in `custom.json`, not OAuth.
+- **Example-name scrub** (issue #76) — `aaron/zach/nathan` as example names across ~36 other files.

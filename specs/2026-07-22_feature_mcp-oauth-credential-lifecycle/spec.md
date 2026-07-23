@@ -1,6 +1,16 @@
 # Technical Specification — Remote-MCP OAuth Credential Lifecycle
 
-**Status**: Spec (pre-implementation) · **Branch**: `plan/fleet-mcp-oauth-provisioning`
+**Status**: ✅ **IMPLEMENTED + RELEASED + LIVE-VERIFIED** (2026-07-23) — congaline `v0.0.32` /
+`terraform-provider-conga` `v0.1.10`. See `README.md` for the full trace (Phase 1/2 PRs, reviews, release,
+AWS live verification). This document is the design of record; the sections below held true as-built,
+with these deviations captured during implementation:
+- **Restored-blob mode is per-provider** (§7 refined): `0600` root→uid-1000 on the managed hosts
+  (AWS/remote, encrypted storage) but **`0644` on local** — matching how the local provider already
+  writes every container-read data-dir file, since a non-root local host can't chown to uid 1000.
+- **AWS existence probe** must read stdout, not the error: `awsutil.RunCommand` returns `(result, nil)`
+  for both Success and Failed SSM statuses (a critical bug caught in review — see README).
+- **Re-capture on refresh (§4.4)** was NOT built — capture runs on `conga mcp login` only. Deferred.
+
 **Reads**: `requirements.md`, `plan.md` in this dir.
 
 ---
