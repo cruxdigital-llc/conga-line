@@ -74,7 +74,7 @@ func TestReconcile_CreateOnlyWhenAbsent(t *testing.T) {
 
 // TestReconcile_FailSafeAbortOnGhost: a foreign endpoint (conga-router) that survives
 // the disconnect (a persisted ghost) must ABORT — returning an actionable error and,
-// critically, WITHOUT having stopped or removed the agent (the congaline-team failure
+// critically, WITHOUT having stopped or removed the agent (the team-b failure
 // mode: container removed before a blocked network rm → agent left down).
 func TestReconcile_FailSafeAbortOnGhost(t *testing.T) {
 	ft := newFakeTransport()

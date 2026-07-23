@@ -1,7 +1,7 @@
 # Requirements — Managed-Host Migration Hardening
 
 - **Created**: 2026-06-14
-- **Owner**: Aaron Stone
+- **Owner**: <operator>
 - **Parent**: `specs/2026-06-13_feature_managed-host-provisioning-engine/` (PR #67, merged)
 - **Status**: Planning
 
@@ -25,7 +25,7 @@ capability.
 - **Why**: the proxy runs `--restart always`. On a simultaneous restart (host reboot / docker daemon
   restart), Docker brings the proxy up before the systemd-managed agent; with no `--ip` the proxy
   grabs the lowest free address — the agent's `.2` — and the agent's `docker run --ip .2` then fails
-  (exit 125) → crash-loop. Observed live on `aaron`.
+  (exit 125) → crash-loop. Observed live on `user-a`.
 - Applies everywhere the proxy is created: `deploy-egress.sh.tmpl`, `add-user.sh.tmpl`,
   `add-team.sh.tmpl`, with `DeployEgress` / provision passing the planned `ProxyIP`.
 - `AgentNetwork.ProxyIP` becomes an **enforced** assignment (upgrade from the "advisory" note added in
@@ -41,9 +41,9 @@ capability.
   a clear, actionable error **without having taken the agent down** (see R2b).
 - **R2b (ordering — fail safe, not fail down):** the agent container MUST NOT be removed until the new
   network is confirmed creatable/created. A migration failure MUST leave the agent **running on its
-  existing network**, never stopped-and-unstartable (observed live: `congaline-team` left DOWN because
+  existing network**, never stopped-and-unstartable (observed live: `team-b` left DOWN because
   the container was removed before the blocked `network rm`).
-- **Why**: the live migration left `congaline-team` down and required a fleet-bouncing
+- **Why**: the live migration left `team-b` down and required a fleet-bouncing
   `systemctl restart docker` to clear a persisted ghost endpoint.
 - **Success**: a migration blocked by a foreign/dangling endpoint either (a) clears it and completes,
   or (b) aborts cleanly with the agent still serving on its old net; no path leaves an agent down, and
@@ -86,7 +86,7 @@ operator intervention**. This is the parent feature's criterion 5b; this feature
 
 - `pkg/` changes (`awsprovider`, `managedhost`, possibly shared helpers) → **`terraform-provider-conga`
   release** required before the deployed Terraform path uses them (two-repo coupling).
-- Must remediate the **3 already-migrated agents** (aaron, nathan, congaline-team), which are
+- Must remediate the **3 already-migrated agents** (user-a, user-c, team-b), which are
   reboot-fragile under R1 today, without a disruptive full-fleet bounce where avoidable.
 - Egress security posture unchanged: iptables in all modes, fail-closed, root:root `0444` on managed
   files, secrets-via-`--env-file`.

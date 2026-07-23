@@ -3,7 +3,7 @@
 **Trace Log** — GLaDOS `plan-feature` workflow
 
 - **Created**: 2026-06-13
-- **Owner**: Aaron Stone
+- **Owner**: <operator>
 - **Status**: Specified (pre-implementation) — persona review APPROVE, standards gate PASS
 - **Spec dir**: `specs/2026-06-13_feature_managed-host-provisioning-engine/`
 - **Origin**: `audit/` scope-and-simplification review (2026-06-13), "Theme 3". Operator chose the
@@ -186,8 +186,8 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   provision; removal also drops `systemctl start` from the scripts (RefreshAgent does first start).
   Live verify release-gated.
 
-- **2026-06-13** — **Live-verified slices 1 + 2a + opus-4.8 on `aaron` (no release).** Built the
-  branch `./bin/conga` and ran `conga refresh --agent aaron` against the live AWS fleet (host
+- **2026-06-13** — **Live-verified slices 1 + 2a + opus-4.8 on `user-a` (no release).** Built the
+  branch `./bin/conga` and ran `conga refresh --agent user-a` against the live AWS fleet (host
   `i-024bf3a55563f9e88`) — confirming a public provider release is NOT needed to test (the CLI binary
   + SSM-pushed embedded scripts exercise the branch `pkg/` code directly). Before→after on the host:
   model.primary `claude-opus-4-7`→**`claude-opus-4-8`** (qwen36 subagent overlay **preserved** in the
@@ -197,7 +197,7 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   container returned **ready** (clean restart). Covers the RefreshAgent path (= the substance of
   slices 1/2a/model-bump); a fresh `add-user` (ProvisionAgent→RefreshAgent wiring + stripped add-user.sh
   on a new agent) is the remaining live check, deferred to `/glados:verify-feature` (throwaway agent).
-  `aaron` left on opus-4.8 (desired); egress in `validate` (local-policy redeploy during refresh).
+  `user-a` left on opus-4.8 (desired); egress in `validate` (local-policy redeploy during refresh).
 
 - **2026-06-13** — **Fresh-provision path live-verified (throwaway `slice2test`, no release).** Built
   `./bin/conga` from the branch, `admin add-user slice2test` (gateway-only) on the live fleet. Host
@@ -208,7 +208,7 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   Then **fully torn down**: `remove-agent --force --delete-secrets` (container/unit/egress/SSM param
   gone; roster back to the 6 real agents) + manual sweep of the persisted data dir + `config/slice2test*`
   leftovers (data preserved by default per Agent Data Safety — expected). Slices 1 + 2a now verified on
-  **both** the refresh path (aaron) and the fresh-provision path (slice2test).
+  **both** the refresh path (user-a) and the fresh-provision path (slice2test).
 
 - **2026-06-13** — **Slice 2b implemented + live-verified: provision scripts are infra-only.**
   `add-user.sh`/`add-team.sh` stripped of the openclaw.json heredoc + `jq $include` + baseline + unit
@@ -277,7 +277,7 @@ provisioning family and shrink the 1,384-line boot `user-data.sh.tftpl` to minim
   (`PROXY OK 401`); **direct non-proxy egress BLOCKED by the DROP rule** (`DIRECT BLOCKED (timeout)`).
   The throwaway provision exercised the subnet-migration path end-to-end (add-user auto-subnet →
   ProvisionAgent→RefreshAgent migration to 10.99.7.x). Operator opted **not** to also migrate a real
-  agent (`aaron`) this pass. Torn down clean (roster back to 6; swept data/config + 2 orphan DNS RETURN
+  agent (`user-a`) this pass. Torn down clean (roster back to 6; swept data/config + 2 orphan DNS RETURN
   rules). **B-2 cleanup note logged:** `deploy-egress.sh` still adds port-53 DNS RETURN rules that
   `RemoveRulesCmd` doesn't clean (harmless orphans after teardown — the IP is gone); reconcile when
   `deploy-egress`'s discovery-loop iptables is retired in B-2. **Step B-1 complete. Next: B-2** (replace

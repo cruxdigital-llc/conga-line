@@ -1,7 +1,7 @@
 # Technical Specification — Managed-Host Provisioning Engine
 
 - **Created**: 2026-06-13
-- **Owner**: Aaron Stone
+- **Owner**: <operator>
 - **Status**: Specified (pre-implementation)
 - **Builds on**: `requirements.md`, `plan.md`, `extension-host-supervisor.md` (read those first)
 - **Lineage**: `audit/` Theme 3; extends #30 (`$include`) + #31 (declarative layering); fixes audit #1, #2, #4, #7, #8, #12.

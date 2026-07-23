@@ -7,13 +7,13 @@
 ## Session Start — 2026-05-19
 
 **Initiated by**: `/glados:plan-feature`
-**Origin question**: "I confirmed that the VPN between the Congaline AWS environment and the local DGX Spark running Qwen 3.6 is working. I'd like to point my 'aaron' agent at the Qwen model and not Claude."
+**Origin question**: "I confirmed that the VPN between the Congaline AWS environment and the local DGX Spark running Qwen 3.6 is working. I'd like to point my 'user-a' agent at the Qwen model and not Claude."
 
 ## Feature Name
 `local-model-routing`
 
 ## Goal
-Allow any agent — starting with `aaron` — to route its model traffic to a self-hosted OpenAI-compatible LLM (Qwen on the DGX Spark) via the same `behavior/agents/<name>/` overlay that already governs prompts. Provider-agnostic; works the same on AWS, local, and remote providers.
+Allow any agent — starting with `user-a` — to route its model traffic to a self-hosted OpenAI-compatible LLM (Qwen on the DGX Spark) via the same `behavior/agents/<name>/` overlay that already governs prompts. Provider-agnostic; works the same on AWS, local, and remote providers.
 
 ## Active Personas
 - **architect** — system design, integration points, overlay loader semantics
@@ -32,7 +32,7 @@ Allow any agent — starting with `aaron` — to route its model traffic to a se
 |---|---|
 | Feature name | `local-model-routing` |
 | OpenClaw model API path | Native OpenAI-compatible (`OPENAI_BASE_URL` + `OPENAI_API_KEY`, `openai/<model>` provider prefix) — to be verified against the chosen image |
-| Spark addressing | Private IP literal `192.168.181.97` |
+| Spark addressing | Private IP literal `<lan-ip>` |
 | Config home for new model field | `behavior/agents/<name>/agent.yaml` — provider-agnostic, codebase, gitignored per existing `_example`-only pattern |
 | Secrets home | Unchanged: tfvars `agents.<name>.secrets = {}` for AWS; `~/.conga/secrets/agents/<name>/` for local/remote |
 | Image pin policy | Check openclaw/openclaw#45311 status before the schema spike; bump pin if fixed |
@@ -53,7 +53,7 @@ Allow any agent — starting with `aaron` — to route its model traffic to a se
 - Bifrost / model gateway sidecar / cross-provider fallback chains — see ROADMAP item #22.
 - Cost tracking, multi-model routing per request, classifier selection.
 - Moving secrets out of tfvars.
-- Cleaning up `behavior/agents/nvidia-team/` (worktree-only, not committed; flag for separate work).
+- Cleaning up `behavior/agents/team-a/` (worktree-only, not committed; flag for separate work).
 
 ## Artifacts in this trace
 
@@ -91,7 +91,7 @@ Allow any agent — starting with `aaron` — to route its model traffic to a se
 - **Verdict**: PROCEED with above caveats.
 
 **product-manager**:
-- ✅ User story clear: Aaron points his personal agent at Qwen on his Spark instead of Anthropic Claude.
+- ✅ User story clear: user-a points his personal agent at Qwen on his Spark instead of Anthropic Claude.
 - ✅ Success criteria (SC-1 through SC-6 in `requirements.md`) are testable and bounded.
 - ✅ Scope holds the line. No fallback chains (deferred to Bifrost spec), no CLI (operators edit `agent.yaml`), no terraform changes.
 - ⚠️ **Cross-feature dependency**: the pin bump to `v2026.5.18` is a hard prerequisite. If that bump regresses Slack again, this feature stalls. Recommend treating the bump as a gating step with its own acceptance criteria (per spec Phase 1). PM concurs with the gating but flags it as a measurable risk to ship date.
@@ -130,7 +130,7 @@ Allow any agent — starting with `aaron` — to route its model traffic to a se
 | Security: Zero trust the AI agent | security | must | ✅ PASSES | `agent.yaml` is operator-authored. The agent process has no write access to `behavior/agents/` and no influence over its own overlay. |
 | Security: Immutable configuration | security | must | ✅ PASSES | Rendered `openclaw.json` integrity is monitored by existing hash-check (no change). Overlay doesn't alter the integrity guarantee. |
 | Security: Least privilege | security | must | ✅ PASSES | No change to IAM, container caps, or filesystem permissions. |
-| Egress controls | network | must | ✅ PASSES | Spec explicitly notes that the model endpoint host must be in `egress_allowed_domains`. For aaron+Spark, this is already true (`192.168.181.97` is in both global and per-agent lists). |
+| Egress controls | network | must | ✅ PASSES | Spec explicitly notes that the model endpoint host must be in `egress_allowed_domains`. For user-a+Spark, this is already true (`<lan-ip>` is in both global and per-agent lists). |
 
 **Gate decision**: ✅ **PROCEED**. One ⚠️ warning, no ❌ violations. The warning's remediation (updating `architecture.md` Config Format Boundary) is included in the spec's documentation deliverables.
 
@@ -183,7 +183,7 @@ The v1 schema in the current spec is:
 model:
   provider: ollama
   name: qwen3:6b
-  base_url: http://192.168.181.97:11434
+  base_url: http://<lan-ip>:11434
 ```
 
 with a note that "top-level keys other than `model:` are reserved." This is *implicit* forward-compat. **Not strong enough** for a config we want to last.
@@ -270,7 +270,7 @@ Examined whether the proliferation could be reduced:
 
 ### Concrete spec changes (✅ APPLIED 2026-05-19)
 
-All six architect-proposed changes accepted by Aaron and applied:
+All six architect-proposed changes accepted by user-a and applied:
 
 1. ✅ **Schema versioning** — `version: 1` required field with documented upgrade contract (unknown versions hard-fail; missing version accepted as 1 with a one-time warning). See `spec.md` § "Schema versioning contract" and updated edge-case table.
 2. ✅ **Strict-key YAML parsing** — `yaml.Decoder` with `KnownFields(true)`; unknown keys fail loudly. See `spec.md` § "Strict key parsing" and the new edge cases for typos at top-level and inside `model:`.
@@ -321,7 +321,7 @@ With the six changes above, this feature should land changes that survive at lea
 
 ## Test-iteration findings — 2026-05-20
 
-Tested end-to-end against a real OpenClaw 2026.3.11 container by building the CLI locally (`go build -o ./bin/conga ./cmd/conga`) and running `./bin/conga refresh --agent aaron` against AWS — the EC2 host doesn't need a new binary because the local CLI renders `openclaw.json` and uploads it via SSM. This caught two bugs my unit tests missed:
+Tested end-to-end against a real OpenClaw 2026.3.11 container by building the CLI locally (`go build -o ./bin/conga ./cmd/conga`) and running `./bin/conga refresh --agent user-a` against AWS — the EC2 host doesn't need a new binary because the local CLI renders `openclaw.json` and uploads it via SSM. This caught two bugs my unit tests missed:
 
 ### Bug 1: missing `models[]` array required by OpenClaw schema
 
@@ -361,7 +361,7 @@ Container is healthy, Slack provider listening, both `OPENAI_API_KEY` (per-agent
 - `go test -count=1 ./...` — ✅ all 19 packages with tests pass (forced uncached). Slowest: `pkg/aws` at 50.8s; everything else under 3.5s.
 - `go vet ./...` — ✅ clean.
 - `gofmt -l .` — ✅ clean.
-- `terraform fmt -check -recursive` (in `environments/production/`) — ⚠️ flags one pre-existing whitespace issue in the `nvidia-team` block of `terraform.tfvars` (gitignored, untouched by this feature). Not blocking; would be addressed in a separate cleanup.
+- `terraform fmt -check -recursive` (in `environments/production/`) — ⚠️ flags one pre-existing whitespace issue in the `team-a` block of `terraform.tfvars` (gitignored, untouched by this feature). Not blocking; would be addressed in a separate cleanup.
 
 ### Persona verification (Implementation)
 
@@ -373,11 +373,11 @@ Container is healthy, Slack provider listening, both `OPENAI_API_KEY` (per-agent
 - ⚠️ **AWS overlay path is cwd-relative (`./behavior`)** — silently no-ops if the operator runs `conga` from outside the repo. Documented in spec + README; acceptable for the AWS path's terraform-driven workflow where operators are conventionally at the repo root. If this surprises a future contributor, surface as a CLI warning instead of silent skip.
 
 **product-manager** — PASS
-- ✅ User story delivered: aaron defaults to self-hosted Qwen via LiteLLM on the Spark; `/model anthropic/claude-opus-4-6` swaps to Opus mid-conversation. Verified live.
+- ✅ User story delivered: user-a defaults to self-hosted Qwen via LiteLLM on the Spark; `/model anthropic/claude-opus-4-6` swaps to Opus mid-conversation. Verified live.
 - ✅ Scope held: no new CLI command, no new terraform var, no provider release required for testing.
 - ✅ Success criteria from `requirements.md`:
-  - SC-1 (aaron → Qwen via Spark): verified live (`[gateway] agent model: openai/qwen36` in container logs).
-  - SC-2 (non-overlay'd agents unchanged): verified by inspection (zach/nathan/teams have no overlay file, render to today's Anthropic default).
+  - SC-1 (user-a → Qwen via Spark): verified live (`[gateway] agent model: openai/qwen36` in container logs).
+  - SC-2 (non-overlay'd agents unchanged): verified by inspection (user-b/user-c/teams have no overlay file, render to today's Anthropic default).
   - SC-3 (provider-agnostic): ⚠️ AWS verified live; local + remote share the same overlay-loading codepath but weren't smoke-tested with a real container in this session. Acceptable risk — the code paths are structurally identical to AWS.
   - SC-4 (`terraform plan` clean): verified — only adds the secret + 2 S3 objects + replaces the behavior_refresh trigger.
   - SC-5 (failure modes loud): partially verified — `OpenClaw Config invalid` validator error surfaced cleanly during the live test and was diagnosable from `conga logs`.
@@ -407,7 +407,7 @@ Re-running the standards audit against the shipped diff:
 | Security: Secrets via env vars, not in config (Issue #9627) | ✅ PASSES | OpenAI API key never written to JSON; flows via `OPENAI_API_KEY` env. The Ollama `apiKey: "ollama-local"` literal is a sentinel, documented as such. |
 | Security: Zero trust the AI agent | ✅ PASSES | `agent.yaml` is operator-authored; no agent-process write access. |
 | Security: Immutable configuration | ✅ PASSES | Config integrity monitoring continues to operate; overlay just changes the rendered JSON, not the integrity-check mechanism. |
-| Egress controls | ✅ PASSES | Documented in README walkthrough that the model endpoint must be in `egress_allowed_domains`. Spark IP is in aaron's allowlist (live-verified). |
+| Egress controls | ✅ PASSES | Documented in README walkthrough that the model endpoint must be in `egress_allowed_domains`. Spark IP is in user-a's allowlist (live-verified). |
 
 **Result**: 0 ❌ violations, 0 ⚠️ warnings (the pre-impl Config Format Boundary warning was resolved as part of this PR's documentation deliverables).
 
@@ -428,7 +428,7 @@ Comparing final implementation against the spec documents:
 
 Checked `product-knowledge/standards/*.md` for stale references:
 - `architecture.md` — Config Format Boundary section already updated to reflect two YAML files (`conga-policy.yaml` + `agent.yaml`). ✅
-- `egress-controls.md` — no code/file refs needed updating; egress allowlist already supports IP literals (proven by aaron's `192.168.181.97` entry).
+- `egress-controls.md` — no code/file refs needed updating; egress allowlist already supports IP literals (proven by user-a's `<lan-ip>` entry).
 - `security.md` — Pinned image table still references `v2026.3.11`; remains accurate. ✅
 - `config-taxonomy.md` — newly authored as part of this PR; no drift.
 
@@ -453,7 +453,7 @@ Checked `product-knowledge/standards/*.md` for stale references:
 
 ## Status — VERIFIED COMPLETE
 
-This feature is fully implemented, tested in production against aaron, and documented. Recommended next steps (not blocking merge):
+This feature is fully implemented, tested in production against user-a, and documented. Recommended next steps (not blocking merge):
 
 1. **Land the PR** — `feature/local-model-support` → `main`.
 2. **Tag congaline + bump terraform-provider-conga + release** (per CLAUDE.md `pkg/` change protocol). After release, normal `terraform apply` + `conga refresh-agent` paths work without the local-build workaround.

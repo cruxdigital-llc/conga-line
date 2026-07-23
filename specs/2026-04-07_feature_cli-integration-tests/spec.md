@@ -210,7 +210,7 @@ func TestAgentLifecycle(t *testing.T) {
 ### 3.3 `TestTeamAgentWithBehavior`
 
 Tests per-agent behavior file deployment and manifest reconciliation
-using a team agent with the `nvidia-team` overlay files from the repo.
+using a team agent with the `team-a` overlay files from the repo.
 
 ```go
 func TestTeamAgentWithBehavior(t *testing.T) {
@@ -220,8 +220,8 @@ func TestTeamAgentWithBehavior(t *testing.T) {
 ```
 
 **Setup**: `admin setup` with `repo_path` pointing to `repoRoot()`.
-This copies `behavior/` (including `agents/nvidia-team/`) to the
-test data dir. The test agent name differs from `nvidia-team`, so
+This copies `behavior/` (including `agents/team-a/`) to the
+test data dir. The test agent name differs from `team-a`, so
 it will get defaults — we create a test-specific override in the
 test.
 

@@ -117,7 +117,7 @@ Decisions resolved with user:
 
 - **Tier 1 rename: "delegate" → "subagent"** (OpenClaw upstream already
   uses "delegate" for org-identity agents — collision flagged in
-  upstream-capability.md). Aaron confirmed the rename.
+  upstream-capability.md). user-a confirmed the rename.
 - **Overlay shape: single sub-agent model, not a list** — matches both
   runtimes' single-string config; per-spawn overrides happen at runtime.
 - **Tier 2 unchanged: "role agent"** — still distinct from upstream
@@ -155,7 +155,7 @@ Decisions resolved with user:
 
 - **Q: What problem does this solve for the user?** Qwen alone isn't a
   viable primary; Opus alone is too expensive. Two-tier delegation lets
-  Opus drive personality + Qwen handle mechanical work. Aaron's brief
+  Opus drive personality + Qwen handle mechanical work. user-a's brief
   was explicit on this. ✅
 - **Q: Is this critical for the MVP?** This IS the MVP for the
   delegation routing roadmap. The five-role catalog gives operators
@@ -251,13 +251,13 @@ User invoked `/glados:implement-feature`. Re-read spec.md (5 sections,
 - `gh` CLI (for upstream OpenClaw / Hermes lookups)
 - File ops + code search
 - Live AWS environment via the conga MCP server (NOT engaged unless
-  Aaron explicitly asks for a live smoke this session)
+  user-a explicitly asks for a live smoke this session)
 
 No browser/UI capability needed (pure runtime + config work).
 
 ### 2026-05-22 — Phase 1 implementation complete
 
-**Scope chosen (with Aaron)**: Phase 1 only (smallest verifiable
+**Scope chosen (with user-a)**: Phase 1 only (smallest verifiable
 change); commit per phase.
 
 **Files modified**:
@@ -302,7 +302,7 @@ change); commit per phase.
   loader tests pass (incl. updated v3-rejected case).
 
 **Next**: commit Phase 1 on the worktree branch. Phases 2–8 deferred
-to follow-up sessions per Aaron's scope choice.
+to follow-up sessions per user-a's scope choice.
 
 ### 2026-05-22 — Phase 2 implementation complete
 
@@ -643,21 +643,21 @@ Qwen via Spark LiteLLM, `delegation_mode: prefer`, `max_concurrent: 4`).
 Backups at `/tmp/conga-agents-backup-20260522-152510/`.
 
 **Binary deployment**: built worktree code into both `~/go/bin/conga`
-and the MCP-server-targeted `/Users/aaronstone/Development/crux/congaline/bin/conga`.
+and the MCP-server-targeted `~/Development/crux/congaline/bin/conga`.
 
-**AWS deploy of `aaron` — three iterations**:
+**AWS deploy of `user-a` — three iterations**:
 
 1. **First refresh: failed** with `field subagents not found in type
-   runtime.AgentOverlay` — MCP server still on the OLD binary. Aaron
+   runtime.AgentOverlay` — MCP server still on the OLD binary. user-a
    `/mcp` reconnected to pick up the new build.
 2. **Second refresh: succeeded but deployed empty config**. Root cause:
    the MCP server's CWD is this worktree, and `resolveAWSBehaviorDir()`
    prefers `./agents` (the worktree's `agents/`, which has only
    `_defaults/` and `_example/`, no per-agent overlays) over walking
-   up to the parent checkout. The loader treated aaron's overlay as
+   up to the parent checkout. The loader treated user-a's overlay as
    missing and emitted defaults-only config.
-3. **Workaround**: `ln -s /Users/aaronstone/Development/crux/congaline/agents/aaron
-   agents/aaron` inside the worktree. Third refresh deployed the
+3. **Workaround**: `ln -s ~/Development/crux/congaline/agents/user-a
+   agents/user-a` inside the worktree. Third refresh deployed the
    correct openclaw.json: `agents.defaults.subagents` block populated,
    models allowlist contains both `anthropic/claude-opus-4-*` +
    `openai/qwen36`, `models.providers.openai` correctly configured.
@@ -668,15 +668,15 @@ silently picks up the wrong `agents/` dir when running from a worktree.
 Worth a follow-up to detect git worktrees or honor a `CONGA_AGENTS_DIR`
 env var.
 
-**Opus 4-6 → 4-7 bump** (Aaron asked mid-session): commit `3505f20`.
+**Opus 4-6 → 4-7 bump** (user-a asked mid-session): commit `3505f20`.
 Updated 3 categories of files (code defaults, tests, first-boot JSON
-templates) + operator docs. Refresh aaron; logs confirm `agent model:
+templates) + operator docs. Refresh user-a; logs confirm `agent model:
 anthropic/claude-opus-4-7 (thinking=medium, fast=off)`. The bump
 required 8 file edits, a build cache invalidation, and a MCP restart —
 exactly the friction follow-up #24 (move runtime defaults out of
 `//go:embed`) would eliminate.
 
-**Pending live-smoke step**: Aaron's chat interaction with aaron via
+**Pending live-smoke step**: user-a's chat interaction with user-a via
 Slack to exercise the subagent-spawn flow. Tracked for after verify.
 
 ### 2026-05-22 — Session Resume (Verify Phase)
@@ -763,8 +763,8 @@ No further spec edits needed.
   feature alongside Feature #27 (Local Model Routing). The two
   features together set the stage for Bifrost/fallback-chain work.
 - **Outstanding** (not blocking verify-feature):
-  - Task #22 (Phase 8 live verification): aaron's container is
-    deployed and serving but the **chat smoke** (Aaron DMs aaron,
+  - Task #22 (Phase 8 live verification): user-a's container is
+    deployed and serving but the **chat smoke** (user-a DMs user-a,
     Opus invokes `sessions_spawn`, Qwen runs, result lands back)
     hasn't been observed yet. Tracked.
   - Task #24 (follow-up): extract runtime defaults from

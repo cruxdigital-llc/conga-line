@@ -3,7 +3,7 @@
 **Trace Log** — GLaDOS `plan-feature` workflow
 
 - **Created**: 2026-06-10
-- **Owner**: Aaron Stone
+- **Owner**: <operator>
 - **Status**: Implemented + verified (code **and** live T9.2). Pending: merge + provider release (R1). PR #61.
 - **Spec dir**: `specs/2026-06-10_feature_fleet-baseline-configuration/`
 - **Builds on**: `specs/2026-06-09_feature_infrastructure-only-simplification/` (the `$include` layering + `agent-custom.json` it shipped)
@@ -122,7 +122,7 @@ Implementation is **partially complete on branch `plan/fleet-baseline-configurat
 - [plan.md](./plan.md)
 - [spec.md](./spec.md) — detailed spec (4-layer model, verified precedence, de-embed, deploy/integrity)
 
-- **2026-06-10** — `/glados:spec-feature` started. **Live-verified the `$include`-array precedence** on `aaron`/`2026.5.26` (isolated copy via `OPENCLAW_CONFIG_PATH`, driven through `aws ssm`/`docker exec` because the MCP server held stale SSO creds): **later-in-array wins** (per-agent over fleet), **includes union** (distinct keys from all layers compose), and the **managed root still wins over all includes** (`gateway.port` stayed 18789). The 4-layer model is viable as planned: root > admin-drift > per-agent > fleet. Drafted `spec.md`.
+- **2026-06-10** — `/glados:spec-feature` started. **Live-verified the `$include`-array precedence** on `user-a`/`2026.5.26` (isolated copy via `OPENCLAW_CONFIG_PATH`, driven through `aws ssm`/`docker exec` because the MCP server held stale SSO creds): **later-in-array wins** (per-agent over fleet), **includes union** (distinct keys from all layers compose), and the **managed root still wins over all includes** (`gateway.port` stayed 18789). The 4-layer model is viable as planned: root > admin-drift > per-agent > fleet. Drafted `spec.md`.
 
 - **2026-06-10** — `/glados:implement-feature` started. Capabilities: in-container `openclaw config validate/get`, conga MCP (needs restart to clear stale SSO from earlier — use freshly-built `bin/conga` + `aws ssm` directly meanwhile), AWS SSM for live verify. Created `tasks.md` (9 phases) for review before coding.
 

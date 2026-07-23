@@ -217,12 +217,12 @@ func TestReadSharedSecrets_IgnoresMissing(t *testing.T) {
 
 func TestReadAgentSecrets_ReadsFromSecretsManager(t *testing.T) {
 	mock := &mockSecretsManager{secrets: map[string]string{
-		"conga/agents/aaron/anthropic-api-key": "sk-test",
-		"conga/agents/aaron/trello-api-key":    "trello-key",
+		"conga/agents/user-a/anthropic-api-key": "sk-test",
+		"conga/agents/user-a/trello-api-key":    "trello-key",
 	}}
 	p := &AWSProvider{clients: &awsutil.Clients{SecretsManager: mock}}
 
-	secrets, err := p.readAgentSecrets(context.Background(), "aaron")
+	secrets, err := p.readAgentSecrets(context.Background(), "user-a")
 	if err != nil {
 		t.Fatalf("readAgentSecrets error: %v", err)
 	}
@@ -274,15 +274,15 @@ func TestRouterRestartScriptUsesSlackPath(t *testing.T) {
 // conga_secret resource destroy doesn't call this — that wiring + its acceptance test
 // live in terraform-provider-conga (tracked in ROADMAP.md).
 func TestDeleteSecretUsesAgentScopedPath(t *testing.T) {
-	const target = "conga/agents/nvidia-team/linear-api-key"
-	const keep = "conga/agents/nvidia-team/anthropic-api-key"
+	const target = "conga/agents/team-a/linear-api-key"
+	const keep = "conga/agents/team-a/anthropic-api-key"
 	mock := &mockSecretsManager{secrets: map[string]string{
 		target: "lin_api_xxx",
 		keep:   "sk-keep",
 	}}
 	p := &AWSProvider{clients: &awsutil.Clients{SecretsManager: mock}}
 
-	if err := p.DeleteSecret(context.Background(), "nvidia-team", "linear-api-key"); err != nil {
+	if err := p.DeleteSecret(context.Background(), "team-a", "linear-api-key"); err != nil {
 		t.Fatalf("DeleteSecret error: %v", err)
 	}
 	if _, ok := mock.secrets[target]; ok {

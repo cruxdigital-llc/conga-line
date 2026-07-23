@@ -16,7 +16,7 @@ import (
 //     Docker ghost that only a daemon restart would fix), it returns an actionable
 //     error WITHOUT having stopped/removed the agent — so the agent keeps running
 //     on its old network instead of being left down (the failure mode that took
-//     congaline-team offline during the live migration).
+//     team-b offline during the live migration).
 //   - COMMIT (stop → remove agent + proxy → remove network → create) only runs once
 //     the blockers are cleared, and is step-verified (the `network rm` must succeed
 //     before `network create`).
