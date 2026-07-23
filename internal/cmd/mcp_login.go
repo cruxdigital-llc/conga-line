@@ -3,9 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/cruxdigital-llc/conga-line/internal/mcpoauth"
+	"github.com/cruxdigital-llc/conga-line/pkg/common"
+	"github.com/cruxdigital-llc/conga-line/pkg/runtime"
 	"github.com/cruxdigital-llc/conga-line/pkg/ui"
 	"github.com/spf13/cobra"
 )
@@ -81,6 +84,7 @@ func mcpLoginRun(cmd *cobra.Command, args []string) error {
 	// already authenticated (the login is idempotent). Report success rather
 	// than claim a second leg is pending.
 	if authURL == "" {
+		captureMCPOAuthBestEffort(ctx, agentName)
 		if ui.OutputJSON {
 			ui.EmitJSON(struct {
 				Agent   string `json:"agent"`
@@ -140,6 +144,7 @@ func mcpLoginComplete(ctx context.Context, agentName, server, rawCode string) er
 	if err != nil {
 		return fmt.Errorf("completing OAuth login for %q on %s (the code is single-use — re-run without --code for a fresh URL if it expired): %w", server, agentName, err)
 	}
+	captureMCPOAuthBestEffort(ctx, agentName)
 	if ui.OutputJSON {
 		ui.EmitJSON(struct {
 			Agent  string `json:"agent"`
@@ -153,4 +158,29 @@ func mcpLoginComplete(ctx context.Context, agentName, server, rawCode string) er
 	}
 	fmt.Printf("✓ OAuth login complete for %q on %s. It connects on the agent's next turn.\n", server, agentName)
 	return nil
+}
+
+// captureMCPOAuthBestEffort backs the agent's freshly-authenticated OAuth
+// credential blob(s) up into the per-agent secrets store so they survive
+// container/host lifecycle events (Phase 2 durability). Best-effort: the login
+// already succeeded, so a backup failure is warned, never fatal.
+func captureMCPOAuthBestEffort(ctx context.Context, agentName string) {
+	agent, err := prov.GetAgent(ctx, agentName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not resolve agent %s to back up its OAuth credential: %v\n", agentName, err)
+		return
+	}
+	rt, err := runtime.Get(runtime.ResolveRuntime(agent.Runtime, ""))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not resolve runtime for %s to back up its OAuth credential: %v\n", agentName, err)
+		return
+	}
+	n, err := common.CaptureMCPOAuth(ctx, prov, rt, agentName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: OAuth login succeeded but backing the credential up to the secrets store failed: %v\n", err)
+		return
+	}
+	if n > 0 && !ui.OutputJSON {
+		fmt.Printf("  backed up %d MCP OAuth credential(s) to the secrets store (survives host replacement).\n", n)
+	}
 }
