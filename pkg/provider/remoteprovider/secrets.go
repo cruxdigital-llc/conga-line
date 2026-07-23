@@ -69,26 +69,32 @@ func (p *RemoteProvider) readSharedSecrets() (common.SharedSecrets, error) {
 	return s, nil
 }
 
-// readAgentSecrets reads all per-agent secrets from the remote host.
+// readAgentSecrets reads all per-agent secrets from the remote host. It descends
+// one level so namespaced secrets (e.g. mcp-oauth/<file>) are returned under
+// their "<dir>/<file>" key alongside top-level secrets — matching the local
+// provider. -maxdepth 2 -type f lists only files (never the directory entries
+// themselves, which previously produced a spurious "unreadable secret" warning).
 func (p *RemoteProvider) readAgentSecrets(agentName string) (map[string]string, error) {
 	dir := p.agentSecretsDir(agentName)
-	output, err := p.ssh.Run(context.Background(), fmt.Sprintf("ls %s 2>/dev/null || true", shellQuote(dir)))
+	output, err := p.ssh.Run(context.Background(), fmt.Sprintf("find %s -maxdepth 2 -type f 2>/dev/null || true", shellQuote(dir)))
 	if err != nil {
 		return nil, nil
 	}
 
 	secrets := make(map[string]string)
-	for _, name := range strings.Split(strings.TrimSpace(output), "\n") {
-		name = strings.TrimSpace(name)
-		if name == "" {
+	prefix := dir + "/"
+	for _, full := range strings.Split(strings.TrimSpace(output), "\n") {
+		full = strings.TrimSpace(full)
+		if full == "" {
 			continue
 		}
-		data, err := p.ssh.Download(posixpath.Join(dir, name))
+		rel := strings.TrimPrefix(full, prefix)
+		data, err := p.ssh.Download(full)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: skipping unreadable secret %s: %v\n", name, err)
+			fmt.Fprintf(os.Stderr, "Warning: skipping unreadable secret %s: %v\n", rel, err)
 			continue
 		}
-		secrets[name] = string(data)
+		secrets[rel] = string(data)
 	}
 	return secrets, nil
 }

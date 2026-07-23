@@ -102,6 +102,29 @@ func TestCaptureMCPOAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("skips non-JSON content (e.g. stderr-polluted exec output)", func(t *testing.T) {
+		fp := &fakeProvider{
+			listing: "linear-abc.json\ngithub-xyz.json\n",
+			files: map[string]string{
+				base + "linear-abc.json": "OCI runtime exec failed: ...\n{}", // stderr merged in
+				base + "github-xyz.json": `{"tokens":{}}`,                    // valid
+			},
+		}
+		n, err := CaptureMCPOAuth(context.Background(), fp, oc, "team-a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("captured = %d, want 1 (only the valid-JSON blob)", n)
+		}
+		if _, ok := fp.setCall["mcp-oauth/linear-abc.json"]; ok {
+			t.Error("must NOT store the malformed (non-JSON) blob")
+		}
+		if fp.setCall["mcp-oauth/github-xyz.json"] != `{"tokens":{}}` {
+			t.Error("valid blob should still be stored")
+		}
+	})
+
 	t.Run("runtime without OAuth state dir is a no-op (no exec)", func(t *testing.T) {
 		hermes := mustRuntime(t, runtime.RuntimeHermes)
 		fp := &fakeProvider{}

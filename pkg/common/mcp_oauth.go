@@ -2,7 +2,9 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -45,6 +47,13 @@ func CaptureMCPOAuth(ctx context.Context, prov provider.Provider, rt runtime.Run
 			return captured, fmt.Errorf("reading MCP OAuth blob %q for %s: %w", f, agentName, err)
 		}
 		if strings.TrimSpace(content) == "" {
+			continue
+		}
+		// Guard against storing a malformed blob: some ContainerExec transports
+		// merge stderr into stdout, which could corrupt the JSON. A non-JSON
+		// value would only surface later as a bad restore, so refuse it now.
+		if !json.Valid([]byte(content)) {
+			fmt.Fprintf(os.Stderr, "Warning: skipping MCP OAuth blob %q for %s: content is not valid JSON (%d bytes) — not stored\n", f, agentName, len(content))
 			continue
 		}
 		if err := prov.SetSecret(ctx, agentName, runtime.MCPOAuthSecretPrefix+f, content); err != nil {

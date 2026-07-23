@@ -139,6 +139,7 @@ func (p *LocalProvider) readAgentSecrets(agentName string) (map[string]string, e
 			sub := e.Name()
 			subEntries, err := os.ReadDir(filepath.Join(dir, sub))
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: skipping unreadable secret subdir %s: %v\n", sub, err)
 				continue
 			}
 			for _, se := range subEntries {
