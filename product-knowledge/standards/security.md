@@ -20,6 +20,7 @@ To modify: Edit directly. These standards are expected to evolve as we learn mor
 6. **Detect what you can't prevent** — Where we accept residual risk, add monitoring and alerting.
 7. **Policy is portable, enforcement is tiered** — Security intent is defined once in `conga-policy.yaml`. Each provider enforces what it can with available tools. The gap between intent and enforcement is visible via `conga policy validate`.
 8. **Own the box, not the behavior** — Conga Line controls infrastructure: containers, networks, egress, secrets, resource limits. Runtime behavior enforcement (per-action policy, tool invocation, privacy routing) is the domain of OpenShell or similar. Neither replaces the other.
+9. **Public repo, private deployments** — this is an open-source project; nothing committed or public-facing may contain real client, customer, deployment, agent, or person names, or operator-/client-specific identifiers (account/instance IDs, IPs, channel IDs, secrets). See `standards/confidentiality.md` (severity: **must**). Real values live only in gitignored config and operator-local stores.
 
 ## Universal Baseline (All Providers, Automatic)
 

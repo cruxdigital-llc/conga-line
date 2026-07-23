@@ -31,6 +31,10 @@ func (s *Server) registerTools() {
 		s.toolContainerExec(),
 		s.toolConnectHelp(),
 
+		// Remote-MCP OAuth lifecycle
+		s.toolMCPLogin(),
+		s.toolDoctor(),
+
 		// Secrets
 		s.toolSetSecret(),
 		s.toolListSecrets(),

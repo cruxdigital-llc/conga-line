@@ -166,6 +166,30 @@ var commandSchemas = map[string]CommandSchema{
 			"status": {Type: "string", Description: "Result status", Enum: []string{"refreshed"}},
 		}},
 	},
+	"mcp.login": {
+		Command:     "mcp login",
+		Description: "Authenticate a remote-MCP OAuth server for an agent (two-leg flow)",
+		Input: &SchemaSection{Fields: map[string]FieldSchema{
+			"server": {Type: "string", Description: "MCP server name; optional if the agent has exactly one OAuth server"},
+			"code":   {Type: "string", Description: "Authorization code from the browser redirect; omit on the first call, provide to complete"},
+		}},
+		Output: &SchemaSection{Fields: map[string]FieldSchema{
+			"agent":         {Type: "string", Description: "Agent name"},
+			"server":        {Type: "string", Description: "MCP server name"},
+			"status":        {Type: "string", Description: "Result status", Enum: []string{"authorization_pending", "authenticated"}},
+			"authorize_url": {Type: "string", Description: "URL to open in a browser (present when status is authorization_pending)"},
+			"next":          {Type: "string", Description: "The follow-up command to complete login (present when status is authorization_pending)"},
+		}},
+	},
+	"doctor": {
+		Command:     "doctor",
+		Description: "Scan the fleet for remote-MCP servers needing OAuth re-authentication",
+		Output: &SchemaSection{Fields: map[string]FieldSchema{
+			"healthy":              {Type: "boolean", Description: "True when no agent needs OAuth re-authentication"},
+			"agents_needing_oauth": {Type: "integer", Description: "Count of agents with at least one server needing OAuth"},
+			"findings":             {Type: "array", Description: "Per-agent findings: {agent, servers_needing_oauth:[{server,last_seen}], fixes:[string], error}"},
+		}},
+	},
 	"connect": {
 		Command:     "connect",
 		Description: "Get web UI connection info (exits immediately in JSON mode)",

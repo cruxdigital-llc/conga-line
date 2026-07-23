@@ -1,5 +1,19 @@
 # CLAUDE.md
 
+## Confidentiality — This Is a Public, Open-Source Repo (MUST)
+
+Everything committed here — code and comments, **commit messages**, **PR titles/bodies**, `specs/**`,
+`product-knowledge/**`, test fixtures, and any GLaDOS-produced artifact — is **public**. **Never put
+real client, customer, deployment, agent, or person names — or operator-/client-specific identifiers
+(AWS account/EC2 instance IDs, private IPs, Slack channel/member IDs, hostnames, secret values) — in any
+committed or public-facing content.** An agent named after a customer (`<company>-team`) silently
+discloses that customer; that is a breach. Use generic placeholders (`team-a`, `<user-agent>`,
+`<account-id>`, `i-xxxx`, `10.x.x.x`) and describe real incidents generically. Real values live **only**
+in gitignored config (`terraform.tfvars`, `backend.tf`), `~/.conga/`, and the local agent-memory store.
+Naming a **public product** (e.g. "NVIDIA OpenShell") is fine; naming an **agent** after a client is
+not. **Scrub before every commit, PR create/edit, and outward-facing send.** Full rule + placeholders:
+`product-knowledge/standards/confidentiality.md` (severity: **must**, enforced by the GLaDOS standards gate).
+
 ## Project Overview
 
 This is an infrastructure-as-code project deploying Conga Line (autonomous AI assistant) via pluggable providers. Supports **local Docker** (for dev/personal use), **remote SSH** (for VPS/bare-metal hosts), and **hardened AWS** (for teams/production). There is no application code — the deliverable is Terraform configuration + bootstrap scripts + a Go CLI.
@@ -143,7 +157,15 @@ pointing at the spec dir.
 - `SLACK_APP_TOKEN` is held only by the router (in `router.env`) — containers do not need it
 - Router runs with `--network host` and reaches each agent through its published `127.0.0.1:<hostPort>` (the agent's host-side `GatewayPort`). It is NOT attached to per-agent bridge networks — that hot-attach broke on Docker 25 + kernel 6.1.174 (route conflict). See `specs/2026-06-11_bugfix_router-host-networking/`. (Currently OpenClaw-only: Hermes serves its webhook on a separate, unpublished container port — loopback delivery for Hermes is a follow-up.)
 - Routing config at routing.json maps channels and member IDs to container webhook URLs. With the host-networking router these are loopback URLs (`http://127.0.0.1:<hostPort>/slack/events`); `common.GenerateRoutingJSON` emits the bridge form (`http://conga-{name}:18789/slack/events`) only when no loopback resolver is passed.
-- The deployed image is pinned to `ghcr.io/openclaw/openclaw:2026.6.5` (set via the `image` var default in `terraform/environments/production/variables.tf` and `terraform/modules/congaline/variables.tf`). Pinning to a specific minor (rather than tracking `:latest`) keeps deploys bisectable across upstream releases. Historical notes: (1) an earlier Slack socket-mode regression ([openclaw/openclaw#45311](https://github.com/openclaw/openclaw/issues/45311)) held the pin at `v2026.3.11` until it was resolved upstream in `v2026.3.22` (PR [#45953](https://github.com/openclaw/openclaw/pull/45953), Slack Bolt import-interop hardening). (2) v2026.5.18 leaked Claude `thinking` blocks into Slack channels through non-streaming delivery paths ([openclaw/openclaw#84319](https://github.com/openclaw/openclaw/issues/84319)); fixed in PR [#84322](https://github.com/openclaw/openclaw/pull/84322), first stable release containing the fix is v2026.5.20. (3) Upgraded 2026.5.26 → 2026.6.5 on 2026-06-11 for native remote-MCP OAuth (`openclaw mcp login <name>` + `--code`), used to authenticate the official Linear MCP server (`mcp.linear.app`) on nvidia-team without a static token on disk. 2026.6.5 is the stable that defers the risky session-metadata SQLite migration. **Native MCP OAuth requires ≥ 2026.6.x — 2026.5.26 lacks the `openclaw mcp login` subcommand.**
+- The deployed image is pinned to `ghcr.io/openclaw/openclaw:2026.6.5` (set via the `image` var default in `terraform/environments/production/variables.tf` and `terraform/modules/congaline/variables.tf`). Pinning to a specific minor (rather than tracking `:latest`) keeps deploys bisectable across upstream releases. Historical notes: (1) an earlier Slack socket-mode regression ([openclaw/openclaw#45311](https://github.com/openclaw/openclaw/issues/45311)) held the pin at `v2026.3.11` until it was resolved upstream in `v2026.3.22` (PR [#45953](https://github.com/openclaw/openclaw/pull/45953), Slack Bolt import-interop hardening). (2) v2026.5.18 leaked Claude `thinking` blocks into Slack channels through non-streaming delivery paths ([openclaw/openclaw#84319](https://github.com/openclaw/openclaw/issues/84319)); fixed in PR [#84322](https://github.com/openclaw/openclaw/pull/84322), first stable release containing the fix is v2026.5.20. (3) Upgraded 2026.5.26 → 2026.6.5 on 2026-06-11 for native remote-MCP OAuth (`openclaw mcp login <name>` + `--code`), used to authenticate the official Linear MCP server (`mcp.linear.app`) on a team agent without a static token on disk. 2026.6.5 is the stable that defers the risky session-metadata SQLite migration. **Native MCP OAuth requires ≥ 2026.6.x — 2026.5.26 lacks the `openclaw mcp login` subcommand.**
+
+## Remote-MCP OAuth Credentials
+
+Remote-MCP servers declared with `auth: "oauth"` (e.g. Linear `mcp.linear.app`) authenticate via a **per-container** OAuth credential OpenClaw stores at `/home/node/.openclaw/mcp-oauth/<server>-<hash>.json` (the `<hash>` is deterministic from the server URL; the blob holds access + refresh tokens). This state is **not** managed by tfvars, the secrets store, or `conga refresh` — so it silently fails after a token expires/is revoked, or is lost on a fresh provision / data-dir loss. Symptom in container logs: `[bundle-mcp] failed to start server "<name>": requires OAuth authorization`, and the agent reports it can't reach the tool. Requires OpenClaw ≥ 2026.6.x.
+
+- **Detect**: `conga doctor` scans the fleet's logs for servers needing OAuth and prints the fix command per agent (with the last-error timestamp; a credential re-authed more recently is already fixed and the stale error ages out of the log window). `--agent <name>` scopes to one; non-zero exit if any need attention (scriptable). MCP tool: `conga_doctor`.
+- **Re-auth**: `conga mcp login <server> --agent <name>` drives the two-leg flow (prints an authorize URL you open in a browser as the agent's identity → paste the `code` from the localhost redirect, or pass `--code`). `<server>` is optional when the agent has exactly one OAuth server. Works on all providers via `ContainerExec`. MCP tool: `conga_mcp_login` (call once for the URL, again with `code`). The browser approval is inherently operator-side.
+- Full design + the planned Phase 2 (persist the blob to the per-agent secrets store + restore on provision/refresh so it survives host replacement) is in `specs/2026-07-22_feature_mcp-oauth-credential-lifecycle/`.
 
 ## OpenClaw Behavioral Issues
 
