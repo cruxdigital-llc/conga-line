@@ -24,6 +24,8 @@ create a new config file/format without consulting the decision rule below.
 | **Runtime persistence** | Identity (name, type, runtime choice, allocated port, channel binding state) | `~/.conga/agents/<name>.json` (local) / `/opt/conga/agents/<name>.json` (remote) / SSM `/conga/agents/<name>` (AWS) | JSON | Per-provider | **Materialized by the provider** at provision time, not hand-edited. |
 | **Secrets** | API keys, OAuth tokens, channel bot tokens | Files mode 0400 (`~/.conga/secrets/agents/<name>/<key>` on local/remote) or AWS Secrets Manager (`conga/agents/<name>/<key>` on AWS) | Native | Per-provider | Operator. Authored via tfvars (AWS) or `conga secrets set` (local/remote). Never in git. |
 
+> **Remote-MCP OAuth credentials** are a special case. OpenClaw stores each OAuth MCP server's credential (access + refresh token) as a per-**container** file at `/home/node/.openclaw/mcp-oauth/<server>-<hash>.json`, **outside** every layer above — it is not authored by the operator and not (yet) mirrored to the secrets store, so it is invisible to the declarative fleet and is lost on data-dir loss / expiry. Recover with `conga mcp login <server> --agent <name>`; find affected agents with `conga doctor`. Bringing this blob under the Secrets layer (capture + restore) is the Phase 2 work in `specs/2026-07-22_feature_mcp-oauth-credential-lifecycle/`.
+
 ## The custom-config layers (OpenClaw `$include`) — precedence
 
 OpenClaw config that Conga does **not** model is layered via the managed
