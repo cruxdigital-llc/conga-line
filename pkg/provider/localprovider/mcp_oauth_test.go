@@ -51,10 +51,10 @@ func TestRestoreMCPOAuthLocalPrimitives(t *testing.T) {
 	}
 	exists := func(f string) bool { _, err := os.Stat(filepath.Join(targetDir, f)); return err == nil }
 	write := func(f string, d []byte) error {
-		if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(targetDir, f), d, 0o600)
+		return os.WriteFile(filepath.Join(targetDir, f), d, 0o644)
 	}
 
 	// Cold: writes the one blob at 0600.
@@ -67,8 +67,8 @@ func TestRestoreMCPOAuthLocalPrimitives(t *testing.T) {
 	if err != nil || string(data) != blob {
 		t.Fatalf("restored blob content wrong: %q err=%v", string(data), err)
 	}
-	if info, _ := os.Stat(blobPath); info != nil && info.Mode().Perm() != 0o600 {
-		t.Errorf("restored blob mode = %o, want 600", info.Mode().Perm())
+	if info, _ := os.Stat(blobPath); info != nil && info.Mode().Perm() != 0o644 {
+		t.Errorf("restored blob mode = %o, want 644", info.Mode().Perm())
 	}
 
 	// Warm: the file exists now → nothing rewritten, and content stays as-is

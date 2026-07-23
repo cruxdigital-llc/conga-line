@@ -979,10 +979,18 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		n, rerr := common.RestoreMCPOAuth(perAgent,
 			func(f string) bool { _, err := os.Stat(filepath.Join(targetDir, f)); return err == nil },
 			func(f string, d []byte) error {
-				if err := os.MkdirAll(targetDir, 0o700); err != nil {
+				// Dir 0755 / file 0644 so the container user (uid 1000) can read
+				// the blob even when the host can't chown to 1000 (non-root
+				// Docker). This matches how every other container-read data-dir
+				// file is written on the local provider (openclaw.json + the
+				// $include layers are 0644); the blob's confidentiality is bounded
+				// by the agent's private data dir, as on local generally. Managed
+				// hosts (AWS/remote) run as root and keep the stricter 0600
+				// root-owned posture on encrypted storage.
+				if err := os.MkdirAll(targetDir, 0o755); err != nil {
 					return err
 				}
-				return os.WriteFile(filepath.Join(targetDir, f), d, 0o600)
+				return os.WriteFile(filepath.Join(targetDir, f), d, 0o644)
 			},
 		)
 		if rerr != nil {
