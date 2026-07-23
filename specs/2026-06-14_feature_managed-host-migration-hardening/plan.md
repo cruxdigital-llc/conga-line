@@ -53,7 +53,7 @@
 1. **Land the fixes first (this spec → PR).** Do NOT migrate the remaining 3 agents until R1+R2(+R4)
    are merged + provider-released — migrating now would only add more reboot-fragile agents.
 2. **Remediate the 3 already-migrated agents** (R1 pin) — one `conga refresh` each, post-release.
-3. **Migrate the remaining 3** (nextgen-delivery, nvidia-team, zach) individually with the hardened
+3. **Migrate the remaining 3** (team-c, team-a, user-b) individually with the hardened
    migration (R2) + per-agent refresh, then verify each (agent `.2`, proxy `.3`, healthy).
 4. **Prove C5b** — once all 6 are migrated + pinned, do a controlled `reboot` of the host and confirm
    the whole fleet returns unattended (the acceptance test for the whole feature).

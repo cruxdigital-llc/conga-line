@@ -2,13 +2,13 @@
 
 ## Goal
 
-Allow any agent to route its model traffic to a self-hosted OpenAI-compatible LLM via the existing `behavior/agents/<name>/` overlay. First production use case: point the `aaron` user agent at Qwen 3.6 on the DGX Spark (`http://192.168.181.97:11434/v1`) over the existing WireGuard VPN. Same mechanism must work on AWS, local, and remote providers without divergence.
+Allow any agent to route its model traffic to a self-hosted OpenAI-compatible LLM via the existing `behavior/agents/<name>/` overlay. First production use case: point the `user-a` user agent at Qwen 3.6 on the DGX Spark (`http://<lan-ip>:11434/v1`) over the existing WireGuard VPN. Same mechanism must work on AWS, local, and remote providers without divergence.
 
 ## Why now
 
-- The VPN between the AWS VPC and Aaron's Spark is up and healthy.
-- The egress allowlist already includes `192.168.181.97` (global and `agents.aaron.egress_allowed_domains`); UDP/51820 is open in `egress_ports`. The network layer is solved.
-- Per-agent secrets (`agents.aaron.secrets = {}` in tfvars) already convert kebab-case → SCREAMING_SNAKE env vars via `pkg/common/secrets.go` `SecretNameToEnvVar`. Adding `openai-api-key` already exports `OPENAI_API_KEY` to the container.
+- The VPN between the AWS VPC and user-a's Spark is up and healthy.
+- The egress allowlist already includes `<lan-ip>` (global and `agents.user-a.egress_allowed_domains`); UDP/51820 is open in `egress_ports`. The network layer is solved.
+- Per-agent secrets (`agents.user-a.secrets = {}` in tfvars) already convert kebab-case → SCREAMING_SNAKE env vars via `pkg/common/secrets.go` `SecretNameToEnvVar`. Adding `openai-api-key` already exports `OPENAI_API_KEY` to the container.
 - The single remaining gap: `pkg/runtime/openclaw/openclaw-defaults.json:4` hardcodes `anthropic/claude-opus-4-6` and the generated `openclaw.json` has no per-agent override slot.
 
 ## Functional Requirements
@@ -24,7 +24,7 @@ Allow any agent to route its model traffic to a self-hosted OpenAI-compatible LL
 model:
   provider: openai        # required if block is present; enum: "openai", "anthropic" (no-op)
   name: qwen-3.6          # required when provider is set
-  base_url: http://192.168.181.97:11434/v1   # optional; required for openai when not using OpenAI's hosted API
+  base_url: http://<lan-ip>:11434/v1   # optional; required for openai when not using OpenAI's hosted API
 ```
 - All three fields validated:
   - `provider` ∈ a known set (start with `openai` and `anthropic`).
@@ -74,23 +74,23 @@ The feature is intentionally implemented as **extensions to existing pipes**, no
 - Bifrost sidecar, cross-provider fallback, cost tracking, classifier selection, or multi-model-per-request routing. These belong to the planned Bifrost spec (ROADMAP #22).
 - Changing the default model for any existing agent.
 - Moving secrets out of tfvars.
-- Cleaning up `behavior/agents/nvidia-team/` (worktree-only directory; separate concern).
+- Cleaning up `behavior/agents/team-a/` (worktree-only directory; separate concern).
 
 ## Success Criteria
 
-### SC-1: `aaron` reaches Qwen via the Spark
-- After `terraform apply` + `conga refresh-agent aaron`, `mcp__conga__conga_container_exec --agent aaron` showing `cat /home/node/.openclaw/openclaw.json` reveals `model.primary` = `openai/qwen-3.6` and `models["openai/qwen-3.6"].baseURL` = `http://192.168.181.97:11434/v1`.
-- A Slack DM to `aaron` produces a Qwen-shaped response (not Anthropic).
-- `mcp__conga__conga_get_logs --agent aaron` shows the outbound URL is the Spark.
-- `mcp__conga__conga_get_proxy_logs --agent aaron` shows Envoy's connect target is `192.168.181.97:11434`.
+### SC-1: `user-a` reaches Qwen via the Spark
+- After `terraform apply` + `conga refresh-agent user-a`, `mcp__conga__conga_container_exec --agent user-a` showing `cat /home/node/.openclaw/openclaw.json` reveals `model.primary` = `openai/qwen-3.6` and `models["openai/qwen-3.6"].baseURL` = `http://<lan-ip>:11434/v1`.
+- A Slack DM to `user-a` produces a Qwen-shaped response (not Anthropic).
+- `mcp__conga__conga_get_logs --agent user-a` shows the outbound URL is the Spark.
+- `mcp__conga__conga_get_proxy_logs --agent user-a` shows Envoy's connect target is `<lan-ip>:11434`.
 
 ### SC-2: No regression for non-opting agents
-- `zach`, `nathan`, `nextgen-delivery`, `nvidia-team` all continue to route to `api.anthropic.com`.
+- `user-b`, `user-c`, `team-c`, `team-a` all continue to route to `api.anthropic.com`.
 - Their rendered `openclaw.json` diffs (before vs. after this feature merges) are empty.
 - A Slack DM to a control agent still returns an Anthropic-shaped response.
 
 ### SC-3: Provider-agnostic
-- A fresh `conga admin setup --provider local` on a dev machine that contains the same `behavior/agents/aaron/agent.yaml` produces an `openclaw.json` with the same model overlay (Spark URL).
+- A fresh `conga admin setup --provider local` on a dev machine that contains the same `behavior/agents/user-a/agent.yaml` produces an `openclaw.json` with the same model overlay (Spark URL).
 - Same overlay applied via the remote provider produces the same `openclaw.json`.
 
 ### SC-4: Terraform untouched
@@ -113,8 +113,8 @@ The feature is intentionally implemented as **extensions to existing pipes**, no
 
 - **OpenClaw must natively support OpenAI-compatible providers** in the chosen image. If the spike reveals it does not, this feature is blocked pending Bifrost; we do NOT add a translator sidecar as part of this feature.
 - The WireGuard VPN remains operator-managed.
-- The Spark IP is stable. If it changes, both `terraform.tfvars` (`egress_allowed_domains`) and `behavior/agents/aaron/agent.yaml` (`base_url`) must be updated — documented but not automated.
-- The `aaron` agent runs in single-user (`type = "user"`) mode; no cross-agent model sharing semantics needed.
+- The Spark IP is stable. If it changes, both `terraform.tfvars` (`egress_allowed_domains`) and `behavior/agents/user-a/agent.yaml` (`base_url`) must be updated — documented but not automated.
+- The `user-a` agent runs in single-user (`type = "user"`) mode; no cross-agent model sharing semantics needed.
 
 ## Open Questions (resolved in the spec phase)
 

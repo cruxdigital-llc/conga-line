@@ -4,7 +4,7 @@ This document captures every monkey-patch, workaround, and architectural drift
 discovered while bringing the delegation-routing feature to production. Each
 item is sized, scoped, and linked to a proposed fix.
 
-Per Aaron's direction (this session), the goal is to **address all of these
+Per user-a's direction (this session), the goal is to **address all of these
 in this PR** rather than defer. Some items are quick (one-file changes);
 others are architectural enough to warrant their own spec. For the latter, a
 design sketch is included; final design lands when implementation begins.
@@ -15,9 +15,9 @@ design sketch is included; final design lands when implementation begins.
 
 **Severity**: high — silent data-quality failure. Deploys defaults-only config when run from a git worktree.
 
-**Symptom (observed this session)**: MCP server's cwd was the explore-agent-routing worktree. `resolveAWSBehaviorDir()` prefers `./agents` over walking to the parent checkout. The worktree's `agents/` contains only the committed `_defaults/` and `_example/` (per-agent dirs are gitignored), so the loader treated all per-agent overlays as missing. First refresh of `aaron` after the schema bump landed an openclaw.json with no `subagents` block.
+**Symptom (observed this session)**: MCP server's cwd was the explore-agent-routing worktree. `resolveAWSBehaviorDir()` prefers `./agents` over walking to the parent checkout. The worktree's `agents/` contains only the committed `_defaults/` and `_example/` (per-agent dirs are gitignored), so the loader treated all per-agent overlays as missing. First refresh of `user-a` after the schema bump landed an openclaw.json with no `subagents` block.
 
-**Workaround applied**: `ln -s /Users/aaronstone/Development/crux/congaline/agents/<name> agents/<name>` for each of the 5 agents in the worktree. Symlinks survive across MCP refreshes but evaporate when the worktree is cleaned up.
+**Workaround applied**: `ln -s ~/Development/crux/congaline/agents/<name> agents/<name>` for each of the 5 agents in the worktree. Symlinks survive across MCP refreshes but evaporate when the worktree is cleaned up.
 
 **Root cause**: two functions duplicate the same logic:
 - `pkg/provider/awsprovider/channels.go::resolveAWSBehaviorDir()`
@@ -111,7 +111,7 @@ This is a bug in the conga terraform provider — it returned a different `id` v
 
 **Severity**: medium — recoverable but unpleasant catch-22.
 
-**Symptom (this session)**: The 4 paused agents (zach, nathan, nvidia-team, nextgen-delivery) had their `/etc/systemd/system/conga-<name>.service` unit files missing. `unpause` runs `systemctl start conga-<name>`, which fails with `Unit conga-<name>.service not found`. `refresh` (which would recreate the unit via `refresh-user.sh.tmpl`) refuses to run while the agent is marked `paused: true`.
+**Symptom (this session)**: The 4 paused agents (user-b, user-c, team-a, team-c) had their `/etc/systemd/system/conga-<name>.service` unit files missing. `unpause` runs `systemctl start conga-<name>`, which fails with `Unit conga-<name>.service not found`. `refresh` (which would recreate the unit via `refresh-user.sh.tmpl`) refuses to run while the agent is marked `paused: true`.
 
 **Workaround applied**: directly flipped `paused: false` in the SSM parameter via `aws ssm put-parameter`, then called `conga_refresh_agent` via MCP. The refresh path recreated the unit file + .env + container.
 
@@ -140,7 +140,7 @@ This is a bug in the conga terraform provider — it returned a different `id` v
 - **A**: Make `refresh` also regenerate the Envoy config + restart the egress proxy. Conceptually it's all "make this agent current". Risk: bigger blast radius for what's currently a low-impact operation.
 - **B**: Keep them separate but document the split clearly. Add a "did you also run `policy deploy`?" hint to refresh output. Risk: relies on operator memory.
 
-Aaron's call. Recommend **A** — operators are confused by the split today; merging is the right ergonomic choice.
+user-a's call. Recommend **A** — operators are confused by the split today; merging is the right ergonomic choice.
 
 **Scope**: ~50-line change spanning `pkg/provider/{local,remote,aws}provider/provider.go::RefreshAgent`. Each provider needs to (re)deploy the egress proxy as part of refresh.
 
@@ -152,7 +152,7 @@ Aaron's call. Recommend **A** — operators are confused by the split today; mer
 
 **Severity**: high — agents are in deny-all egress state from bootstrap until an operator manually runs `policy deploy`.
 
-**Symptom (this session)**: aaron's `/opt/conga/config/egress-aaron.yaml` mtime was `2026-05-22 22:43:41` — the original bootstrap time. The Lua filter's `EXACT` and `SUFFIXES` tables were both empty. Every outbound request was 403'd by Envoy regardless of policy state. This was the actual root cause of "aaron not accessible via Slack" — bolt-app couldn't call `slack.com` (or anywhere), failed health checks, listener crashed after `ack()`, returned 401/404 on inbound webhook events.
+**Symptom (this session)**: user-a's `/opt/conga/config/egress-user-a.yaml` mtime was `2026-05-22 22:43:41` — the original bootstrap time. The Lua filter's `EXACT` and `SUFFIXES` tables were both empty. Every outbound request was 403'd by Envoy regardless of policy state. This was the actual root cause of "user-a not accessible via Slack" — bolt-app couldn't call `slack.com` (or anywhere), failed health checks, listener crashed after `ack()`, returned 401/404 on inbound webhook events.
 
 **Root cause**: the bash bootstrap (terraform `user-data.sh.tftpl`) writes an Envoy config with an empty allowlist because it runs BEFORE the policy has been set. Nothing reconciles this at the end of bootstrap. Operators are supposed to know to run `conga policy deploy` after bootstrap, but it's not documented as a required step — and even when policy is updated later via `terraform apply`, the in-provider cascade-refresh fails (per #3), so the proxy config stays stale.
 

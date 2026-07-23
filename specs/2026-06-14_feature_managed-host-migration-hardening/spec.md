@@ -1,7 +1,7 @@
 # Technical Specification — Managed-Host Migration Hardening
 
 - **Created**: 2026-06-14
-- **Owner**: Aaron Stone
+- **Owner**: <operator>
 - **Status**: Specified (pre-implementation)
 - **Builds on**: `requirements.md`, `plan.md` (read first). Parent: `specs/2026-06-13_feature_managed-host-provisioning-engine/` (merged PR #67, `1b41c12`).
 - **Scope**: the four restart/reboot-safety defects (R1–R4) diagnosed during the live fleet migration. Umbrella acceptance = **C5b (unattended whole-fleet reboot survival)**.
@@ -32,7 +32,7 @@ No new user-facing surface. Slack `operator.write` delegation gap is **out of sc
 **Defect:** the proxy runs `--restart always` with no `--ip`. On a simultaneous restart the Docker
 daemon brings the proxy up before the systemd-managed agent; the proxy auto-assigns the lowest free
 address (`.2`), and the agent's `docker run --ip .2` then fails (exit 125) → crash-loop. Observed on
-`aaron`.
+`user-a`.
 
 **Design — pin the proxy at every creation site; make `ProxyIP` an enforced assignment.**
 
@@ -53,7 +53,7 @@ simplification.
 **Invariant (testable):** every proxy `docker run` carries `--ip <ProxyIP>` (`.3`); the agent's
 `--ip` is `.2`; the two never coincide under any restart ordering.
 
-**Remediation of the 3 already-migrated agents (aaron, nathan, congaline-team):** one
+**Remediation of the 3 already-migrated agents (user-a, user-c, team-b):** one
 `conga refresh <agent>` each post-release re-creates the proxy with the pin (engine starts the agent →
 `.2`, then deploy-egress recreates the proxy → now explicitly `.3`). Until then they are reboot-fragile
 (known issue; avoid a host reboot).
@@ -64,7 +64,7 @@ simplification.
 
 **Defect:** `agentNetworkMigrationCmd` (one shell string) (a) can't remove the old network when a
 **foreign/dangling** endpoint is attached (a stale `conga-router` bridge endpoint blocked
-`congaline-team`; the persisted ghost needed a fleet-bouncing `docker` daemon restart), and (b) removes
+`team-b`; the persisted ghost needed a fleet-bouncing `docker` daemon restart), and (b) removes
 the agent container **before** the network is recreatable, so a blocked `network rm` left the agent
 **DOWN** and unstartable.
 
@@ -115,7 +115,7 @@ func ReconcileAgentNetwork(ctx context.Context, t Transport, name string, net Ag
 **Why this is fail-safe:** the only thing that can block `network rm` is a *foreign* endpoint, and those
 are cleared (or the run aborts) in PREPARE — *before* the agent is stopped. The agent's own endpoint is
 never a blocker (it's removed with the container in COMMIT). So a ghost-endpoint case now aborts with
-the agent **still serving**, not down (the `congaline-team` failure mode is impossible).
+the agent **still serving**, not down (the `team-b` failure mode is impossible).
 
 **Wiring:** `defineAndStartAgentService` calls `managedhost.ReconcileAgentNetwork(ctx, t, agent.Name,
 net)` in place of `t.RunCommand(agentNetworkMigrationCmd(...))`. On error it returns immediately
@@ -254,7 +254,7 @@ abort-then-recover cycle.
    (`pkg/` changed: `managedhost`, `awsprovider`).
 2. **Remediate the 3 already-migrated agents** (R1 pin): `conga refresh` each (one at a time, verify
    `.2`/`.3`).
-3. **Migrate the remaining 3** (nextgen-delivery, nvidia-team, zach) — individually, hardened path
+3. **Migrate the remaining 3** (team-c, team-a, user-b) — individually, hardened path
    (R2), verify each.
 4. **Prove C5b** — controlled host `reboot`; confirm unattended full-fleet return. Then a one-time
    `172.x` `DOCKER-USER` sweep is safe (all agents on `10.99.x`).
@@ -307,6 +307,6 @@ fixed in `84b87a3`); the design intent is unchanged, these are refinements:
    global deadline, only operator cancel breaks the loop). (Review #4.)
 
 **Acceptance:** R1–R4 unit-verified; **C5b reboot acceptance PASSED live** (2026-06-14, host
-`i-024bf3a55563f9e88`): full reboot → all 6 agents `active`/`running`, `restarts=0`, agents `.2`,
+`i-xxxx`): full reboot → all 6 agents `active`/`running`, `restarts=0`, agents `.2`,
 proxies `IPAMConfig`-pinned `.3`, egress re-applied (0 `172.x` rules), DNS OK — completely unattended.
 See the README session log for the full release + rollout + acceptance trace.

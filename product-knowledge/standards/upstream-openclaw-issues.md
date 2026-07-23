@@ -20,9 +20,9 @@ ships in a version we've pinned to.
 
 **Upstream:** [openclaw/openclaw#25592](https://github.com/openclaw/openclaw/issues/25592) — open since 2026-02; still open at v2026.5.26.
 
-**Symptom.** Bare `text` content blocks emitted by Claude *before* a tool call — preamble narration, "let me think about this" prose, decision-not-to-reply commentary, inter-tool acknowledgements — are delivered to the channel as visible Slack messages. Real example from `nvidia-team` on 2026-05-27 (on v2026.5.18, before our fix):
+**Symptom.** Bare `text` content blocks emitted by Claude *before* a tool call — preamble narration, "let me think about this" prose, decision-not-to-reply commentary, inter-tool acknowledgements — are delivered to the channel as visible Slack messages. Real example from `team-a` on 2026-05-27 (on v2026.5.18, before our fix):
 
-> *"Nathan is posting status updates — Linear tickets filed and Phase 1 MR up. Not directed at me, no question to answer. Just a team update. Let me capture the ticket references to memory and stay quiet."*
+> *"user-c is posting status updates — Linear tickets filed and Phase 1 MR up. Not directed at me, no question to answer. Just a team update. Let me capture the ticket references to memory and stay quiet."*
 
 The leaked content is **not** an Anthropic `thinking` block. Those are tagged `isReasoning: true` and are suppressed by [#84319](https://github.com/openclaw/openclaw/issues/84319) (closed in v2026.5.20). What leaks here is plain assistant text that the model uses as a "scratchpad" before its tool calls. It bypasses every reasoning-suppression code path because it's not flagged as reasoning.
 
@@ -38,7 +38,7 @@ The leaked content is **not** an Anthropic `thinking` block. Those are tagged `i
     - `agents/_defaults/openclaw/team/AGENTS.md` (generic team default)
     - `agents/_defaults/openclaw/role-code-dev/AGENTS.md`
     - `agents/_defaults/openclaw/role-writing/AGENTS.md`
-    - Per-agent `agents/<name>/AGENTS.md` for any team agent that has its own (e.g. `agents/nvidia-team/AGENTS.md`).
+    - Per-agent `agents/<name>/AGENTS.md` for any team agent that has its own (e.g. `agents/team-a/AGENTS.md`).
 
     Tells the model: *only `message(...)` posts; bare text is internal; if you finish a turn without calling `message()` when you meant to reply, that reply is lost*.
 

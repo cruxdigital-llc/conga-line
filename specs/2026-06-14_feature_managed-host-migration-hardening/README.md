@@ -3,7 +3,7 @@
 **Trace Log** — GLaDOS `plan-feature` workflow
 
 - **Created**: 2026-06-14
-- **Owner**: Aaron Stone
+- **Owner**: <operator>
 - **Status**: Planning (requirements + high-level plan)
 - **Spec dir**: `specs/2026-06-14_feature_managed-host-migration-hardening/`
 - **Parent feature**: `specs/2026-06-13_feature_managed-host-provisioning-engine/` (PR #67, merged `1b41c12`)
@@ -43,18 +43,18 @@ thundering-herd — so a host reboot or a Docker daemon restart brings the whole
 | # | Defect | Severity | Where |
 |---|---|---|---|
 | 1 | **Egress-proxy IP collision** — proxy runs `--restart always` with no `--ip`, so on a simultaneous restart it can grab the agent's static `.2` before the agent → `docker run --ip .2` fails (exit 125) → agent crash-loops. (Was review #6, wrongly downgraded to "advisory" — it's a reboot-survival correctness bug.) | **HIGH** | `deploy-egress.sh.tmpl`, `DeployEgress` (pass `ProxyIP`), `add-user/add-team.sh.tmpl` proxy creation |
-| 2 | **Migration not robust + destructive-on-failure** — (a) `docker network rm` fails on a foreign/dangling endpoint (a stale `conga-router` bridge endpoint blocked `congaline-team`; clearing the *persisted* ghost required a fleet-bouncing docker daemon restart); (b) the migration removes the agent container **before** confirming recreate, so a failure leaves the agent **DOWN** instead of running on its old net. | **HIGH** | `agentNetworkMigrationCmd` (`pkg/provider/awsprovider/engine.go`) |
+| 2 | **Migration not robust + destructive-on-failure** — (a) `docker network rm` fails on a foreign/dangling endpoint (a stale `conga-router` bridge endpoint blocked `team-b`; clearing the *persisted* ghost required a fleet-bouncing docker daemon restart); (b) the migration removes the agent container **before** confirming recreate, so a failure leaves the agent **DOWN** instead of running on its old net. | **HIGH** | `agentNetworkMigrationCmd` (`pkg/provider/awsprovider/engine.go`) |
 | 3 | **`refresh-all` global timeout** — one `--timeout` (default 5m) is shared across the whole fleet; it died after ~1.5 agents (`context deadline exceeded`). | **MED** | `RefreshAll` / CLI `admin refresh-all` |
 | 4 | **`pre-start.sh` thundering herd** — a simultaneous fleet bounce runs N concurrent `aws s3 sync` + `deploy-agents.sh` in `ExecStartPre`, blowing the 120s `TimeoutStartSec` → crash-loop. | **MED** | `pre-start.sh` + the unit's `ExecStartPre`/`TimeoutStartSec` |
 
 ## Live-incident facts (ground truth, not assumed)
 
-- Fleet recovered: all 6 agents `active`+`running`. **3 migrated** (aaron 10.99.0.2/proxy .3, nathan
-  10.99.4.2/.3, congaline-team 10.99.6.2/.3). **3 held on old auto-subnets** (nextgen-delivery 172.20,
-  nvidia-team 172.21, zach 172.22) — reboot-safe (no static IP to collide), deliberately NOT migrated.
-- Defect 1 reproduced: post-docker-restart, `conga-egress-aaron` held `10.99.0.2`; aaron `docker run`
-  exit 125 crash-loop. Recovered by freeing `.2` + `conga refresh aaron` (proxy then landed on `.3`).
-- Defect 2 reproduced: `congaline-team` left DOWN (container removed, network recreate blocked by a
+- Fleet recovered: all 6 agents `active`+`running`. **3 migrated** (user-a 10.99.0.2/proxy .3, user-c
+  10.99.4.2/.3, team-b 10.99.6.2/.3). **3 held on old auto-subnets** (team-c 172.20,
+  team-a 172.21, user-b 172.22) — reboot-safe (no static IP to collide), deliberately NOT migrated.
+- Defect 1 reproduced: post-docker-restart, `conga-egress-user-a` held `10.99.0.2`; user-a `docker run`
+  exit 125 crash-loop. Recovered by freeing `.2` + `conga refresh user-a` (proxy then landed on `.3`).
+- Defect 2 reproduced: `team-b` left DOWN (container removed, network recreate blocked by a
   ghost `conga-router` endpoint that resisted disconnect-by-name/-id + router restart); only a
   `systemctl restart docker` cleared it.
 - Defect 4 reproduced: after the docker restart, 5 agents crash-looped on `pre-start.sh` `ExecStartPre`
@@ -148,7 +148,7 @@ window). Ready for `/glados:implement-feature`.
 - **2026-06-14** — **R2, R4, R3 implemented; all four requirements code-complete + unit-verified.**
   - **R2** (the core): new `managedhost/network_reconcile.go` `ReconcileAgentNetwork` — prepare-then-commit,
     transport-driven. Clears foreign/dangling endpoints (the stale `conga-router` bridge that downed
-    `congaline-team`) BEFORE touching the agent; aborts with an actionable error if a ghost persists,
+    `team-b`) BEFORE touching the agent; aborts with an actionable error if a ghost persists,
     leaving the agent **running on its old net** (fail-safe). Step-verified COMMIT. Wired into
     `defineAndStartAgentService`; deleted the shell-string `agentNetworkMigrationCmd`. New
     `network_reconcile_test.go` (fake-transport `responder`): no-op / create-only / **fail-safe-abort
@@ -163,19 +163,19 @@ window). Ready for `/glados:implement-feature`.
     `/glados:verify-feature`.
 
 - **2026-06-14** — **PR #68 opened + agent code-review pass; 4 findings fixed (commit `84b87a3`);
-  fixes live-validated on `zach`.** Reviewer: no blocking; core R2 fail-safe/ordering verified correct.
+  fixes live-validated on `user-b`.** Reviewer: no blocking; core R2 fail-safe/ordering verified correct.
   Fixed: **#1** add-user/add-team bail with an actionable `conga refresh` message if the network already
   exists (was: no-op static-create → proxy `--ip` exit-125 + removed proxy on re-provision over a legacy
   net); **#2** `ReconcileAgentNetwork` returns `migrated` bool → `RefreshAgent` makes the egress redeploy
   **fatal when the proxy was torn down** (non-fatal on steady-state); **#3** guarded the `pre-start.sh`
   flock fd open under `set -e`; **#4** corrected the `RefreshAll` Ctrl-C comment (next-iteration boundary).
   Reconcile tests assert the `migrated` bool. **Live test (validate on a held agent): `conga refresh
-  zach`** migrated `172.22`→**`10.99.2`**, agent `.2`, **proxy `IPAMConfig` pinned `10.99.2.3`** (R1
+  user-b`** migrated `172.22`→**`10.99.2`**, agent `.2`, **proxy `IPAMConfig` pinned `10.99.2.3`** (R1
   proven — collision structurally impossible), agent stayed up through the migration (R2 fail-safe),
   refresh succeeded with the now-fatal post-migration egress redeploy (#2), old-`172.22` rules flushed
-  (0 orphans), 5-rule egress + DNS OK, unit enabled+active. `zach` is now migrated + reboot-safe.
-  **Remaining rollout:** re-refresh aaron/nathan/congaline-team (migrated *pre-fix* → proxies NOT pinned
-  → still reboot-fragile until re-refreshed); migrate nextgen-delivery + nvidia-team (still on
+  (0 orphans), 5-rule egress + DNS OK, unit enabled+active. `user-b` is now migrated + reboot-safe.
+  **Remaining rollout:** re-refresh user-a/user-c/team-b (migrated *pre-fix* → proxies NOT pinned
+  → still reboot-fragile until re-refreshed); migrate team-c + team-a (still on
   auto-subnet); then the C5b host-reboot acceptance — all coordinated with the provider release.
 
 - **2026-06-14** — **Provider released + full-fleet rollout + C5b reboot acceptance — feature operationally
@@ -183,11 +183,11 @@ window). Ready for `/glados:implement-feature`.
   conga-line `v0.0.30`→`v0.0.31`, tagged `v0.1.9` (GoReleaser → registry); terraform pin bumped
   `0.1.8`→`0.1.9` in `production/main.tf` + `modules/congaline/main.tf` (PR #69).
   **Staged fleet rollout** (one agent at a time, no `refresh-all --force`): re-refreshed the 3
-  pre-fix-migrated agents (aaron/nathan/congaline-team) to pin their proxies; migrated the 2 held
-  auto-subnet agents (nextgen-delivery 172.20→`10.99.3`, nvidia-team 172.21→`10.99.5`). End state
+  pre-fix-migrated agents (user-a/user-c/team-b) to pin their proxies; migrated the 2 held
+  auto-subnet agents (team-c 172.20→`10.99.3`, team-a 172.21→`10.99.5`). End state
   pre-reboot: **all 6 agents on static `10.99.x.2`, every proxy `IPAMConfig`-pinned `.3`.**
   **C5b — PASSED (the acceptance gate):** controlled `systemctl reboot` of prod host
-  `i-024bf3a55563f9e88` → the entire fleet returned **completely unattended**: boot time moved
+  `i-xxxx` → the entire fleet returned **completely unattended**: boot time moved
   `2026-06-11`→`2026-06-14 16:30`; **all 6 agents `active`/`running` with `restarts=0`** (R1 proven — no
   proxy-IP collision loop; R4 proven — no `pre-start.sh` thundering-herd timeout), each agent on `.2`,
   each proxy pinned `.3`, egress fail-closed re-applied (30 `10.99.x` rules, **0 `172.x`**, 6 `DROP`-last),
