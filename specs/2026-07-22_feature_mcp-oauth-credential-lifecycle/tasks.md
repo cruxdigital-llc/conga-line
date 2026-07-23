@@ -54,11 +54,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done. Files are the expected to
 - [x] S6.2 `config-taxonomy.md`: note on the per-container `mcp-oauth/` blob (currently unmanaged) + recovery + Phase 2 pointer.
 - [x] S6.3 `conga json-schema` entries for `mcp.login` + `doctor`.
 
-## S4/S5/S7 — Phase 2 (persist/restore) + release  *(DEFERRED → next session)*
-- [ ] S4 `common.CaptureMCPOAuth` (blob → secret) + wire into `mcp login` success & `RefreshAgent`.
-- [ ] S5 `common.RestoreMCPOAuth` (cold-only) + wire pre-container-start on all three providers.
-- [ ] S7.1 Data-persistence integration test (cold-restore byte-identical; warm refresh leaves on-disk untouched).
-- [ ] S7.4 `terraform-provider-conga` release (S1/S4/S5 touch `pkg/`) per `reference_provider_release_flow`.
+## S4/S5/S7 — Phase 2 (persist/restore) + release
+- [x] S4 `common.CaptureMCPOAuth` (blob → secret) wired into `mcp login` (all providers; JSON-validity guard). *(PR #77)*
+- [x] S5 `common.RestoreMCPOAuth` (cold-only) wired pre-container-start on **local** *(PR #77)* and
+  **remote + AWS** *(PR #78: remote via SSH `test -f`/Upload 0644; AWS via SSM `test -f`/uploadFile 0600
+  + root chown→1000 on encrypted EBS)*. Both resolve the agent runtime; Hermes no-ops.
+- [x] S7.1 Restart-restore integration tests: `TestMCPOAuthRestoreOnRefresh` (local, PR #77) +
+  `TestMCPOAuthRestoreOnRefreshRemote` (SSH/SFTP, PR #78) — restore-into-container, no-env-leak,
+  cold-only. AWS is unit/build-only (reuses unit-tested `common.RestoreMCPOAuth`) per `project_no_aws_ci_integration`.
+- [ ] S7.4 `terraform-provider-conga` release (S1/S4/S5 touch `pkg/`) per `reference_provider_release_flow` — **next**.
+- [ ] Deferred: re-capture on refresh (§4.4 freshness); `ListSecrets` blob-display polish (PR #77 review finding #3).
 
 ---
 
