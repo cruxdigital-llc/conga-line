@@ -564,6 +564,36 @@ func (p *AWSProvider) regenerateAgentConfigOnInstance(ctx context.Context, insta
 		return fmt.Errorf("failed to upload env file: %w", err)
 	}
 
+	// Restore any persisted MCP OAuth credential blobs into the data dir
+	// (cold-only) before the container starts, so an OAuth server comes up
+	// authenticated after a fresh provision / data-dir loss. Uploaded 0600
+	// before the chown below, which makes them container-user-owned on the
+	// encrypted EBS data volume — the managed-host secure posture. On-disk copies
+	// (kept fresh by the running runtime) are authoritative and never overwritten.
+	if rt, rtErr := runtime.Get(runtime.ResolveRuntime(cfg.Runtime, "")); rtErr == nil {
+		if oauthDir := rt.OAuthStateDir(); oauthDir != "" {
+			targetDir := dataDir + "/" + oauthDir
+			if _, err := p.runOnInstance(ctx, instanceID, fmt.Sprintf("mkdir -p '%s'", targetDir), 30*time.Second); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not create MCP OAuth dir for %s: %v\n", cfg.Name, err)
+			} else {
+				n, rerr := common.RestoreMCPOAuth(perAgent,
+					func(f string) bool {
+						_, err := p.runOnInstance(ctx, instanceID, fmt.Sprintf("test -f '%s/%s'", targetDir, f), 30*time.Second)
+						return err == nil
+					},
+					func(f string, d []byte) error {
+						return p.uploadFile(ctx, instanceID, targetDir+"/"+f, d, "0600")
+					},
+				)
+				if rerr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: restoring MCP OAuth credentials for %s: %v\n", cfg.Name, rerr)
+				} else if n > 0 {
+					fmt.Fprintf(os.Stderr, "Restored %d MCP OAuth credential(s) for %s from Secrets Manager.\n", n, cfg.Name)
+				}
+			}
+		}
+	}
+
 	// Fix ownership for container user (SFTP uploads create root-owned files)
 	if _, err := p.runOnInstance(ctx, instanceID, fmt.Sprintf("chown -R 1000:1000 '%s'", dataDir), 30*time.Second); err != nil {
 		return fmt.Errorf("failed to fix ownership on %s: %w", dataDir, err)
