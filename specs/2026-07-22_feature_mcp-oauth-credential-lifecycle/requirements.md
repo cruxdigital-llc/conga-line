@@ -1,5 +1,10 @@
 # Requirements — Remote-MCP OAuth Credential Lifecycle
 
+> **Status: ✅ all success criteria met (2026-07-23).** Phase 1 criteria 1–4 (detect + one-command
+> re-auth) and Phase 2 criteria 5–8 (capture + cold-only restore, all providers) shipped & released
+> (v0.1.10) and live-verified on AWS. Criterion 7 holds as scoped (Mode A / credential-loss; Mode B /
+> token-revocation still needs a browser re-auth by design). See `README.md` for the trace.
+
 ## Goal
 
 Remote-MCP OAuth credentials must be a **managed, fleet-durable** part of a Conga agent. A credential
