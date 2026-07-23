@@ -4,7 +4,6 @@ package cmd
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"testing"
 )
@@ -86,18 +85,16 @@ func TestMCPOAuthRestoreOnRefresh(t *testing.T) {
 	t.Run("refresh-does-not-clobber-authoritative-on-disk-copy", func(t *testing.T) {
 		skipIfPriorFailed(t, parent)
 		cName := "conga-" + agentName
-		const newer = `{"tokens":{"refresh_token":"ONDISK-NEWER"}}`
 
-		// Overwrite the on-disk copy as root INSIDE the container (uid 0), which
-		// is ownership-independent. Depending on the environment the restored blob
-		// is owned by uid 1000 (managed-host chown succeeds) or the host user
-		// (local non-root chown fails), so neither a host-side write nor a
-		// container-user write is portable — root is.
-		wr := exec.Command("docker", "exec", "-i", "-u", "0", cName, "tee", blobPath)
-		wr.Stdin = strings.NewReader(newer)
-		if out, err := wr.CombinedOutput(); err != nil {
-			t.Fatalf("could not overwrite on-disk blob: %v\n%s", err, out)
-		}
+		// Change the STORED secret so it differs from the on-disk copy, then
+		// refresh. Cold-only means the existing on-disk file (the runtime's
+		// authoritative copy) must NOT be overwritten from the changed secret —
+		// so the container must still hold the ORIGINAL blob, not the new value.
+		// (Modifying the secret is ownership-independent, unlike writing the
+		// 0600/0644 blob file which is owned by uid 1000 in a cap-dropped
+		// container.)
+		mustRunCLI(t, append(base, "secrets", "set", secretName,
+			"--value", `{"tokens":{"refresh_token":"STORED-CHANGED"}}`, "--agent", agentName)...)
 
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
 		assertContainerRunning(t, agentName)
@@ -106,8 +103,8 @@ func TestMCPOAuthRestoreOnRefresh(t *testing.T) {
 		if err != nil {
 			t.Fatalf("blob missing after refresh: %v", err)
 		}
-		if strings.TrimSpace(got) != newer {
-			t.Errorf("cold-only violated: refresh overwrote the authoritative on-disk copy.\n got: %s\nwant: %s", got, newer)
+		if strings.TrimSpace(got) != blob {
+			t.Errorf("cold-only violated: refresh overwrote the authoritative on-disk copy from the changed secret.\n got: %s\nwant (original): %s", got, blob)
 		}
 	})
 
