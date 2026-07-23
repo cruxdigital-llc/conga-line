@@ -4,9 +4,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -88,21 +86,17 @@ func TestMCPOAuthRestoreOnRefresh(t *testing.T) {
 	t.Run("refresh-does-not-clobber-authoritative-on-disk-copy", func(t *testing.T) {
 		skipIfPriorFailed(t, parent)
 		cName := "conga-" + agentName
-
-		// Modify the on-disk copy from the HOST (via the bind-mount source), not
-		// from inside the container: the restored blob is owned by the host user
-		// (a non-root host can't chown it to uid 1000), so the container user
-		// can't write it. Simulating a runtime token refresh host-side is
-		// ownership-independent and works on both Linux CI and Docker Desktop.
-		out, err := exec.Command("docker", "inspect", "-f",
-			`{{range .Mounts}}{{if eq .Destination "/home/node/.openclaw"}}{{.Source}}{{end}}{{end}}`, cName).Output()
-		if err != nil {
-			t.Fatalf("docker inspect mount source: %v", err)
-		}
-		hostBlob := filepath.Join(strings.TrimSpace(string(out)), "mcp-oauth", "linear-test.json")
 		const newer = `{"tokens":{"refresh_token":"ONDISK-NEWER"}}`
-		if err := os.WriteFile(hostBlob, []byte(newer), 0o644); err != nil {
-			t.Fatalf("could not overwrite on-disk blob at %s: %v", hostBlob, err)
+
+		// Overwrite the on-disk copy as root INSIDE the container (uid 0), which
+		// is ownership-independent. Depending on the environment the restored blob
+		// is owned by uid 1000 (managed-host chown succeeds) or the host user
+		// (local non-root chown fails), so neither a host-side write nor a
+		// container-user write is portable — root is.
+		wr := exec.Command("docker", "exec", "-i", "-u", "0", cName, "tee", blobPath)
+		wr.Stdin = strings.NewReader(newer)
+		if out, err := wr.CombinedOutput(); err != nil {
+			t.Fatalf("could not overwrite on-disk blob: %v\n%s", err, out)
 		}
 
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)

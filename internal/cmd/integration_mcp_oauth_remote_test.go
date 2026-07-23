@@ -4,9 +4,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -78,15 +76,16 @@ func TestMCPOAuthRestoreOnRefreshRemote(t *testing.T) {
 	t.Run("refresh-does-not-clobber-authoritative-on-disk-copy", func(t *testing.T) {
 		skipIfPriorFailed(t, parent)
 		cName := "conga-" + agentName
-		out, err := exec.Command("docker", "inspect", "-f",
-			`{{range .Mounts}}{{if eq .Destination "/home/node/.openclaw"}}{{.Source}}{{end}}{{end}}`, cName).Output()
-		if err != nil {
-			t.Fatalf("docker inspect mount source: %v", err)
-		}
-		hostBlob := filepath.Join(strings.TrimSpace(string(out)), "mcp-oauth", "linear-test.json")
 		const newer = `{"tokens":{"refresh_token":"ONDISK-NEWER"}}`
-		if err := os.WriteFile(hostBlob, []byte(newer), 0o644); err != nil {
-			t.Fatalf("could not overwrite on-disk blob at %s: %v", hostBlob, err)
+
+		// Overwrite the on-disk copy as root INSIDE the container (uid 0) —
+		// ownership-independent. On remote the SSH chown succeeds so the blob is
+		// uid-1000-owned (the host test user can't write it); writing as root is
+		// the portable way to simulate a runtime token refresh.
+		wr := exec.Command("docker", "exec", "-i", "-u", "0", cName, "tee", blobPath)
+		wr.Stdin = strings.NewReader(newer)
+		if out, err := wr.CombinedOutput(); err != nil {
+			t.Fatalf("could not overwrite on-disk blob: %v\n%s", err, out)
 		}
 
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
