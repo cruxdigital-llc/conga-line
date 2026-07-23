@@ -133,6 +133,25 @@ func (p *LocalProvider) readAgentSecrets(agentName string) (map[string]string, e
 	secrets := make(map[string]string)
 	for _, e := range entries {
 		if e.IsDir() {
+			// Recurse one level for namespaced secrets (e.g. mcp-oauth/<file>),
+			// keyed "<dir>/<file>". These are materialized as files at
+			// provision/refresh, and are excluded from env-file generation.
+			sub := e.Name()
+			subEntries, err := os.ReadDir(filepath.Join(dir, sub))
+			if err != nil {
+				continue
+			}
+			for _, se := range subEntries {
+				if se.IsDir() {
+					continue
+				}
+				val, err := readSecret(filepath.Join(dir, sub, se.Name()))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: skipping unreadable secret %s/%s: %v\n", sub, se.Name(), err)
+					continue
+				}
+				secrets[sub+"/"+se.Name()] = val
+			}
 			continue
 		}
 		val, err := readSecret(filepath.Join(dir, e.Name()))

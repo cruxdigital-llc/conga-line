@@ -969,6 +969,29 @@ func (p *LocalProvider) RefreshAgent(ctx context.Context, agentName string) erro
 		}
 	}
 
+	// Restore any persisted MCP OAuth credential blobs into the data dir
+	// (cold-only) so an OAuth server comes up authenticated after a data-dir
+	// loss. On-disk copies (kept fresh by the running runtime as tokens refresh)
+	// are authoritative and never overwritten. Best-effort; runs before the chown
+	// below so restored files inherit container-user ownership.
+	if oauthDir := rt.OAuthStateDir(); oauthDir != "" {
+		targetDir := filepath.Join(dataDir, oauthDir)
+		n, rerr := common.RestoreMCPOAuth(perAgent,
+			func(f string) bool { _, err := os.Stat(filepath.Join(targetDir, f)); return err == nil },
+			func(f string, d []byte) error {
+				if err := os.MkdirAll(targetDir, 0o700); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(targetDir, f), d, 0o600)
+			},
+		)
+		if rerr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: restoring MCP OAuth credentials for %s: %v\n", agentName, rerr)
+		} else if n > 0 {
+			fmt.Fprintf(os.Stderr, "Restored %d MCP OAuth credential(s) for %s from the secrets store.\n", n, agentName)
+		}
+	}
+
 	// Ensure all files are owned by the container user before starting.
 	// Best-effort: chown fails on macOS where uid 1000 doesn't exist (Docker Desktop remaps).
 	exec.CommandContext(ctx, "chown", "-R", "1000:1000", dataDir).Run() //nolint:errcheck
