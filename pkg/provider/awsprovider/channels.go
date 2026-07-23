@@ -450,6 +450,20 @@ func (p *AWSProvider) saveAgentToSSM(ctx context.Context, a provider.AgentConfig
 	return awsutil.PutParameter(ctx, p.clients.SSM, paramName, string(agentConfigJSON))
 }
 
+// mcpOAuthExistsMarker is echoed by the on-instance existence probe only when the
+// target file is present.
+const mcpOAuthExistsMarker = "__conga_mcp_oauth_exists__"
+
+// mcpFileExists interprets the result of a `test -f … && printf MARKER` SSM probe.
+// It deliberately reads stdout, not the error: awsutil.RunCommand returns
+// (result, nil) for both "Success" and "Failed" invocation statuses, so a missing
+// file (non-zero exit) does not surface as a Go error. Reading err instead of
+// stdout here would make the probe always report "present", silently disabling
+// restore on AWS.
+func mcpFileExists(res *awsutil.RunCommandResult) bool {
+	return res != nil && strings.Contains(res.Stdout, mcpOAuthExistsMarker)
+}
+
 // regenerateAgentConfigOnInstance generates openclaw.json and .env in Go using
 // common.GenerateAgentFiles(), then uploads them to the EC2 instance via SSM.
 // This ensures the same config generation logic as local and remote providers.
@@ -562,6 +576,47 @@ func (p *AWSProvider) regenerateAgentConfigOnInstance(ctx context.Context, insta
 	envPath := fmt.Sprintf("/opt/conga/config/%s.env", cfg.Name)
 	if err := p.uploadFile(ctx, instanceID, envPath, envContent, "0400"); err != nil {
 		return fmt.Errorf("failed to upload env file: %w", err)
+	}
+
+	// Restore any persisted MCP OAuth credential blobs into the data dir
+	// (cold-only) before the container starts, so an OAuth server comes up
+	// authenticated after a fresh provision / data-dir loss. Uploaded 0600
+	// before the chown below, which makes them container-user-owned on the
+	// encrypted EBS data volume — the managed-host secure posture. On-disk copies
+	// (kept fresh by the running runtime) are authoritative and never overwritten.
+	if rt, rtErr := runtime.Get(runtime.ResolveRuntime(cfg.Runtime, "")); rtErr == nil {
+		if oauthDir := rt.OAuthStateDir(); oauthDir != "" {
+			targetDir := dataDir + "/" + oauthDir
+			if _, err := p.runOnInstance(ctx, instanceID, fmt.Sprintf("mkdir -p '%s'", targetDir), 30*time.Second); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not create MCP OAuth dir for %s: %v\n", cfg.Name, err)
+			} else {
+				n, rerr := common.RestoreMCPOAuth(perAgent,
+					func(f string) bool {
+						// Presence must be read from stdout, NOT err: RunCommand
+						// returns (result, nil) for both "Success" and "Failed" SSM
+						// statuses, so a missing file (non-zero exit → "Failed")
+						// still yields err == nil. Echo a marker only when present.
+						res, err := p.runOnInstance(ctx, instanceID,
+							fmt.Sprintf("test -f '%s/%s' && printf '%%s' %s", targetDir, f, mcpOAuthExistsMarker), 30*time.Second)
+						if err != nil {
+							// Couldn't verify (transport error) — assume present so we
+							// never clobber a possibly-authoritative on-disk copy;
+							// best-effort, the next refresh retries.
+							return true
+						}
+						return mcpFileExists(res)
+					},
+					func(f string, d []byte) error {
+						return p.uploadFile(ctx, instanceID, targetDir+"/"+f, d, "0600")
+					},
+				)
+				if rerr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: restoring MCP OAuth credentials for %s: %v\n", cfg.Name, rerr)
+				} else if n > 0 {
+					fmt.Fprintf(os.Stderr, "Restored %d MCP OAuth credential(s) for %s from Secrets Manager.\n", n, cfg.Name)
+				}
+			}
+		}
 	}
 
 	// Fix ownership for container user (SFTP uploads create root-owned files)

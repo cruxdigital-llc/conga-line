@@ -846,6 +846,34 @@ func (p *RemoteProvider) RefreshAgent(ctx context.Context, agentName string) err
 		return fmt.Errorf("failed to upload proxy bootstrap: %w", err)
 	}
 
+	// Restore any persisted MCP OAuth credential blobs into the data dir
+	// (cold-only) before the container starts, so an OAuth server comes up
+	// authenticated after a data-dir loss. Written before the chown below so
+	// restored files inherit container-user ownership. Best-effort; dir 0755 /
+	// file 0644 matches the other container-read data-dir files on this provider.
+	if rt, rtErr := runtime.Get(runtime.ResolveRuntime(cfg.Runtime, "")); rtErr == nil {
+		if oauthDir := rt.OAuthStateDir(); oauthDir != "" {
+			targetDir := posixpath.Join(dataDir, oauthDir)
+			n, rerr := common.RestoreMCPOAuth(perAgent,
+				func(f string) bool {
+					_, err := p.ssh.Run(ctx, fmt.Sprintf("test -f %s", shellQuote(posixpath.Join(targetDir, f))))
+					return err == nil
+				},
+				func(f string, d []byte) error {
+					if err := p.ssh.MkdirAll(targetDir, 0755); err != nil {
+						return err
+					}
+					return p.ssh.Upload(posixpath.Join(targetDir, f), d, 0644)
+				},
+			)
+			if rerr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: restoring MCP OAuth credentials for %s: %v\n", agentName, rerr)
+			} else if n > 0 {
+				fmt.Fprintf(os.Stderr, "Restored %d MCP OAuth credential(s) for %s from the secrets store.\n", n, agentName)
+			}
+		}
+	}
+
 	// Ensure all files are owned by the container user before starting.
 	if _, err := p.ssh.Run(ctx, fmt.Sprintf("chown -R 1000:1000 %s", shellQuote(dataDir))); err != nil {
 		return fmt.Errorf("failed to chown data directory: %w", err)
