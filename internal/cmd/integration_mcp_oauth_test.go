@@ -4,6 +4,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -85,9 +88,21 @@ func TestMCPOAuthRestoreOnRefresh(t *testing.T) {
 	t.Run("refresh-does-not-clobber-authoritative-on-disk-copy", func(t *testing.T) {
 		skipIfPriorFailed(t, parent)
 		cName := "conga-" + agentName
+
+		// Modify the on-disk copy from the HOST (via the bind-mount source), not
+		// from inside the container: the restored blob is owned by the host user
+		// (a non-root host can't chown it to uid 1000), so the container user
+		// can't write it. Simulating a runtime token refresh host-side is
+		// ownership-independent and works on both Linux CI and Docker Desktop.
+		out, err := exec.Command("docker", "inspect", "-f",
+			`{{range .Mounts}}{{if eq .Destination "/home/node/.openclaw"}}{{.Source}}{{end}}{{end}}`, cName).Output()
+		if err != nil {
+			t.Fatalf("docker inspect mount source: %v", err)
+		}
+		hostBlob := filepath.Join(strings.TrimSpace(string(out)), "mcp-oauth", "linear-test.json")
 		const newer = `{"tokens":{"refresh_token":"ONDISK-NEWER"}}`
-		if _, err := dockerExec(t, cName, "sh", "-c", fmt.Sprintf("printf '%%s' %q > %s", newer, blobPath)); err != nil {
-			t.Fatalf("could not overwrite on-disk blob: %v", err)
+		if err := os.WriteFile(hostBlob, []byte(newer), 0o644); err != nil {
+			t.Fatalf("could not overwrite on-disk blob at %s: %v", hostBlob, err)
 		}
 
 		mustRunCLI(t, append(base, "refresh", "--agent", agentName)...)
