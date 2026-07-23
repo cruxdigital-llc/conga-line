@@ -115,6 +115,62 @@ func TestCaptureMCPOAuth(t *testing.T) {
 	})
 }
 
+func TestRestoreMCPOAuth(t *testing.T) {
+	secrets := map[string]string{
+		"anthropic-api-key":                      "sk-ignored",
+		"mcp-oauth/linear-4cca6302a658efcc.json": `{"tokens":{"refresh_token":"r1"}}`,
+		"mcp-oauth/github-336ff6f3750dcf7c.json": `{"tokens":{"refresh_token":"r2"}}`,
+	}
+
+	t.Run("cold slot: writes only absent blobs, skips non-oauth", func(t *testing.T) {
+		// linear already on disk (authoritative), github absent.
+		onDisk := map[string]bool{"linear-4cca6302a658efcc.json": true}
+		written := map[string]string{}
+		n, err := RestoreMCPOAuth(secrets,
+			func(f string) bool { return onDisk[f] },
+			func(f string, d []byte) error { written[f] = string(d); return nil },
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("restored = %d, want 1 (only the absent github blob)", n)
+		}
+		if _, ok := written["linear-4cca6302a658efcc.json"]; ok {
+			t.Error("must NOT overwrite the present (authoritative) linear blob")
+		}
+		if written["github-336ff6f3750dcf7c.json"] != secrets["mcp-oauth/github-336ff6f3750dcf7c.json"] {
+			t.Error("github blob restored with wrong content")
+		}
+		if _, ok := written["anthropic-api-key"]; ok {
+			t.Error("non-oauth secret must not be written as a blob")
+		}
+	})
+
+	t.Run("all present -> nothing restored (warm refresh leaves data untouched)", func(t *testing.T) {
+		written := map[string]string{}
+		n, err := RestoreMCPOAuth(secrets,
+			func(string) bool { return true }, // everything already on disk
+			func(f string, d []byte) error { written[f] = string(d); return nil },
+		)
+		if err != nil || n != 0 {
+			t.Fatalf("got (n=%d, err=%v), want (0, nil)", n, err)
+		}
+		if len(written) != 0 {
+			t.Errorf("warm refresh must not write anything, wrote %v", written)
+		}
+	})
+
+	t.Run("no oauth secrets -> no-op", func(t *testing.T) {
+		n, err := RestoreMCPOAuth(map[string]string{"anthropic-api-key": "x"},
+			func(string) bool { return false },
+			func(string, []byte) error { return nil })
+		if err != nil || n != 0 {
+			t.Fatalf("got (n=%d, err=%v), want (0, nil)", n, err)
+		}
+	})
+}
+
 func TestMCPOAuthSecretToFile(t *testing.T) {
 	if got := MCPOAuthSecretToFile("mcp-oauth/linear-abc.json"); got != "linear-abc.json" {
 		t.Errorf("got %q, want linear-abc.json", got)

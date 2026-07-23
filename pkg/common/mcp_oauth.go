@@ -69,6 +69,48 @@ func mcpOAuthBlobFiles(listing string) []string {
 	return out
 }
 
+// RestoreMCPOAuth materializes persisted MCP OAuth credential blobs into an
+// agent's data dir before its container starts, so an OAuth server comes up
+// authenticated after a fresh provision / data-dir loss (Phase 2 durability).
+//
+// It is **cold-only / non-destructive**: a blob is written only when the target
+// file is absent. A present on-disk file is the runtime's own (kept fresh as the
+// token refreshes) and is authoritative — never overwritten. This is what makes
+// restore compatible with the Agent-Data-Safety rule ("refresh rebuilds config,
+// not data"): it only ever repopulates a genuinely empty slot.
+//
+// Pure orchestration: `secrets` is the agent's name->value secret map, and the
+// provider supplies `exists`/`write` over its own transport (write must place the
+// file at mode 0600 owned by the container user). Non-mcp-oauth secrets and
+// runtimes without an OAuth state dir (empty `secrets` / callers guard on
+// OAuthStateDir) are ignored. Returns the number of blobs restored. Values are
+// never logged.
+func RestoreMCPOAuth(secrets map[string]string, exists func(file string) bool, write func(file string, data []byte) error) (int, error) {
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
+		if runtime.IsMCPOAuthSecret(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+
+	restored := 0
+	for _, name := range names {
+		file := MCPOAuthSecretToFile(name)
+		if file == "" {
+			continue
+		}
+		if exists(file) {
+			continue // cold-only: on-disk copy is authoritative
+		}
+		if err := write(file, []byte(secrets[name])); err != nil {
+			return restored, fmt.Errorf("restoring MCP OAuth blob %q: %w", file, err)
+		}
+		restored++
+	}
+	return restored, nil
+}
+
 // MCPOAuthSecretToFile returns the on-disk blob filename for a mcp-oauth/ secret
 // name (the inverse of the mcp-oauth/ + filename convention), or "" if the secret
 // is not an MCP OAuth blob. Used by providers implementing restore.
